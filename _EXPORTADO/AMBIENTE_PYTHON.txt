@@ -1,0 +1,4 @@
+Python: 3.12.10
+Build: 64 bits
+Executavel: C:\Users\diego.figueiredo\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\python.exe
+Sistema: Windows-10-10.0.19045-SP0

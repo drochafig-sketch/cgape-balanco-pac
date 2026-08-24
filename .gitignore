@@ -1,0 +1,19 @@
+# Ambiente virtual Python real (recriado via requirements, nunca versionado)
+Lib/
+Scripts/
+Include/
+share/
+pyvenv.cfg
+
+# Build artefacts do PyInstaller (regenerados por 3_EMPACOTAR_exe.bat)
+build/
+dist/
+__pycache__/
+*.pyc
+
+# Lixo do Windows
+Thumbs.db
+desktop.ini
+
+# Executável gerado (55MB, regenerável — remova esta linha se quiser versioná-lo)
+*.exe

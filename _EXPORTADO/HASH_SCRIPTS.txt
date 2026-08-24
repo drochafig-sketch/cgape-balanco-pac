@@ -1,0 +1,6 @@
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\CGAPE - BALANÇO PAC.py:
+03901192a56c602830512ebae9ccb5a968be888c93d809e574c8948a0acccb25
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\verificar_ambiente.py:
+90503b99d958c1d9a2707722132a5bf2ef68b138f6aef1df3be7b4d02fa4cda9
+CertUtil: -hashfile : comando concluído com êxito.

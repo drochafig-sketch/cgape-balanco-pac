@@ -1,0 +1,1 @@
+pip 25.3 from C:\Users\diego.figueiredo\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\LocalCache\local-packages\Python312\site-packages\pip (python 3.12)

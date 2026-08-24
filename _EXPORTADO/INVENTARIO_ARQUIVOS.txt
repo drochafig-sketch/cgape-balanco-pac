@@ -1,0 +1,12 @@
+INVENTARIO DE ARQUIVOS DE APOIO
+Pasta verificada: X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\
+
+[FALTA] PANORAMA - PAC ORIGINAL - PAC SELECOES - 2026.xlsx 
+[OK]     PAC.png  (22693 bytes) 
+[OK]     GOVERNO.PNG  (163799 bytes) 
+[OK]     calibri.ttf  (1648120 bytes) 
+[OK]     calibrib.ttf  (1613668 bytes) 
+[FALTA] DIN.ttf 
+[FALTA] DIN-Bold.ttf 
+[OK]     bahnschrift.ttf  (371380 bytes) 
+[OK]     municipios_bahia.geojson  (1381066 bytes) 

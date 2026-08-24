@@ -1,0 +1,25 @@
+# =====================================================================
+# CGAPE / BALANCO PAC - dependencias diretas do script
+# =====================================================================
+# ATENCAO: este arquivo NAO tem versoes travadas. Ele so existe como
+# reserva, para o caso de a maquina antiga nao estar mais acessivel.
+#
+# O caminho correto e usar o "_EXPORTADO/requirements-travado.txt"
+# gerado pelo 1_EXPORTAR_maquina_antiga.bat. Sem ele, o pip instala a
+# versao mais recente de cada biblioteca, e ai voce corre risco de
+# mudanca de comportamento (principalmente pandas e numpy).
+#
+# Se for obrigado a usar este arquivo, anote as versoes instaladas logo
+# depois com:
+#     python -m pip freeze > requirements-travado.txt
+# e guarde esse resultado como referencia definitiva do projeto.
+# =====================================================================
+
+pandas
+numpy
+openpyxl
+reportlab
+pywebview
+
+# Empacotamento em .exe (nao e necessario so para rodar no VS Code)
+pyinstaller
