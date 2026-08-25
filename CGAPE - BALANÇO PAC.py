@@ -1296,14 +1296,22 @@ DOMINIOS_LINK_MAPS = (
     "goo.gl/maps",
 )
 
+def _texto_vazio(valor):
+    # Verdadeiro quando o campo está em branco: None/NaN, string vazia, ou os
+    # textos que o pandas usa pra representar "nada" ("NAN"/"NAT"/"NONE").
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return True
+    texto = str(valor).strip()
+    return not texto or texto.upper() in ("NAN", "NAT", "NONE")
+
 def _motivo_link_localizacao(valor):
     # Devolve o motivo do alerta, ou None quando o campo está vazio (campo
-    # em branco não é erro de preenchimento) ou já traz um link do Maps.
-    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+    # em branco não é erro de preenchimento aqui — quem cobra o preenchimento
+    # em obras ANDAMENTO é _campos_alerta_qualidade) ou já traz um link do
+    # Maps.
+    if _texto_vazio(valor):
         return None
     texto = str(valor).strip()
-    if not texto or texto.upper() in ("NAN", "NAT", "NONE"):
-        return None
     # Passa pela mesma normalização da ficha antes de julgar: um valor
     # colado sem o "https://" ("maps.app.goo.gl/abc") é um link válido, e
     # seria injusto acusá-lo só por causa do esquema ausente.
@@ -5003,12 +5011,18 @@ def _campos_alerta_qualidade(row, hoje=None):
     # Maps. Vale para qualquer fase/status, inclusive obra concluída: o
     # link é o que permite localizar a obra depois, então um endereço
     # digitado ali continua sendo um defeito de cadastro mesmo com a ação
-    # entregue. Campo em branco não entra — o alerta é sobre o que está
+    # entregue. Campo em branco não entra aqui — o alerta é sobre o que está
     # preenchido errado, não sobre o que falta preencher.
     if col_link_localizacao in row.index:
-        motivo_link_localizacao = _motivo_link_localizacao(row.get(col_link_localizacao))
+        valor_link_localizacao = row.get(col_link_localizacao)
+        motivo_link_localizacao = _motivo_link_localizacao(valor_link_localizacao)
         if motivo_link_localizacao:
             alertas["link_localizacao"] = motivo_link_localizacao
+        elif status_atual == "ANDAMENTO" and _texto_vazio(valor_link_localizacao):
+            # Obra em ANDAMENTO é o único caso em que o campo em branco É o
+            # problema: enquanto a obra está sendo executada, o link é o que
+            # permite localizá-la em campo — sem ele, não dá pra fiscalizar.
+            alertas["link_localizacao"] = "Obra em Andamento sem Link Localização preenchido"
 
     return alertas
 
