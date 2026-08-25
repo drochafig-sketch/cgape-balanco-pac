@@ -1,0 +1,26 @@
+# Dependências do servidor web (servidor_web.py) — NÃO confundir com
+# requirements.txt (esse é o do app desktop/.exe, congelado a partir de um
+# "pip freeze" real da máquina que gera o relatório, ver MIGRACAO.md).
+#
+# Aqui só entra o que o servidor web realmente usa: as mesmas versões de
+# pandas/numpy/reportlab/openpyxl/etc. do requirements.txt (evita a
+# divergência de biblioteca que o MIGRACAO.md já identifica como fonte de
+# relatório "visualmente diferente"), mais Flask/gunicorn para servir o
+# painel por HTTP. Fica de fora tudo que é exclusivo de Windows ou de
+# empacotamento do .exe: pywebview, pyinstaller, pyinstaller-hooks-contrib,
+# pywin32-ctypes, pythonnet, clr_loader, pefile, altgraph, bottle, cffi,
+# pycparser, proxy_tools (essas últimas três só existem no ambiente
+# desktop por causa da cadeia pywebview → pythonnet → clr_loader).
+flask==3.1.2
+gunicorn==23.0.0
+et_xmlfile==2.0.0
+numpy==2.5.1
+openpyxl==3.1.5
+packaging==26.2
+pandas==3.0.3
+pillow==12.3.0
+python-dateutil==2.9.0.post0
+reportlab==5.0.0
+six==1.17.0
+typing_extensions==4.16.0
+tzdata==2026.3

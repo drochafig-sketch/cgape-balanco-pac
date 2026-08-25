@@ -8,12 +8,36 @@ import colorsys
 import itertools
 import unicodedata
 import webbrowser
-import tkinter as tk
-from tkinter import messagebox
 from datetime import datetime
 import numpy as np
 import pandas as pd
-import webview  # painel de filtros (HTML/CSS/JS) — pip install pywebview
+
+# tkinter e pywebview só existem/fazem sentido no modo desktop (janela nativa
+# + diálogos de erro). No servidor web (Linux, sem Tcl/Tk nem backend de
+# WebView instalado) essas duas libs não estão disponíveis — e não fazem
+# falta lá, porque todo uso delas está atrás de checagens `if tk is not
+# None` / dentro de `abrir_interface_filtros` (só chamada em modo desktop,
+# ver `if __name__ == "__main__"` no fim do arquivo). Sem esse fallback, o
+# simples `import` deste arquivo pelo servidor web já quebraria de cara.
+try:
+    import tkinter as tk
+    from tkinter import messagebox
+except Exception:
+    tk = None
+    messagebox = None
+
+try:
+    import webview  # painel de filtros (HTML/CSS/JS) — pip install pywebview
+except Exception:
+    webview = None
+
+# Ligada pela variável de ambiente PAC_WEB_MODE=1, definida pelo servidor
+# web (servidor_web.py). Controla os pontos do código que só fazem sentido
+# numa máquina desktop com o Windows na frente do usuário (abrir o PDF
+# gerado direto no leitor padrão do sistema via os.startfile) — no servidor,
+# quem abre o PDF é o navegador de quem está acessando, não o processo
+# Python rodando no host remoto.
+MODO_WEB = os.environ.get("PAC_WEB_MODE") == "1"
 
 from reportlab.lib import colors, pagesizes
 from reportlab.lib.units import mm
@@ -54,6 +78,24 @@ else:
 
 def caminho_recurso(nome_arquivo):
     return os.path.join(PASTA_BASE, nome_arquivo)
+
+
+def _erro_fatal_inicializacao(mensagem):
+    # Erro que impede o programa de continuar (planilha ilegível, coluna
+    # essencial faltando etc.), disparado ainda durante o carregamento dos
+    # dados — antes de existir janela ou servidor. Sempre imprime no
+    # console/log; no modo desktop, também mostra um alerta nativo (só
+    # possível quando tkinter está disponível, ver import defensivo no topo
+    # do arquivo). No modo web isso vira um erro de inicialização visível no
+    # log do servidor, em vez de uma janela travada esperando clique em
+    # máquina nenhuma.
+    print(f"[PAC - Relatório Gerencial] ERRO FATAL: {mensagem}", file=sys.stderr)
+    if tk is not None and not MODO_WEB:
+        _raiz_erro = tk.Tk()
+        _raiz_erro.withdraw()
+        messagebox.showerror("PAC - Relatório Gerencial", mensagem)
+    sys.exit(1)
+
 
 arquivo_excel = caminho_recurso("PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026.xlsx")
 
@@ -4358,40 +4400,28 @@ try:
         df_temp = pd.read_excel(arquivo_excel, header=None)
         linha_header = _linha_do_cabecalho(df_temp)
     if linha_header is None:
-        _raiz_erro = tk.Tk()
-        _raiz_erro.withdraw()
-        messagebox.showerror(
-            "PAC - Relatório Gerencial",
+        _erro_fatal_inicializacao(
             "Não foi possível identificar a linha do cabeçalho na planilha — "
             "nenhuma das colunas de referência (EIXO, OBJETO, ITEM, SECRETARIA) "
             "foi encontrada.\n\n"
             "Verifique se a planilha não teve os cabeçalhos removidos ou "
             "renomeados por engano.\n\n"
-            f"Arquivo:\n{arquivo_excel}",
+            f"Arquivo:\n{arquivo_excel}"
         )
-        sys.exit(1)
     df = pd.read_excel(arquivo_excel, header=linha_header)
 except PermissionError:
-    _raiz_erro = tk.Tk()
-    _raiz_erro.withdraw()
-    messagebox.showerror(
-        "PAC - Relatório Gerencial",
+    _erro_fatal_inicializacao(
         "Não foi possível abrir a planilha porque ela está sendo usada por outro "
         "programa (provavelmente aberta no Excel, ou ainda sincronizando no OneDrive).\n\n"
         "Feche a planilha e tente novamente.\n\n"
-        f"Arquivo:\n{arquivo_excel}",
+        f"Arquivo:\n{arquivo_excel}"
     )
-    sys.exit(1)
 except FileNotFoundError:
-    _raiz_erro = tk.Tk()
-    _raiz_erro.withdraw()
-    messagebox.showerror(
-        "PAC - Relatório Gerencial",
+    _erro_fatal_inicializacao(
         f"Planilha não encontrada:\n{arquivo_excel}\n\n"
         "Verifique se o arquivo está na mesma pasta do programa (.exe) e se o "
-        "nome está exatamente igual.",
+        "nome está exatamente igual."
     )
-    sys.exit(1)
 
 df.columns = [
     re.sub(r"\s+", " ", remover_acentos(c).strip().upper())
@@ -4558,20 +4588,16 @@ COLUNAS_ESSENCIAIS = {
 }
 _colunas_faltando = [nome for coluna, nome in COLUNAS_ESSENCIAIS.items() if coluna not in df.columns]
 if _colunas_faltando:
-    _raiz_erro = tk.Tk()
-    _raiz_erro.withdraw()
     _plural = len(_colunas_faltando) > 1
-    messagebox.showerror(
-        "PAC - Relatório Gerencial",
+    _erro_fatal_inicializacao(
         f"A planilha está sem {'as colunas' if _plural else 'a coluna'} abaixo, "
         f"que {'são' if _plural else 'é'} essenci{'ais' if _plural else 'al'} "
         "pro programa funcionar:\n\n"
         + "\n".join(f"• {nome}" for nome in _colunas_faltando)
         + "\n\nVerifique se o(s) cabeçalho(s) não foi(ram) renomeado(s) ou "
         "excluído(s) por engano na planilha.\n\n"
-        f"Arquivo:\n{arquivo_excel}",
+        f"Arquivo:\n{arquivo_excel}"
     )
-    sys.exit(1)
 
 df = df[df[col_objeto].notna() & (df[col_objeto].astype(str).str.strip() != "")]
 
@@ -7373,10 +7399,19 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
             canvasmaker=NumeradorPaginasGestaoCanvas,
         )
         print(f"PDF GERADO COM SUCESSO: {arquivo_pdf}")
-        os.startfile(arquivo_pdf)
+        # No modo web, quem abre o PDF é o navegador de quem está acessando
+        # (o servidor devolve os bytes na resposta HTTP) — não o processo
+        # Python rodando no servidor remoto.
+        if not MODO_WEB and os.name == "nt":
+            os.startfile(arquivo_pdf)
 
 
-def abrir_interface_filtros(df_base):
+def montar_html_painel(df_base):
+    # Monta a string HTML/CSS/JS completa do painel de filtros — só isso,
+    # sem abrir janela nenhuma. Usada tanto pelo modo desktop
+    # (abrir_interface_filtros, logo abaixo, que pega esse HTML e abre numa
+    # janela pywebview) quanto pelo servidor web (servidor_web.py, que serve
+    # esse mesmo HTML direto num navegador comum, em vez de janela nativa).
     opcoes_gestao = sorted(df_base["GESTAO"].dropna().astype(str).unique().tolist())
 
     # EIXO: ordem alfabética insensível a acento (mesma correção usada no
@@ -9589,6 +9624,73 @@ def abrir_interface_filtros(df_base):
   // forma segura, de forma síncrona.
   const DADOS = JSON.parse(document.getElementById("dados-painel").textContent);
   const NL = "\n";
+
+  // true quando este HTML foi servido pelo servidor web (servidor_web.py);
+  // false quando está rodando dentro da janela desktop (pywebview). Vem
+  // pronto do Python (ver montar_html_painel) em vez do JS ter que
+  // adivinhar isso por uma corrida entre o carregamento da página e a
+  // injeção assíncrona de "window.pywebview" pelo WebView2.
+  window.PAC_MODO_WEB = __MODO_WEB__;
+
+  // Ponte entre o painel e o backend: no desktop, fala diretamente com
+  // "window.pywebview.api" (como sempre foi); num navegador comum (sem
+  // pywebview), faz a mesma chamada por HTTP contra as rotas /api/* do
+  // servidor web (ver servidor_web.py) — o resto do painel não precisa
+  // saber qual dos dois está em uso.
+  function pacApiDesktopDisponivel() {
+    return !!(window.pywebview && window.pywebview.api);
+  }
+
+  async function chamarAPI(nome, ...args) {
+    if (pacApiDesktopDisponivel()) {
+      return await window.pywebview.api[nome](...args);
+    }
+    const resposta = await fetch("/api/" + nome, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    });
+    return await resposta.json();
+  }
+
+  // Variante para os dois botões que geram PDF (relatório completo e Ficha
+  // Cadastral): no desktop, o Python já salva o arquivo direto no disco via
+  // diálogo nativo e só devolve status; num navegador comum não existe
+  // diálogo de "Salvar como" para o servidor abrir, então o servidor web
+  // devolve os BYTES do PDF na resposta e é o próprio navegador quem
+  // baixa/abre o arquivo.
+  async function baixarPDF(nome, ...args) {
+    if (pacApiDesktopDisponivel()) {
+      return await window.pywebview.api[nome](...args);
+    }
+    const resposta = await fetch("/api/" + nome, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    });
+    // O servidor devolve o PDF de verdade (Content-Type: application/pdf)
+    // só quando deu certo; qualquer outro caso (recorte vazio, erro,
+    // filtros inválidos) volta como JSON, no mesmo formato
+    // {"ok": false, ...} de sempre — por isso checa o Content-Type em vez
+    // de só o status HTTP, senão um corpo JSON de erro seria tratado como
+    // se fosse o PDF.
+    const tipo = resposta.headers.get("Content-Type") || "";
+    if (!resposta.ok || !tipo.includes("application/pdf")) {
+      let corpo = { ok: false, erro: "Falha ao gerar o PDF." };
+      try {
+        corpo = await resposta.json();
+      } catch (e) { /* resposta sem corpo JSON — mantém o erro padrão acima */ }
+      return corpo;
+    }
+    const disposicao = resposta.headers.get("Content-Disposition") || "";
+    const nomeMatch = disposicao.match(/filename="?([^"]+)"?/);
+    const nomeArquivo = nomeMatch ? nomeMatch[1] : "relatorio.pdf";
+    const blob = await resposta.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    return { ok: true, arquivo: nomeArquivo };
+  }
+
   const estadoSelecao = {};
   DADOS.blocos.forEach(b => { estadoSelecao[b.chave] = new Set(); });
 
@@ -11449,12 +11551,29 @@ def abrir_interface_filtros(df_base):
       "\n</body>\n</html>";
 
     var resultado;
-    try {
-      resultado = await window.pywebview.api.salvar_visualizacao_html(htmlAtual);
-    } catch (erro) {
-      alert("Ocorreu um erro ao salvar a pré-visualização:" + NL + NL + erro);
-      btnCompartilhar.disabled = false;
-      return;
+    if (pacApiDesktopDisponivel()) {
+      try {
+        resultado = await window.pywebview.api.salvar_visualizacao_html(htmlAtual);
+      } catch (erro) {
+        alert("Ocorreu um erro ao salvar a pré-visualização:" + NL + NL + erro);
+        btnCompartilhar.disabled = false;
+        return;
+      }
+    } else {
+      // Num navegador comum não existe "salvar no Downloads do servidor" —
+      // a pré-visualização abre direto numa nova aba, pronta pro usuário
+      // compartilhar o link ou salvar como PDF pelo próprio navegador
+      // (Ctrl+P).
+      try {
+        const blob = new Blob([htmlAtual], { type: "text/html" });
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        resultado = { ok: true };
+      } catch (erro) {
+        alert("Ocorreu um erro ao abrir a pré-visualização:" + NL + NL + erro);
+        btnCompartilhar.disabled = false;
+        return;
+      }
     }
     btnCompartilhar.disabled = false;
 
@@ -11471,20 +11590,22 @@ def abrir_interface_filtros(df_base):
   // do próprio dashboard (FILTROS/GERENCIAL/LIMPAR), ou ao fechar o painel
   // de filtros voltando pro dashboard.
   async function carregarDashboard() {
-    // Defensivo: se por algum motivo o evento "pywebviewready" ainda não
-    // disparou quando esta função é chamada, espera até 5s por ele em vez
-    // de estourar um erro de "Cannot read properties of undefined".
-    if (!window.pywebview) {
+    // A espera pelo evento "pywebviewready" só faz sentido no modo desktop
+    // (window.pywebview é injetado de forma assíncrona pelo WebView2 pouco
+    // depois do carregamento da página). No modo web (window.PAC_MODO_WEB)
+    // esse objeto nunca vai existir — nem precisa, porque chamarAPI() já
+    // sabe falar direto com o servidor por HTTP.
+    if (!window.PAC_MODO_WEB && !window.pywebview) {
       await new Promise(function (resolve) {
         var jaResolveu = false;
         var finalizar = function () { if (!jaResolveu) { jaResolveu = true; resolve(); } };
         window.addEventListener("pywebviewready", finalizar, { once: true });
         setTimeout(finalizar, 5000);
       });
-    }
-    if (!window.pywebview) {
-      alert("O painel ainda não terminou de carregar — tente novamente em instantes.");
-      return;
+      if (!window.pywebview) {
+        alert("O painel ainda não terminou de carregar — tente novamente em instantes.");
+        return;
+      }
     }
 
     var filtros = montarFiltrosAtuais();
@@ -11493,7 +11614,7 @@ def abrir_interface_filtros(df_base):
 
     var resultado;
     try {
-      resultado = await window.pywebview.api.pre_visualizar(filtros);
+      resultado = await chamarAPI("pre_visualizar", filtros);
     } catch (erro) {
       alert("Ocorreu um erro ao carregar o dashboard:" + NL + NL + erro);
       return;
@@ -11639,7 +11760,13 @@ def abrir_interface_filtros(df_base):
   async function compartilharQualidadeWhatsapp() {
     if (!_avisoQualidadeAtual) return;
     var texto = montarTextoCompartilhamentoQualidade(_avisoQualidadeAtual);
-    await window.pywebview.api.compartilhar_whatsapp(texto);
+    if (pacApiDesktopDisponivel()) {
+      await window.pywebview.api.compartilhar_whatsapp(texto);
+    } else {
+      // Num navegador comum não precisa passar pelo servidor — o próprio
+      // JS já sabe montar o link do WhatsApp Web.
+      window.open("https://wa.me/?text=" + encodeURIComponent(texto), "_blank");
+    }
   }
   document.getElementById("modal-btn-whatsapp").onclick = compartilharQualidadeWhatsapp;
 
@@ -11766,7 +11893,7 @@ def abrir_interface_filtros(df_base):
 
       var lista;
       try {
-        lista = await window.pywebview.api.listar_paginas_relatorio(filtros);
+        lista = await chamarAPI("listar_paginas_relatorio", filtros);
       } catch (erro) {
         alert("Não foi possível montar a lista de páginas:" + NL + NL + erro);
         resolve(null);
@@ -11868,7 +11995,7 @@ def abrir_interface_filtros(df_base):
         link.addEventListener("click", async function (ev) {
           ev.preventDefault();
           var item = link.getAttribute("data-item");
-          var resultado = await window.pywebview.api.buscar_ficha_por_item(item);
+          var resultado = await chamarAPI("buscar_ficha_por_item", item);
           if (resultado && resultado.ok) {
             abrirFicha(resultado.dados);
           } else {
@@ -12091,7 +12218,7 @@ def abrir_interface_filtros(df_base):
     var municipio = campoBuscaMunicipio().value;
     var descricao = campoBuscaDescricao().value;
     var filtros = montarFiltrosAtuais();
-    var resultado = await window.pywebview.api.buscar_ficha_acao(municipio, descricao, filtros, true);
+    var resultado = await chamarAPI("buscar_ficha_acao", municipio, descricao, filtros, true);
     if (minhaVez !== _buscaFichaEmCurso) return;
     if (!resultado || !resultado.ok) {
       renderizarListaBuscaFicha([], 0, 0, (resultado && resultado.erro) || "Não foi possível buscar.");
@@ -12150,7 +12277,7 @@ def abrir_interface_filtros(df_base):
 
   async function abrirFichaDaBusca(item) {
     document.getElementById("ficha-multiplos-overlay").style.display = "none";
-    var resultado = await window.pywebview.api.buscar_ficha_por_item(item);
+    var resultado = await chamarAPI("buscar_ficha_por_item", item);
     if (resultado && resultado.ok) {
       abrirFicha(resultado.dados, true);
     } else {
@@ -12210,12 +12337,17 @@ def abrir_interface_filtros(df_base):
   document.getElementById("ficha-btn-fechar-impressao").onclick = fecharFicha;
   async function salvarFichaComoPdf() {
     if (!_fichaDadosAtuais) return;
-    var resultado = await window.pywebview.api.exportar_ficha_pdf(_fichaDadosAtuais.item);
+    // No desktop, o Python salva o PDF direto no disco escolhido pelo
+    // diálogo nativo; num navegador comum, baixarPDF() já abre o PDF numa
+    // nova aba a partir dos bytes devolvidos pelo servidor — por isso a
+    // mensagem fala em "gerado", não "salvo em disco", e serve pros dois
+    // casos.
+    var resultado = await baixarPDF("exportar_ficha_pdf", _fichaDadosAtuais.item);
     if (!resultado || resultado.cancelado) return;
     if (resultado.ok) {
-      alert("PDF salvo com sucesso:\n" + resultado.arquivo);
+      alert("PDF gerado com sucesso: " + resultado.arquivo);
     } else {
-      alert(resultado.erro || "Não foi possível salvar o PDF.");
+      alert(resultado.erro || "Não foi possível gerar o PDF.");
     }
   }
 
@@ -12227,7 +12359,7 @@ def abrir_interface_filtros(df_base):
     travarBotaoGerar("Verificando...");
     var inicio;
     try {
-      inicio = await window.pywebview.api.iniciar_geracao(filtros);
+      inicio = await chamarAPI("iniciar_geracao", filtros);
     } catch (erro) {
       alert("Ocorreu um erro ao verificar os filtros:" + NL + NL + erro);
       destravarBotaoGerar();
@@ -12258,7 +12390,7 @@ def abrir_interface_filtros(df_base):
     travarBotaoGerar("Gerando...");
     var resultado;
     try {
-      resultado = await window.pywebview.api.escolher_local_e_gerar(filtros, secoesEscolhidas);
+      resultado = await baixarPDF("escolher_local_e_gerar", filtros, secoesEscolhidas);
     } catch (erro) {
       alert("Ocorreu um erro ao gerar o relatorio:" + NL + NL + erro);
       destravarBotaoGerar();
@@ -12304,7 +12436,11 @@ def abrir_interface_filtros(df_base):
         return;
       }
       document.getElementById("aviso-inatividade").style.display = "flex";
-      window.pywebview.api.fechar_por_inatividade();
+      // Fechar a própria janela só existe no modo desktop — no navegador
+      // não há janela nativa pra fechar, o aviso na tela já é suficiente.
+      if (pacApiDesktopDisponivel()) {
+        window.pywebview.api.fechar_por_inatividade();
+      }
     }, TEMPO_INATIVIDADE_MS);
   }
   ["mousemove", "keydown", "click", "wheel"].forEach(evento => {
@@ -12313,13 +12449,13 @@ def abrir_interface_filtros(df_base):
   reiniciarTemporizadorInatividade();
 
   // O dashboard agora é a tela inicial — carrega os dados assim que a
-  // página abre, sem esperar nenhum clique. Mas o pywebview injeta o
-  // objeto "window.pywebview" de forma assíncrona (evento
-  // "pywebviewready"), e antes essa chamada só acontecia depois de algum
-  // clique do usuário (tempo de sobra pra injeção terminar); agora que é
-  // automática, precisa esperar esse evento explicitamente, ou
-  // "window.pywebview" pode ainda não existir no instante certo.
-  if (window.pywebview) {
+  // página abre, sem esperar nenhum clique. No modo desktop, o pywebview
+  // injeta o objeto "window.pywebview" de forma assíncrona (evento
+  // "pywebviewready"), então é preciso esperar esse evento explicitamente
+  // antes de chamar a API, ou "window.pywebview" pode ainda não existir no
+  // instante certo. No modo web esse objeto nunca existe — carrega direto,
+  // sem esperar nada (chamarAPI já fala com o servidor por HTTP).
+  if (window.PAC_MODO_WEB || window.pywebview) {
     carregarDashboard();
   } else {
     window.addEventListener("pywebviewready", function () {
@@ -12336,6 +12472,231 @@ def abrir_interface_filtros(df_base):
         f"Base de dados atualizada em {ultima_atualizacao.strftime('%d/%m/%Y às %Hh%Mmin')}"
     )
     html_paginal = html_paginal.replace("__ULTIMA_ATUALIZACAO__", texto_ultima_atualizacao_painel)
+    # Diz pro JS do painel se ele está rodando dentro da janela desktop
+    # (pywebview) ou servido por um navegador comum (servidor web) — em vez
+    # de o JS ter que adivinhar isso por uma corrida entre o carregamento da
+    # página e a injeção assíncrona de "window.pywebview" pelo WebView2.
+    html_paginal = html_paginal.replace("__MODO_WEB__", "true" if MODO_WEB else "false")
+
+    return html_paginal
+
+
+# =====================================================
+# API DO PAINEL — funções de módulo compartilhadas pela ponte pywebview
+# (classe APIFiltros, usada no modo desktop) e pelas rotas do servidor web
+# (servidor_web.py). Cada uma recebe os mesmos argumentos que o JS do
+# painel já envia e devolve um dict JSON-serializável, sempre no formato
+# {"ok": True, ...} ou {"ok": False, "erro"/"vazio"/"cancelado": ...} —
+# mesmo contrato que o pywebview já usava, para o JS do painel não precisar
+# saber se está falando com uma janela nativa ou com um servidor HTTP.
+# =====================================================
+
+def _api_pre_visualizar(filtros):
+    # Filtra os dados e devolve os números já agregados (sem gerar nenhum
+    # PDF) para o JS desenhar os mesmos 4 gráficos do Painel Geral em CSS —
+    # um preview rápido de como o relatório vai sair, sem precisar gerar o
+    # arquivo.
+    try:
+        df = _filtrar_dataframe(filtros)
+        if df.empty:
+            return {"ok": False, "vazio": True}
+        return {"ok": True, "dados": _dados_pre_visualizacao(df)}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
+def _api_iniciar_geracao(filtros):
+    # Primeira etapa: filtra os dados e verifica o Controle de Qualidade.
+    # Não abre nenhum diálogo — só devolve os dados para o JS decidir o que
+    # mostrar.
+    try:
+        df = _filtrar_dataframe(filtros)
+        if df.empty:
+            return {"ok": False, "vazio": True}
+        aviso = _montar_aviso_qualidade(df)
+        return {"ok": True, "aviso": aviso}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
+def _api_listar_paginas_relatorio(filtros):
+    # Alimenta a janela de seleção de páginas: devolve só as seções que
+    # este recorte realmente produziria. Barato — não gera PDF nenhum, só
+    # inspeciona o dataframe filtrado.
+    try:
+        df = _filtrar_dataframe(filtros)
+        if df.empty:
+            return {"ok": False, "vazio": True}
+        return {"ok": True, "secoes": _secoes_disponiveis_relatorio(df)}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
+def _api_buscar_ficha_acao(municipio, descricao, filtros, sempre_lista=False):
+    # Busca por MUNICÍPIO (parcial) e/ou DESCRIÇÃO (parcial), combinados
+    # com E — quando os dois estão preenchidos, os dois precisam bater.
+    # Sempre dentro do recorte definido pelos filtros ativos no momento
+    # (secretaria/executor selecionados etc.) — os botões acima do campo de
+    # busca influenciam o resultado.
+    try:
+        df_busca = _filtrar_dataframe(filtros) if filtros else df_original
+        municipio_t = str(municipio or "").strip()
+        descricao_t = str(descricao or "").strip()
+        # Sem nada digitado a busca NÃO é recusada: vale o recorte atual dos
+        # filtros, e a lupa vira uma forma de navegar pelas ações que já
+        # estão na tela.
+
+        if municipio_t and col_municipio in df_busca.columns:
+            municipio_norm = remover_acentos(municipio_t).upper()
+            municipio_serie = df_busca[col_municipio].astype(str).apply(
+                lambda v: remover_acentos(v.upper())
+            )
+            df_busca = df_busca[municipio_serie.str.contains(municipio_norm, regex=False)]
+        elif municipio_t:
+            df_busca = df_busca.iloc[0:0]
+        if descricao_t and col_descricao in df_busca.columns:
+            descricao_norm = remover_acentos(descricao_t).upper()
+            descricao_serie = df_busca[col_descricao].astype(str).apply(
+                lambda v: remover_acentos(v.upper())
+            )
+            df_busca = df_busca[descricao_serie.str.contains(descricao_norm, regex=False)]
+
+        # sempre_lista: a janela da lupa filtra a lista enquanto a pessoa
+        # digita, então ela nunca quer um alerta nem quer que a ficha abra
+        # sozinha no meio da digitação — quer a lista, mesmo que vazia ou
+        # com um item só. Quem chama sem esse sinal mantém o comportamento
+        # antigo.
+        if df_busca.empty:
+            if sempre_lista:
+                return {"ok": True, "multiplos": True, "itens": [], "total": 0,
+                        "limite": LIMITE_LISTA_BUSCA_FICHA}
+            if not municipio_t and not descricao_t:
+                return {"ok": False, "erro": "Nenhuma ação no recorte atual — reveja os filtros do painel."}
+            return {"ok": False, "erro": "Nenhuma ação encontrada com esses critérios."}
+
+        acoes_unicas = df_busca.drop_duplicates(subset=[col_item])
+        if sempre_lista or len(acoes_unicas) > 1:
+            itens = [
+                {
+                    "item": normalizar_item(r[col_item]),
+                    "objeto": str(r[col_objeto]),
+                    "descricao": _texto_campo_ficha(r, col_descricao),
+                    "secretaria": str(r.get(col_orgao, "")),
+                }
+                for _, r in acoes_unicas.head(LIMITE_LISTA_BUSCA_FICHA).iterrows()
+            ]
+            # "total" é quantas ações existem no recorte; "limite", quantas
+            # cabem na lista. A tela usa os dois para avisar que a lista
+            # está cortada — sem isso, uma busca vazia num recorte grande
+            # pareceria devolver só 30 ações.
+            return {
+                "ok": True,
+                "multiplos": True,
+                "itens": itens,
+                "total": int(len(acoes_unicas)),
+                "limite": LIMITE_LISTA_BUSCA_FICHA,
+            }
+
+        return {"ok": True, "dados": _montar_dados_ficha_acao(df_busca.iloc[0])}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
+def _api_buscar_ficha_por_item(item):
+    # Usado quando a busca acima encontra mais de uma ação e o usuário
+    # escolhe qual delas abrir.
+    try:
+        item_norm = remover_acentos(normalizar_item(item)).upper()
+        item_serie = df_original[col_item].apply(lambda v: remover_acentos(normalizar_item(v)).upper())
+        linhas = df_original[item_serie == item_norm]
+        if linhas.empty:
+            return {"ok": False, "erro": "Ação não encontrada."}
+        return {"ok": True, "dados": _montar_dados_ficha_acao(linhas.iloc[0])}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
+def _localizar_acao_por_item(item):
+    # Helper comum a exportar_ficha_pdf (desktop) e à rota web
+    # equivalente: acha a linha da planilha correspondente a um ITEM e
+    # devolve os dados já montados para a Ficha Cadastral, ou None se não
+    # existir.
+    item_norm = remover_acentos(normalizar_item(item)).upper()
+    item_serie = df_original[col_item].apply(lambda v: remover_acentos(normalizar_item(v)).upper())
+    linhas = df_original[item_serie == item_norm]
+    if linhas.empty:
+        return None
+    return _montar_dados_ficha_acao(linhas.iloc[0])
+
+
+def _api_gerar_pdf_bytes(filtros, secoes=None):
+    # Equivalente web de APIFiltros.escolher_local_e_gerar: em vez de abrir
+    # o diálogo nativo "Salvar como" do pywebview (que não existe num
+    # navegador comum), gera o PDF num arquivo temporário do próprio
+    # servidor, lê os bytes de volta e apaga o arquivo — quem baixa/abre o
+    # PDF de fato é o navegador de quem está acessando, a partir da
+    # resposta HTTP (ver servidor_web.py).
+    df = _filtrar_dataframe(filtros)
+    if df.empty:
+        return {"ok": False, "vazio": True}
+
+    # tempfile.mkstemp gera um nome garantidamente único de forma atômica
+    # (ao contrário de montar o nome à mão com pid/id de objeto) — importa
+    # aqui porque o servidor web pode atender vários pedidos de PDF ao mesmo
+    # tempo, cada um numa requisição/thread diferente.
+    descritor, caminho_temp = tempfile.mkstemp(suffix=".pdf", prefix="pac_relatorio_web_")
+    os.close(descritor)
+    try:
+        _gerar_pdf(df, caminho_temp, filtros.get("COLUNAS_DETALHAMENTO"), secoes)
+        with open(caminho_temp, "rb") as f:
+            conteudo_pdf = f.read()
+        return {"ok": True, "nome_arquivo": nome_arquivo_pdf, "conteudo": conteudo_pdf}
+    finally:
+        try:
+            os.remove(caminho_temp)
+        except Exception:
+            pass
+
+
+def _api_exportar_ficha_pdf_bytes(item):
+    # Equivalente web de APIFiltros.exportar_ficha_pdf — mesma lógica do
+    # gerar_pdf_bytes acima, mas para o PDF de uma única ação.
+    dados = _localizar_acao_por_item(item)
+    if dados is None:
+        return {"ok": False, "erro": "Ação não encontrada."}
+
+    nome_sugerido = f"Ficha_Item_{normalizar_item(item)}.pdf"
+    descritor, caminho_temp = tempfile.mkstemp(suffix=".pdf", prefix="pac_ficha_web_")
+    os.close(descritor)
+    try:
+        gerar_pdf_ficha_acao(dados, caminho_temp)
+        with open(caminho_temp, "rb") as f:
+            conteudo_pdf = f.read()
+        return {"ok": True, "nome_arquivo": nome_sugerido, "conteudo": conteudo_pdf}
+    finally:
+        try:
+            os.remove(caminho_temp)
+        except Exception:
+            pass
+
+
+def abrir_interface_filtros(df_base):
+    # Ponto de entrada exclusivo do modo desktop: pega o HTML pronto de
+    # montar_html_painel e abre numa janela nativa (pywebview/WebView2). O
+    # servidor web NÃO chama esta função — ele usa montar_html_painel
+    # diretamente e serve o resultado como resposta HTTP normal (ver
+    # servidor_web.py).
+    html_paginal = montar_html_painel(df_base)
 
     class APIFiltros:
         # Ponte entre o JS do painel e as funções Python já existentes.
@@ -12348,48 +12709,13 @@ def abrir_interface_filtros(df_base):
         # virou um modal em HTML, exibido dentro do próprio painel.
 
         def pre_visualizar(self, filtros):
-            # Filtra os dados e devolve os números já agregados (sem gerar
-            # nenhum PDF) para o JS desenhar os mesmos 4 gráficos do Painel
-            # Geral em CSS — um preview rápido de como o relatório vai
-            # sair, sem precisar gerar o arquivo.
-            try:
-                df = _filtrar_dataframe(filtros)
-                if df.empty:
-                    return {"ok": False, "vazio": True}
-                return {"ok": True, "dados": _dados_pre_visualizacao(df)}
-            except Exception as erro:
-                import traceback
-                traceback.print_exc()
-                return {"ok": False, "erro": str(erro)}
+            return _api_pre_visualizar(filtros)
 
         def iniciar_geracao(self, filtros):
-            # Primeira etapa: filtra os dados e verifica o Controle de
-            # Qualidade. Não abre nenhum diálogo — só devolve os dados para
-            # o JS decidir o que mostrar.
-            try:
-                df = _filtrar_dataframe(filtros)
-                if df.empty:
-                    return {"ok": False, "vazio": True}
-                aviso = _montar_aviso_qualidade(df)
-                return {"ok": True, "aviso": aviso}
-            except Exception as erro:
-                import traceback
-                traceback.print_exc()
-                return {"ok": False, "erro": str(erro)}
+            return _api_iniciar_geracao(filtros)
 
         def listar_paginas_relatorio(self, filtros):
-            # Alimenta a janela de seleção de páginas: devolve só as seções
-            # que este recorte realmente produziria. Barato — não gera PDF
-            # nenhum, só inspeciona o dataframe filtrado.
-            try:
-                df = _filtrar_dataframe(filtros)
-                if df.empty:
-                    return {"ok": False, "vazio": True}
-                return {"ok": True, "secoes": _secoes_disponiveis_relatorio(df)}
-            except Exception as erro:
-                import traceback
-                traceback.print_exc()
-                return {"ok": False, "erro": str(erro)}
+            return _api_listar_paginas_relatorio(filtros)
 
         def escolher_local_e_gerar(self, filtros, secoes=None):
             # Segunda etapa: reaplica os mesmos filtros (barato — é só
@@ -12452,7 +12778,12 @@ def abrir_interface_filtros(df_base):
                 with open(caminho, "w", encoding="utf-8") as f:
                     f.write(html_conteudo)
 
-                os.startfile(caminho)
+                # Método exclusivo do modo desktop (não é exposto pelo
+                # servidor web — ver servidor_web.py): salva e abre no
+                # Downloads da PRÓPRIA máquina onde o programa está rodando,
+                # o que só faz sentido quando essa máquina é a do usuário.
+                if not MODO_WEB and os.name == "nt":
+                    os.startfile(caminho)
                 return {"ok": True, "arquivo": caminho}
             except Exception as erro:
                 import traceback
@@ -12460,104 +12791,23 @@ def abrir_interface_filtros(df_base):
                 return {"ok": False, "erro": str(erro)}
 
         def buscar_ficha_acao(self, municipio, descricao, filtros, sempre_lista=False):
-            # Busca por MUNICÍPIO (parcial) e/ou DESCRIÇÃO (parcial),
-            # combinados com E — quando os dois estão preenchidos, os dois
-            # precisam bater. Sempre dentro do recorte definido pelos
-            # filtros ativos no momento (secretaria/executor selecionados
-            # etc.) — os botões acima do campo de busca influenciam o
-            # resultado.
-            try:
-                df_busca = _filtrar_dataframe(filtros) if filtros else df_original
-                municipio_t = str(municipio or "").strip()
-                descricao_t = str(descricao or "").strip()
-                # Sem nada digitado a busca NÃO é recusada: vale o recorte
-                # atual dos filtros, e a lupa vira uma forma de navegar
-                # pelas ações que já estão na tela.
-
-                if municipio_t and col_municipio in df_busca.columns:
-                    municipio_norm = remover_acentos(municipio_t).upper()
-                    municipio_serie = df_busca[col_municipio].astype(str).apply(
-                        lambda v: remover_acentos(v.upper())
-                    )
-                    df_busca = df_busca[municipio_serie.str.contains(municipio_norm, regex=False)]
-                elif municipio_t:
-                    df_busca = df_busca.iloc[0:0]
-                if descricao_t and col_descricao in df_busca.columns:
-                    descricao_norm = remover_acentos(descricao_t).upper()
-                    descricao_serie = df_busca[col_descricao].astype(str).apply(
-                        lambda v: remover_acentos(v.upper())
-                    )
-                    df_busca = df_busca[descricao_serie.str.contains(descricao_norm, regex=False)]
-
-                # sempre_lista: a janela da lupa filtra a lista enquanto a
-                # pessoa digita, então ela nunca quer um alerta nem quer que
-                # a ficha abra sozinha no meio da digitação — quer a lista,
-                # mesmo que vazia ou com um item só. Quem chama sem esse
-                # sinal mantém o comportamento antigo.
-                if df_busca.empty:
-                    if sempre_lista:
-                        return {"ok": True, "multiplos": True, "itens": [], "total": 0,
-                                "limite": LIMITE_LISTA_BUSCA_FICHA}
-                    if not municipio_t and not descricao_t:
-                        return {"ok": False, "erro": "Nenhuma ação no recorte atual — reveja os filtros do painel."}
-                    return {"ok": False, "erro": "Nenhuma ação encontrada com esses critérios."}
-
-                acoes_unicas = df_busca.drop_duplicates(subset=[col_item])
-                if sempre_lista or len(acoes_unicas) > 1:
-                    itens = [
-                        {
-                            "item": normalizar_item(r[col_item]),
-                            "objeto": str(r[col_objeto]),
-                            "descricao": _texto_campo_ficha(r, col_descricao),
-                            "secretaria": str(r.get(col_orgao, "")),
-                        }
-                        for _, r in acoes_unicas.head(LIMITE_LISTA_BUSCA_FICHA).iterrows()
-                    ]
-                    # "total" é quantas ações existem no recorte; "limite",
-                    # quantas cabem na lista. A tela usa os dois para avisar
-                    # que a lista está cortada — sem isso, uma busca vazia
-                    # num recorte grande pareceria devolver só 30 ações.
-                    return {
-                        "ok": True,
-                        "multiplos": True,
-                        "itens": itens,
-                        "total": int(len(acoes_unicas)),
-                        "limite": LIMITE_LISTA_BUSCA_FICHA,
-                    }
-
-                return {"ok": True, "dados": _montar_dados_ficha_acao(df_busca.iloc[0])}
-            except Exception as erro:
-                import traceback
-                traceback.print_exc()
-                return {"ok": False, "erro": str(erro)}
+            return _api_buscar_ficha_acao(municipio, descricao, filtros, sempre_lista)
 
         def buscar_ficha_por_item(self, item):
-            # Usado quando a busca acima encontra mais de uma ação e o
-            # usuário escolhe qual delas abrir.
-            try:
-                item_norm = remover_acentos(normalizar_item(item)).upper()
-                item_serie = df_original[col_item].apply(lambda v: remover_acentos(normalizar_item(v)).upper())
-                linhas = df_original[item_serie == item_norm]
-                if linhas.empty:
-                    return {"ok": False, "erro": "Ação não encontrada."}
-                return {"ok": True, "dados": _montar_dados_ficha_acao(linhas.iloc[0])}
-            except Exception as erro:
-                import traceback
-                traceback.print_exc()
-                return {"ok": False, "erro": str(erro)}
+            return _api_buscar_ficha_por_item(item)
 
         def exportar_ficha_pdf(self, item):
             # Botão "Salvar em PDF" da Ficha Cadastral — gera um PDF de uma
             # página A4 só com essa ação, e pede o local de salvamento pelo
             # diálogo nativo do pywebview (mesmo padrão do relatório
-            # completo).
+            # completo). Exclusivo do modo desktop: o equivalente web é
+            # _api_exportar_ficha_pdf_bytes, que devolve os bytes do PDF em
+            # vez de salvar direto no disco (não há diálogo nativo num
+            # navegador comum).
             try:
-                item_norm = remover_acentos(normalizar_item(item)).upper()
-                item_serie = df_original[col_item].apply(lambda v: remover_acentos(normalizar_item(v)).upper())
-                linhas = df_original[item_serie == item_norm]
-                if linhas.empty:
+                dados = _localizar_acao_por_item(item)
+                if dados is None:
                     return {"ok": False, "erro": "Ação não encontrada."}
-                dados = _montar_dados_ficha_acao(linhas.iloc[0])
 
                 pasta_inicial = (
                     PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
@@ -12649,4 +12899,10 @@ def abrir_interface_filtros(df_base):
         pass
 
 
-abrir_interface_filtros(df_original)
+if __name__ == "__main__":
+    # Só abre a janela desktop quando o arquivo é executado diretamente
+    # (duplo clique no .exe, ou "python CGAPE - BALANÇO PAC.py"). Quando
+    # este arquivo é IMPORTADO — caso do servidor web, em servidor_web.py —
+    # todo o carregamento/ETL da planilha acima ainda roda normalmente
+    # (dados prontos em df_original), mas a janela nativa não abre sozinha.
+    abrir_interface_filtros(df_original)

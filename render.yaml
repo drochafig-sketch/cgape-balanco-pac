@@ -1,0 +1,24 @@
+# Blueprint do Render (https://render.com/docs/blueprint-spec) — conectando
+# este repositório no Render como "Blueprint", ele lê este arquivo sozinho e
+# já propõe o serviço abaixo pronto, sem precisar preencher formulário.
+# Ver DEPLOY_WEB.md para o passo a passo completo.
+services:
+  - name: pac-balanco-painel
+    type: web
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-web.txt
+    startCommand: gunicorn servidor_web:app --workers 2 --timeout 120
+    envVars:
+      # Trava a MESMA versão de Python usada para gerar o relatório
+      # localmente (ver _EXPORTADO/AMBIENTE_PYTHON.txt) — troca de versão
+      # de Python/biblioteca é justamente o que o MIGRACAO.md já aponta
+      # como causa de relatório "visualmente diferente".
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      # Liga os pontos de extensão do arquivo original que só fazem
+      # sentido no servidor (não abrir os.startfile, não mostrar diálogo
+      # tkinter em erro fatal de inicialização). Ver o import defensivo e
+      # a constante MODO_WEB no topo de "CGAPE - BALANÇO PAC.py".
+      - key: PAC_WEB_MODE
+        value: "1"
