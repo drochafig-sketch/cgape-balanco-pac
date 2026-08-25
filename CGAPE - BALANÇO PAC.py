@@ -6,6 +6,8 @@ import json
 import math
 import colorsys
 import itertools
+import shutil
+import subprocess
 import unicodedata
 import webbrowser
 from datetime import datetime, timedelta
@@ -7436,6 +7438,109 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
             os.startfile(arquivo_pdf)
 
 
+# =====================================================
+# PUBLICAÇÃO (botão "Publicar Atualização" do painel) — SOMENTE DESKTOP.
+#
+# Roda comandos git de verdade (add/commit/push) na máquina onde o
+# processo está rodando. Isso só é seguro porque, no modo desktop, quem
+# consegue clicar no botão é literalmente a pessoa sentada na frente
+# dessa máquina — ninguém mais alcança essa função.
+#
+# *** NUNCA registre uma rota HTTP pra nenhuma das duas funções abaixo em
+# servidor_web.py. *** Exposto por HTTP, qualquer visitante do site
+# conseguiria disparar um "git push" no repositório de qualquer lugar do
+# mundo. Por isso elas NÃO seguem o prefixo "_api_" usado pelas funções
+# compartilhadas com o servidor web (ver seção "API DO PAINEL" logo
+# abaixo) — o nome diferente é de propósito, pra ficar óbvio que são de
+# outra categoria.
+# =====================================================
+
+def _git_disponivel_e_repo():
+    # Confere as duas condições básicas antes de tentar qualquer comando
+    # git de verdade: o git precisa estar instalado nesta máquina, e esta
+    # pasta precisa ser um checkout de repositório (o que nem sempre é
+    # verdade — por exemplo, numa máquina que recebeu o app só pelo kit de
+    # migração do MIGRACAO.md, sem clonar o repositório).
+    if shutil.which("git") is None:
+        return False, "git não está instalado (ou não foi encontrado) nesta máquina."
+    if not os.path.isdir(os.path.join(PASTA_BASE, ".git")):
+        return False, "Esta pasta não é um repositório git — não é possível publicar daqui."
+    return True, None
+
+
+def _git_rodar(*args):
+    resultado = subprocess.run(
+        # "-c core.quotepath=false": sem isso, o git escapa qualquer nome de
+        # arquivo com acento como octal literal (ex.: "BALAN\303\207O"), que
+        # é exatamente o tipo de texto que apareceria sem tratamento nenhum
+        # no confirm() do botão "Publicar Atualização" — feio e confuso pra
+        # quem só quer ver "BALANÇO".
+        ["git", "-c", "core.quotepath=false", *args],
+        cwd=PASTA_BASE,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return resultado.returncode, resultado.stdout, resultado.stderr
+
+
+def _git_verificar_mudancas():
+    # Primeira etapa do botão "Publicar Atualização": só olha o que mudou
+    # (planilha, código, o que for) — não mexe em nada ainda. O painel usa
+    # isso pra montar a lista de confirmação antes de perguntar pro usuário
+    # se pode publicar.
+    ok, erro = _git_disponivel_e_repo()
+    if not ok:
+        return {"ok": False, "erro": erro}
+    codigo, saida, erro_saida = _git_rodar("status", "--porcelain")
+    if codigo != 0:
+        return {"ok": False, "erro": erro_saida.strip() or "Falha ao checar o status do git."}
+    mudancas = [linha for linha in saida.splitlines() if linha.strip()]
+    return {"ok": True, "mudancas": mudancas}
+
+
+def _git_publicar_atualizacao(mensagem):
+    # Segunda etapa, só chamada depois que o usuário já viu a lista de
+    # _git_verificar_mudancas e confirmou: git add -A + commit + push,
+    # exatamente o mesmo fluxo do 4_ATUALIZAR_BASE_E_PUBLICAR.bat, só que
+    # disparado por um botão dentro do próprio painel em vez de um .bat à
+    # parte.
+    ok, erro = _git_disponivel_e_repo()
+    if not ok:
+        return {"ok": False, "erro": erro}
+
+    mensagem = str(mensagem or "").strip() or "Atualiza planilha/código"
+
+    codigo, _, erro_saida = _git_rodar("add", "-A")
+    if codigo != 0:
+        return {"ok": False, "erro": erro_saida.strip() or "Falha ao preparar as mudanças (git add)."}
+
+    codigo, saida_commit, erro_commit = _git_rodar("commit", "-m", mensagem)
+    if codigo != 0:
+        # "nothing to commit" não é um erro de verdade pro usuário — só
+        # significa que não havia nada pra publicar (pode acontecer se
+        # alguém clicar de novo logo depois de já ter publicado).
+        texto_combinado = (saida_commit or "") + (erro_commit or "")
+        if "nothing to commit" in texto_combinado.lower():
+            return {"ok": True, "nada_a_publicar": True}
+        return {"ok": False, "erro": (erro_commit or saida_commit).strip() or "Falha ao criar o commit."}
+
+    codigo, _, erro_push = _git_rodar("push", "origin", "master")
+    if codigo != 0:
+        return {
+            "ok": False,
+            "erro": (
+                "O commit foi criado localmente, mas o envio pro GitHub falhou "
+                "(confira sua internet, ou se alguém mais publicou antes de "
+                "você — nesse caso, um \"git pull\" resolve):\n\n"
+                + (erro_push.strip() or "erro desconhecido")
+            ),
+        }
+
+    return {"ok": True}
+
+
 def montar_html_painel(df_base):
     # Monta a string HTML/CSS/JS completa do painel de filtros — só isso,
     # sem abrir janela nenhuma. Usada tanto pelo modo desktop
@@ -8659,6 +8764,26 @@ def montar_html_painel(df_base):
     background: var(--cor-acento-teal);
     color: #1A1A1A;
   }
+  /* Mesmo estilo do botão de compartilhar acima — só existe no modo
+     desktop (ver window.PAC_MODO_WEB no JS), por isso já nasce escondido
+     via inline style="display:none" no HTML e só some de vez quando o
+     JS confirma o modo desktop. */
+  #preview-publicar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: var(--cor-card-elevado);
+    color: var(--cor-texto-primario);
+    border-radius: var(--raio-sm);
+    transition: background var(--transicao-rapida), color var(--transicao-rapida);
+  }
+  #preview-publicar:hover {
+    background: var(--cor-acento-teal);
+    color: #1A1A1A;
+  }
 
   /* --- Linha de filtro rápido por Secretaria/Órgão + Executor, no
      cabeçalho do dashboard. O separador verde e as pills de Executor só
@@ -9574,6 +9699,16 @@ def montar_html_painel(df_base):
             <circle cx="18" cy="19" r="3"></circle>
             <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"></line>
             <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line>
+          </svg>
+        </button>
+        <!-- Só existe no modo desktop (roda git de verdade na máquina de
+             quem clica) — nasce escondida e o JS decide se mostra, ver
+             window.PAC_MODO_WEB logo no início do <script> principal. -->
+        <button id="preview-publicar" style="display:none" title="Publicar planilha/código atualizados no site (GitHub + Render)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16V4"></path>
+            <path d="M6 10l6-6 6 6"></path>
+            <path d="M4 20h16"></path>
           </svg>
         </button>
       </div>
@@ -11612,6 +11747,70 @@ def montar_html_painel(df_base):
     }
   };
 
+  // Botão "Publicar Atualização" — só existe no modo desktop (roda git de
+  // verdade na máquina de quem clica; não tem equivalente no site, por
+  // segurança, ver os comentários em _git_publicar_atualizacao no lado
+  // Python). Fica escondido e sem ação nenhuma quando o painel está rodando
+  // no servidor web.
+  var btnPublicar = document.getElementById("preview-publicar");
+  if (!window.PAC_MODO_WEB) {
+    btnPublicar.style.display = "";
+    btnPublicar.onclick = async function () {
+      btnPublicar.disabled = true;
+
+      var verificacao;
+      try {
+        verificacao = await window.pywebview.api.verificar_mudancas_git();
+      } catch (erro) {
+        alert("Não foi possível verificar o que mudou:" + NL + NL + erro);
+        btnPublicar.disabled = false;
+        return;
+      }
+      if (!verificacao || verificacao.ok === false) {
+        alert(verificacao ? verificacao.erro : "Erro desconhecido ao verificar o que mudou.");
+        btnPublicar.disabled = false;
+        return;
+      }
+      if (!verificacao.mudancas || verificacao.mudancas.length === 0) {
+        alert("Nada para publicar — a base local já está igual ao site.");
+        btnPublicar.disabled = false;
+        return;
+      }
+
+      var confirmar = window.confirm(
+        "Isto vai publicar as mudanças abaixo no repositório PÚBLICO do GitHub, " +
+        "atualizando o link do painel web em alguns minutos:" + NL + NL +
+        verificacao.mudancas.join(NL) + NL + NL + "Confirma?"
+      );
+      if (!confirmar) {
+        btnPublicar.disabled = false;
+        return;
+      }
+
+      var mensagem = window.prompt("Descreva rapidamente o que mudou (opcional):", "") || "";
+
+      var resultadoPublicacao;
+      try {
+        resultadoPublicacao = await window.pywebview.api.publicar_atualizacao_git(mensagem);
+      } catch (erro) {
+        alert("Ocorreu um erro ao publicar:" + NL + NL + erro);
+        btnPublicar.disabled = false;
+        return;
+      }
+      btnPublicar.disabled = false;
+
+      if (resultadoPublicacao && resultadoPublicacao.ok) {
+        if (resultadoPublicacao.nada_a_publicar) {
+          alert("Nada para publicar — a base local já está igual ao site.");
+        } else {
+          alert("Publicado com sucesso! O link do painel web vai se atualizar sozinho em alguns minutos.");
+        }
+      } else {
+        alert("Não foi possível publicar:" + NL + NL + (resultadoPublicacao ? resultadoPublicacao.erro : "erro desconhecido"));
+      }
+    };
+  }
+
   var btnPreview = document.getElementById("btn-preview");
 
   // Busca os dados atualizados e (re)desenha o dashboard — chamada tanto no
@@ -12892,6 +13091,12 @@ def abrir_interface_filtros(df_base):
         def fechar_por_inatividade(self):
             if janela is not None:
                 janela.destroy()
+
+        def verificar_mudancas_git(self):
+            return _git_verificar_mudancas()
+
+        def publicar_atualizacao_git(self, mensagem):
+            return _git_publicar_atualizacao(mensagem)
 
     # Escreve o HTML num arquivo temporário e abre via caminho de arquivo
     # (url=) em vez de passar a string inteira direto (html=). Passar uma

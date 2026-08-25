@@ -42,7 +42,7 @@ if not exist "%PASTA%.git" (
 
 echo Verificando o que mudou desde a ultima publicacao...
 echo.
-git status --short
+git -c core.quotepath=false status --short
 echo.
 
 for /f %%C in ('git status --porcelain ^| find /c /v ""') do set QTD_MUDANCAS=%%C
