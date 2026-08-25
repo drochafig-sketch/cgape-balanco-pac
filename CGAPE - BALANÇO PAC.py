@@ -1622,19 +1622,32 @@ def gerar_pdf_ficha_acao(dados, caminho):
     )
     doc.build(elementos, onFirstPage=desenhar_marca_ficha, onLaterPages=desenhar_marca_ficha)
 
-def calcular_trimestre(data):
+def calcular_trimestre(data, hoje=None):
     if pd.isna(data) or not isinstance(data, (pd.Timestamp, datetime)):
         return "A definir"
-    trimestre = (data.month - 1) // 3 + 1
-    ano_curto = data.strftime("%y")
-    return f"{trimestre}ºTri/{ano_curto}"
+    if hoje is None:
+        hoje = datetime.now()
+    # Trimestre a trimestre só no ano vigente e no seguinte — são os que
+    # importam pra fiscalização de perto. Datas mais distantes (passadas ou
+    # futuras) ficam agrupadas por ano inteiro, senão o eixo do gráfico
+    # acumula dezenas de barras minúsculas sem informação útil.
+    if data.year in (hoje.year, hoje.year + 1):
+        trimestre = (data.month - 1) // 3 + 1
+        ano_curto = data.strftime("%y")
+        return f"{trimestre}ºTri/{ano_curto}"
+    return str(data.year)
 
 def ordenar_trimestre(rotulo):
     if rotulo == "A definir":
         return (9999, 9)
-    m = re.match(r"(\d)ºTri/(\d+)", str(rotulo))
+    texto = str(rotulo)
+    m = re.match(r"(\d)ºTri/(\d+)", texto)
     if m:
-        return (int(m.group(2)), int(m.group(1)))
+        # +2000 no ano curto do trimestre pra ordenar corretamente junto dos
+        # rótulos de ano cheio (4 dígitos) dos anos agrupados.
+        return (2000 + int(m.group(2)), int(m.group(1)))
+    if texto.isdigit():
+        return (int(texto), 0)
     return (9999, 9)
 
 # =====================================================
