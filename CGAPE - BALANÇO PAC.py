@@ -8,9 +8,10 @@ import colorsys
 import itertools
 import unicodedata
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
+import openpyxl
 
 # tkinter e pywebview só existem/fazem sentido no modo desktop (janela nativa
 # + diálogos de erro). No servidor web (Linux, sem Tcl/Tk nem backend de
@@ -99,7 +100,36 @@ def _erro_fatal_inicializacao(mensagem):
 
 arquivo_excel = caminho_recurso("PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026.xlsx")
 
-ultima_atualizacao = datetime.fromtimestamp(os.path.getmtime(arquivo_excel))
+# A data/hora de "atualizado em" vem das PROPRIEDADES internas do próprio
+# arquivo .xlsx (o campo "Modificado em" que o Excel grava sozinho ao
+# salvar) — não da data de modificação do arquivo no sistema operacional
+# (os.path.getmtime). Essa segunda opção muda sozinha sempre que o arquivo
+# é só COPIADO pra outro lugar, sem ninguém ter mexido nos dados: é
+# exatamente o que acontece a cada deploy do servidor web (o Git faz um
+# checkout novo do repositório a cada publicação, e todo arquivo "nasce" com
+# a data/hora desse checkout, não a da última edição real) e também numa
+# migração de máquina (ver MIGRACAO.md). A metadata interna do Excel viaja
+# junto com o CONTEÚDO do arquivo e não muda em nenhuma dessas duas
+# situações — por isso é a fonte confiável aqui, nos dois modos (desktop e
+# web).
+try:
+    _propriedades_excel = openpyxl.load_workbook(arquivo_excel, read_only=True).properties
+    _modificado_utc = _propriedades_excel.modified or _propriedades_excel.created
+    if _modificado_utc is None:
+        raise ValueError("planilha sem data de modificação nas propriedades internas")
+    # O Excel grava esse campo sempre em UTC (sufixo "Z" no XML interno da
+    # planilha, docProps/core.xml) — o openpyxl devolve um datetime "naive"
+    # (sem fuso), mas o valor em si É UTC. Sem esse ajuste de -3h, o horário
+    # mostrado sairia adiantado (Bahia/Brasília é UTC-3 o ano todo desde o
+    # fim do horário de verão no Brasil em 2019, então um deslocamento fixo
+    # já resolve, sem depender de biblioteca de fuso horário).
+    ultima_atualizacao = _modificado_utc - timedelta(hours=3)
+except Exception:
+    # Reserva: se por algum motivo a planilha não tiver essa metadata (ou o
+    # arquivo nem existir ainda — esse erro específico só vai aparecer de
+    # verdade mais abaixo, onde já existe tratamento amigável pra isso),
+    # cai de volta pro comportamento antigo.
+    ultima_atualizacao = datetime.fromtimestamp(os.path.getmtime(arquivo_excel))
 ultima_atualizacao_txt = ultima_atualizacao.strftime(
     "Fonte: CASA CIVIL / CGAPE - Planilha Panorama - Atualizado em: %d/%m/%Y às %Hhs%Mmin"
 )
