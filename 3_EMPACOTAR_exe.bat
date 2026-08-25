@@ -56,6 +56,16 @@ call "%VENV%\python.exe" -m pip install --upgrade pyinstaller
 
 echo.
 echo Empacotando...
+REM --collect-submodules reportlab.graphics.barcode: o reportlab importa o
+REM modulo de cada tipo de codigo de barras (code128 etc.) de forma
+REM DINAMICA em tempo de execucao, entao o PyInstaller nao enxerga essa
+REM dependencia sozinho na analise estatica — sem essa linha, o .exe abre
+REM e fecha na hora com "ModuleNotFoundError: No module named
+REM 'reportlab.graphics.barcode.code128'" assim que tenta desenhar o QR
+REM Code da Ficha Cadastral.
+REM --collect-all clr_loader / pythonnet: dependencias do backend
+REM WebView2 do pywebview (--hidden-import clr, logo abaixo, precisa
+REM dessas duas pra funcionar de verdade, nao so pra importar sem erro).
 call "%VENV%\python.exe" -m PyInstaller ^
     --onefile ^
     --noconsole ^
@@ -63,6 +73,9 @@ call "%VENV%\python.exe" -m PyInstaller ^
     --noconfirm ^
     --name "CGAPE - BALANCO PAC" ^
     --collect-all webview ^
+    --collect-all clr_loader ^
+    --collect-all pythonnet ^
+    --collect-submodules reportlab.graphics.barcode ^
     --hidden-import "clr" ^
     --distpath "%PASTA%dist" ^
     --workpath "%PASTA%build" ^

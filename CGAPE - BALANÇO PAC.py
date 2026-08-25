@@ -15,6 +15,40 @@ import numpy as np
 import pandas as pd
 import openpyxl
 
+# Garante que print() nunca derrube o programa por causa de um caractere
+# fora da tabela de código do console (acentos, "→" etc.). Testado e
+# confirmado com um .exe de diagnóstico: no modo --noconsole do
+# PyInstaller, sys.stdout começa como None (nesse caso o print() do próprio
+# Python já vira um no-op sozinho, sem erro) — só que alguma importação
+# mais abaixo (o suspeito é a cadeia pywebview/pythonnet, usada pro
+# WebView2) REATRIBUI sys.stdout pra um stream real com codificação cp1252
+# no meio do caminho, e QUALQUER print() com acento depois disso derruba o
+# programa inteiro antes mesmo da janela abrir. Um reconfigure() feito uma
+# vez só aqui em cima não sobrevive a essa troca; por isso a proteção é no
+# print() em si, que lê sys.stdout de novo a cada chamada.
+_print_original = print
+
+
+def _print_seguro(*args, **kwargs):
+    try:
+        _print_original(*args, **kwargs)
+    except UnicodeEncodeError:
+        destino = kwargs.get("file") or sys.stdout
+        if destino is None:
+            return
+        texto = kwargs.get("sep", " ").join(str(a) for a in args) + kwargs.get("end", "\n")
+        try:
+            destino.buffer.write(
+                texto.encode(getattr(destino, "encoding", None) or "utf-8", errors="replace")
+            )
+        except Exception:
+            pass
+    except AttributeError:
+        pass  # sys.stdout é None (modo --noconsole sem stream nenhum) — descarta
+
+
+print = _print_seguro
+
 # tkinter e pywebview só existem/fazem sentido no modo desktop (janela nativa
 # + diálogos de erro). No servidor web (Linux, sem Tcl/Tk nem backend de
 # WebView instalado) essas duas libs não estão disponíveis — e não fazem
