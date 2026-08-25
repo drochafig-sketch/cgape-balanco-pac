@@ -17,12 +17,28 @@ REM Por isso nao ha --add-data aqui.
 REM ---------------------------------------------------------------
 
 set "PASTA=%~dp0"
-set "VENV=%PASTA%.venv\Scripts"
 set "SCRIPT=%PASTA%CGAPE - BALANÇO PAC.py"
+
+REM O ambiente virtual pode estar em dois formatos, dependendo de como esta
+REM pasta foi criada:
+REM   - maquina migrada via MIGRACAO.md (2_INSTALAR_maquina_nova.bat): o
+REM     .venv fica numa SUBPASTA ".venv" dentro do projeto.
+REM   - maquina onde o proprio "python -m venv" foi rodado apontando pra
+REM     esta pasta: ELA MESMA e o ambiente virtual (tem um pyvenv.cfg na
+REM     raiz, Scripts\ direto aqui, sem subpasta ".venv").
+REM Confere os dois, nessa ordem.
+set "VENV=%PASTA%.venv\Scripts"
+if not exist "%VENV%\python.exe" (
+    if exist "%PASTA%Scripts\python.exe" set "VENV=%PASTA%Scripts"
+)
 
 if not exist "%VENV%\python.exe" (
     color 0C
-    echo   ERRO: .venv nao encontrado. Rode 2_INSTALAR_maquina_nova.bat antes.
+    echo   ERRO: nao encontrei o Python do ambiente virtual. Procurei em:
+    echo     %PASTA%.venv\Scripts\python.exe
+    echo     %PASTA%Scripts\python.exe
+    echo   Rode 2_INSTALAR_maquina_nova.bat antes, ou confira se esta pasta
+    echo   e mesmo um ambiente virtual (deve ter um arquivo pyvenv.cfg).
     pause
     exit /b 1
 )
