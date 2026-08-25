@@ -9276,6 +9276,18 @@ def montar_html_painel(df_base):
     color: var(--cor-texto-primario);
     text-transform: uppercase;
     letter-spacing: 0.03em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  /* Seta de abrir/fechar seção no celular — some no desktop (seção sempre
+     aberta ali). Ver .preview-secao no @media (max-width: 768px). */
+  .secao-seta {
+    display: none;
+  }
+  .preview-nav-rapida {
+    display: none;
   }
   .preview-texto-explicativo {
     font-size: 12px;
@@ -9638,8 +9650,61 @@ def montar_html_painel(df_base):
       grid-template-columns: 1fr;
     }
 
+    /* 2 por linha (Panorama por Secretaria E Índice de Desempenho, que
+       reaproveitam esta mesma classe de grade) — mais compacto que 1 por
+       linha, aceitando ficar um pouco mais apertado. */
     .preview-secretaria-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* --- Seções recolhíveis (Panorama por Secretaria, Índice de
+       Desempenho, Detalhamento Financeiro, Mapa) — mesmo padrão de
+       acordeão dos filtros, ver configurarAccordionSecoes() no JS. Todas
+       começam fechadas: é o que reduz a rolagem gigante que só empilhar
+       tudo em 1 coluna criava. --- */
+    .preview-secao-titulo {
+      cursor: pointer;
+    }
+    .secao-seta {
+      display: inline-block;
+      font-size: 12px;
+      color: var(--cor-texto-terciario);
+      transition: transform var(--transicao-rapida);
+    }
+    .preview-secao.secao-colapsada .secao-seta {
+      transform: rotate(-90deg);
+    }
+    .preview-secao.secao-colapsada .preview-secao-corpo {
+      display: none;
+    }
+
+    /* --- Nav rápida entre seções, fixa no topo da área que rola --- */
+    .preview-nav-rapida {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 2px 12px 2px;
+      margin-bottom: 4px;
+      position: sticky;
+      top: 0;
+      background: var(--cor-fundo);
+      z-index: 3;
+    }
+    .preview-nav-rapida button {
+      flex: 0 0 auto;
+      background: var(--cor-card-elevado);
+      color: var(--cor-texto-primario);
+      border: none;
+      border-radius: var(--raio-md);
+      padding: 6px 14px;
+      font-size: 11.5px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .preview-nav-rapida button:active {
+      background: var(--cor-acento-teal);
+      color: #16211F;
     }
 
     #preview-grafico-prazo {
@@ -9858,6 +9923,16 @@ def montar_html_painel(df_base):
       </button>
     </div>
     <div id="preview-corpo">
+      <!-- Só aparece no celular (ver @media max-width:768px) — pula direto
+           pras seções de baixo sem precisar rolar a tela toda. Também
+           reabre a seção-alvo se ela estiver fechada no acordeão (ver
+           configurarAccordionSecoes() no JS). -->
+      <div class="preview-nav-rapida" id="preview-nav-rapida">
+        <button type="button" data-alvo="secao-secretaria">Secretaria</button>
+        <button type="button" data-alvo="secao-desempenho">Desempenho</button>
+        <button type="button" data-alvo="secao-financeiro">Financeiro</button>
+        <button type="button" data-alvo="secao-mapa">Mapa</button>
+      </div>
       <div id="preview-nota-secretaria"></div>
       <div id="preview-cards"></div>
       <div class="preview-grid">
@@ -9879,29 +9954,45 @@ def montar_html_painel(df_base):
         </div>
       </div>
 
-      <h3 class="preview-secao-titulo">Panorama por Secretaria | Executor</h3>
-      <div class="preview-legenda-fases">
-        <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="vermelho"></span>Captação de Recurso</span>
-        <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="amarelo"></span>Licitação</span>
-        <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="verde"></span>Execução do Objeto</span>
-        <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="azul"></span>Concluída</span>
-      </div>
-      <div id="preview-secretaria-container"></div>
+      <section class="preview-secao" id="secao-secretaria">
+        <h3 class="preview-secao-titulo">Panorama por Secretaria | Executor<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <div class="preview-secao-corpo">
+          <div class="preview-legenda-fases">
+            <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="vermelho"></span>Captação de Recurso</span>
+            <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="amarelo"></span>Licitação</span>
+            <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="verde"></span>Execução do Objeto</span>
+            <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="azul"></span>Concluída</span>
+          </div>
+          <div id="preview-secretaria-container"></div>
+        </div>
+      </section>
 
-      <h3 class="preview-secao-titulo">Índice de Desempenho por Secretaria</h3>
-      <div class="preview-texto-explicativo">
-        O índice combina Status, Fase, Cláusula Suspensiva, o tempo entre aviso de licitação, O.S. e
-        conclusão prevista, a quantidade de ações administradas e a proporção de Valor Contratado sobre o
-        investimento total da própria gestão — ponderado pelo investimento de cada ação. Avaliação por
-        SECRETARIA | EXECUTOR, separada por gestão, ordenada da melhor pra pior.
-      </div>
-      <div id="preview-desempenho-container"></div>
+      <section class="preview-secao" id="secao-desempenho">
+        <h3 class="preview-secao-titulo">Índice de Desempenho por Secretaria<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <div class="preview-secao-corpo">
+          <div class="preview-texto-explicativo">
+            O índice combina Status, Fase, Cláusula Suspensiva, o tempo entre aviso de licitação, O.S. e
+            conclusão prevista, a quantidade de ações administradas e a proporção de Valor Contratado sobre o
+            investimento total da própria gestão — ponderado pelo investimento de cada ação. Avaliação por
+            SECRETARIA | EXECUTOR, separada por gestão, ordenada da melhor pra pior.
+          </div>
+          <div id="preview-desempenho-container"></div>
+        </div>
+      </section>
 
-      <h3 class="preview-secao-titulo">Detalhamento Financeiro por Secretaria</h3>
-      <div id="preview-detalhamento-secretaria"></div>
+      <section class="preview-secao" id="secao-financeiro">
+        <h3 class="preview-secao-titulo">Detalhamento Financeiro por Secretaria<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <div class="preview-secao-corpo">
+          <div id="preview-detalhamento-secretaria"></div>
+        </div>
+      </section>
 
-      <h3 class="preview-secao-titulo">Mapa de Investimentos por Município</h3>
-      <div id="preview-mapa"></div>
+      <section class="preview-secao" id="secao-mapa">
+        <h3 class="preview-secao-titulo">Mapa de Investimentos por Município<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <div class="preview-secao-corpo">
+          <div id="preview-mapa"></div>
+        </div>
+      </section>
     </div>
   </div>
 </div>
@@ -10588,6 +10679,38 @@ def montar_html_painel(df_base):
         blocoEl.classList.add("bloco-colapsado");
       });
     }
+  }
+
+  // Mesmo padrão de acordeão acima, agora pras seções do Dashboard
+  // (Panorama por Secretaria, Índice de Desempenho, Detalhamento
+  // Financeiro, Mapa — ver ".preview-secao" no @media max-width:768px).
+  // Diferente dos blocos de filtro (montados em JS a partir de DADOS),
+  // essas seções já existem prontas no HTML da página — então isto roda
+  // uma única vez, sem depender de nenhum carregamento de dados, e cobre
+  // também os botões da nav rápida (#preview-nav-rapida): clicar neles
+  // reabre a seção-alvo (se estiver fechada) antes de rolar até ela, pra
+  // nunca "pular" pra um título com o corpo escondido.
+  function configurarAccordionSecoes() {
+    document.querySelectorAll(".preview-secao").forEach(function (secao) {
+      var titulo = secao.querySelector(".preview-secao-titulo");
+      if (!titulo) return;
+      titulo.addEventListener("click", function () {
+        if (!window.matchMedia("(max-width: 768px)").matches) return;
+        secao.classList.toggle("secao-colapsada");
+      });
+      if (window.matchMedia("(max-width: 768px)").matches) {
+        secao.classList.add("secao-colapsada");
+      }
+    });
+
+    document.querySelectorAll(".preview-nav-rapida button").forEach(function (botao) {
+      botao.addEventListener("click", function () {
+        var alvo = document.getElementById(botao.dataset.alvo);
+        if (!alvo) return;
+        alvo.classList.remove("secao-colapsada");
+        alvo.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
   }
 
   function renderizarBloco(chave) {
@@ -12840,6 +12963,8 @@ def montar_html_painel(df_base):
     document.addEventListener(evento, reiniciarTemporizadorInatividade);
   });
   reiniciarTemporizadorInatividade();
+
+  configurarAccordionSecoes();
 
   // O dashboard agora é a tela inicial — carrega os dados assim que a
   // página abre, sem esperar nenhum clique. No modo desktop, o pywebview
