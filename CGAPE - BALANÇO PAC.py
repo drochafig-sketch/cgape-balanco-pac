@@ -7756,6 +7756,14 @@ def montar_html_painel(df_base):
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<!-- Sem isto, celular nenhum respeita a largura real da tela: o navegador
+     mobile assume um "viewport" de desktop (~980px) e encolhe a página
+     inteira pra caber, daí o efeito de "tudo minúsculo, precisa dar zoom".
+     Com isto, 1px de CSS passa a valer 1px de tela — e é isso que faz as
+     regras @media (max-width: 768px) logo abaixo (blocos de filtro em
+     acordeão, grade Secretaria em 1 coluna, gráfico de prazo com rolagem)
+     realmente entrarem em vigor no celular, em vez de nunca disparar. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CGAPE - BALANÇO PAC</title>
 <style>
   :root {
@@ -7983,6 +7991,13 @@ def montar_html_painel(df_base):
   }
   .bloco-titulo .arvore-data-secao {
     flex-shrink: 0;
+  }
+  /* Seta de expandir/recolher do acordeão de filtros no celular — ver
+     configurarAccordionFiltros() no JS e o @media (max-width: 768px) no
+     fim desta folha de estilos. Some no desktop (grade normal, sem
+     acordeão); só aparece dentro daquele media query. */
+  .bloco-seta {
+    display: none;
   }
 
   .bloco-botoes {
@@ -9562,6 +9577,84 @@ def montar_html_painel(df_base):
     border-radius: var(--raio-sm);
     flex-shrink: 0;
   }
+
+  /* =====================================================
+     CUSTOMIZAÇÃO PARA CELULAR (retrato) — só entra em vigor com a
+     <meta name="viewport"> lá no <head> (sem ela o navegador mobile nunca
+     reporta uma largura estreita o bastante pra disparar este bloco).
+     Três ajustes, cada um resolvendo um aperto real da tela pequena:
+       1) Painel de filtros vira um acordeão de 1 coluna (em vez da grade
+          fixa de 5 colunas, ilegível num celular) — ver
+          configurarAccordionFiltros() no JS.
+       2) Grade "Panorama por Secretaria" passa de 4 cards por linha (bem
+          espremidos) para 1 por linha.
+       3) Gráfico "Previsão de Conclusão da Fase" ganha rolagem horizontal
+          com largura mínima por coluna, em vez de espremer ~28 trimestres
+          na largura da tela.
+     O card "Resumo Financeiro"/"Panorama Geral"/"Situação do Termo" (grade
+     2x2 de gráficos) também passa a 1 coluna aqui: é consequência direta
+     da <meta viewport> acima — sem isso, aquele 2x2 quebraria de verdade
+     (pizza de 165px não cabe em meia tela de celular), em vez de só
+     encolher proporcionalmente como fazia antes (sem viewport, tudo era
+     desenhado numa largura de desktop e depois minimizado por igual). */
+  @media (max-width: 768px) {
+    #grade {
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .bloco {
+      flex: 0 0 auto;
+    }
+    .bloco-par-vertical .bloco {
+      flex: 0 0 auto;
+    }
+    .bloco-titulo {
+      cursor: pointer;
+      justify-content: flex-start;
+    }
+    .bloco-seta {
+      display: inline-block;
+      margin-left: auto;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--cor-texto-terciario);
+      transition: transform var(--transicao-rapida);
+    }
+    .bloco-colapsado .bloco-seta {
+      transform: rotate(-90deg);
+    }
+    .bloco-colapsado .bloco-botoes,
+    .bloco-colapsado .bloco-busca,
+    .bloco-colapsado .bloco-lista {
+      display: none;
+    }
+    .bloco-lista {
+      max-height: 46vh;
+      overflow-y: auto;
+    }
+
+    .preview-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .preview-secretaria-grid {
+      grid-template-columns: 1fr;
+    }
+
+    #preview-grafico-prazo {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #preview-grafico-prazo .grafico-barras {
+      width: max-content;
+      min-width: 100%;
+    }
+    #preview-grafico-prazo .grafico-barra-coluna {
+      flex: 0 0 34px;
+      width: 34px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -10461,6 +10554,42 @@ def montar_html_painel(df_base):
     return el;
   }
 
+  // Transforma a grade de filtros num acordeão no celular (ver
+  // @media (max-width: 768px) no <style>): cada ".bloco-titulo" ganha uma
+  // seta e ao ser clicado alterna ".bloco-colapsado" no ".bloco" pai, que é
+  // quem esconde os botões/busca/lista via CSS. Roda uma única vez, depois
+  // que TODOS os blocos (inclusive COLUNAS_DETALHAMENTO e o par CLÁUSULA
+  // SUSPENSIVA/TERMO DE COMPROMISSO) já estão na grade — assim a seta
+  // sempre entra como o último filho de cada título, mesmo nos blocos
+  // FASE/STATUS, que só ganham o ícone de calendário (arvore-data-secao)
+  // dentro do título depois que criarBloco() já terminou.
+  //
+  // No desktop isso não faz diferença nenhuma: a seta fica sempre
+  // escondida (.bloco-seta { display:none }) fora daquele media query, e
+  // o clique no título só chega a colapsar algo se a tela realmente
+  // estiver estreita (matchMedia checado a cada clique, não só uma vez).
+  function configurarAccordionFiltros() {
+    grade.querySelectorAll(".bloco-titulo").forEach(function (titulo) {
+      var seta = document.createElement("span");
+      seta.className = "bloco-seta";
+      seta.textContent = "▾";
+      seta.setAttribute("aria-hidden", "true");
+      titulo.appendChild(seta);
+      titulo.addEventListener("click", function () {
+        if (!window.matchMedia("(max-width: 768px)").matches) return;
+        titulo.parentElement.classList.toggle("bloco-colapsado");
+      });
+    });
+    // Começa tudo recolhido no celular — só os títulos aparecem, o que é
+    // o ganho de espaço que o modo acordeão existe pra dar. No desktop
+    // (grade normal) essa classe fica sem efeito nenhum.
+    if (window.matchMedia("(max-width: 768px)").matches) {
+      grade.querySelectorAll(".bloco").forEach(function (blocoEl) {
+        blocoEl.classList.add("bloco-colapsado");
+      });
+    }
+  }
+
   function renderizarBloco(chave) {
     const bloco = DADOS.blocos.find(b => b.chave === chave);
     const lista = document.getElementById("lista-" + chave);
@@ -10607,6 +10736,7 @@ def montar_html_painel(df_base):
     atualizarDisponibilidade();
     montarFiltroGestaoDash();
     montarFiltroSecretariaDash();
+    configurarAccordionFiltros();
   }
 
   // Linha de filtro rápido por Secretaria/Órgão, no cabeçalho do

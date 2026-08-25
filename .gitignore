@@ -15,5 +15,11 @@ __pycache__/
 Thumbs.db
 desktop.ini
 
+# Logs da sincronizacao automatica (SINCRONIZAR_BACKUPS.bat + Tarefa
+# Agendada "Sync Panorama Backups") - mudam a cada 15 min, nao sao
+# conteudo do projeto.
+_sync_onedrive.log
+_sync_coam.log
+
 # Executável gerado (55MB, regenerável — remova esta linha se quiser versioná-lo)
 *.exe
