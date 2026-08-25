@@ -12417,8 +12417,10 @@ def montar_html_painel(df_base):
       }
       if (!lista || lista.ok === false || !lista.secoes || !lista.secoes.length) {
         // Sem lista utilizável, segue com o relatório completo em vez de
-        // travar a geração por causa da janela de seleção.
-        resolve(null);
+        // travar a geração por causa da janela de seleção. Resolve com []
+        // (não null) porque null é reservado para "usuário cancelou" — o
+        // backend trata None/[] do mesmo jeito (relatório completo).
+        resolve([]);
         return;
       }
 
@@ -12901,7 +12903,10 @@ def montar_html_painel(df_base):
     // Janela de seleção de páginas — entre a checagem de qualidade e o
     // diálogo de salvar. Sai daqui com a lista de seções escolhidas.
     var secoesEscolhidas = await mostrarJanelaPaginas(filtros);
-    if (secoesEscolhidas === null) return;
+    if (secoesEscolhidas === null) {
+      destravarBotaoGerar();
+      return;
+    }
 
     travarBotaoGerar("Gerando...");
     var resultado;
