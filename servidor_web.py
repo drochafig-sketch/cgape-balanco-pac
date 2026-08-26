@@ -114,6 +114,9 @@ app.add_url_rule(
     "/api/pre_visualizar", view_func=_rota_json(pac._api_pre_visualizar), methods=["POST"]
 )
 app.add_url_rule(
+    "/api/mapa_mental", view_func=_rota_json(pac._api_mapa_mental), methods=["POST"]
+)
+app.add_url_rule(
     "/api/iniciar_geracao", view_func=_rota_json(pac._api_iniciar_geracao), methods=["POST"]
 )
 app.add_url_rule(
