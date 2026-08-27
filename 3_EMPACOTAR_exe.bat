@@ -90,10 +90,35 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM ---------------------------------------------------------------
+REM Copia o .exe recem-gerado de dist\ para a RAIZ do projeto,
+REM sobrescrevendo o antigo. E dessa raiz que:
+REM   - o .exe roda direto (planilha, PNGs, fontes e geojson ja
+REM     estao aqui do lado), e
+REM   - a Tarefa Agendada "Sync Panorama Backups" (a cada 15 min,
+REM     via SINCRONIZAR_BACKUPS.bat) espelha pro OneDrive e pra
+REM     rede COAM. O dist\ NAO e sincronizado.
+REM ---------------------------------------------------------------
+echo.
+echo Copiando o .exe novo para a raiz do projeto...
+copy /Y "%PASTA%dist\CGAPE - BALANCO PAC.exe" "%PASTA%CGAPE - BALANCO PAC.exe" >nul
+if errorlevel 1 (
+    color 0C
+    echo.
+    echo   AVISO: o .exe foi gerado em dist\ mas nao consegui copiar
+    echo   para a raiz do projeto ^(%PASTA%^).
+    echo   Copie na mao: dist\CGAPE - BALANCO PAC.exe  ->  raiz do projeto.
+    pause
+    exit /b 1
+)
+
 echo.
 color 0E
 echo ==========================================================
 echo   .exe gerado em: %PASTA%dist
+echo   e copiado para: %PASTA%CGAPE - BALANCO PAC.exe
+echo   ^(a sincronizacao automatica leva essa copia da raiz pro
+echo    OneDrive e pra rede COAM em ate 15 min^)
 echo.
 echo   COPIE PARA A MESMA PASTA DO .exe:
 echo     PANORAMA - PAC ORIGINAL - PAC SELECOES - 2026.xlsx
