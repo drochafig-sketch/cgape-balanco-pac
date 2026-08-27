@@ -1,0 +1,9 @@
+﻿Requirement already satisfied: pyinstaller in x:\coapi\notas técnicas coapi\2024-2026\panorama\2026\superados\venv\lib\site-packages (6.22.2)
+Requirement already satisfied: altgraph in x:\coapi\notas técnicas coapi\2024-2026\panorama\2026\superados\venv\lib\site-packages (from pyinstaller) (0.17.5)
+Requirement already satisfied: packaging>=22.0 in x:\coapi\notas técnicas coapi\2024-2026\panorama\2026\superados\venv\lib\site-packages (from pyinstaller) (26.2)
+Requirement already satisfied: pefile>=2022.5.30 in x:\coapi\notas técnicas coapi\2024-2026\panorama\2026\superados\venv\lib\site-packages (from pyinstaller) (2024.8.26)
+Requirement already satisfied: pyinstaller-hooks-contrib>=2026.6 in x:\coapi\notas técnicas coapi\2024-2026\panorama\2026\superados\venv\lib\site-packages (from pyinstaller) (2026.6)
+Requirement already satisfied: pywin32-ctypes>=0.2.1 in x:\coapi\notas técnicas coapi\2024-2026\panorama\2026\superados\venv\lib\site-packages (from pyinstaller) (0.2.3)
+Requirement already satisfied: setuptools>=42.0.0 in x:\coapi\notas técnicas coapi\2024-2026\panorama\2026\superados\venv\lib\site-packages (from pyinstaller) (83.0.0)
+PIP_EXITCODE=0
+PYINSTALLER_EXITCODE=0
