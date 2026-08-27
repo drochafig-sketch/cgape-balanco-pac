@@ -207,6 +207,7 @@ FATOR_REDUCAO_RESUMO = 0.60
 LARGURA_RESUMO = LARGURA_PADRAO * FATOR_REDUCAO_RESUMO
 
 col_eixo = "EIXO"
+col_tipo = "TIPO"
 col_fase = "FASE"
 col_objeto = "OBJETO"
 col_descricao = "DESCRICAO"
@@ -5036,9 +5037,18 @@ def _campos_alerta_qualidade(row, hoje=None):
     if col_link_localizacao in row.index:
         valor_link_localizacao = row.get(col_link_localizacao)
         motivo_link_localizacao = _motivo_link_localizacao(valor_link_localizacao)
+        # A cobrança do campo em branco em ANDAMENTO só faz sentido pra OBRA:
+        # é o único TIPO que tem execução em campo pra localizar. EQUIPAMENTOS
+        # e PROJETO ficam de fora da checagem — cobrar o link deles aqui geraria
+        # alerta sobre algo que não se aplica ao tipo de ação.
+        tipo_atual = str(row.get(col_tipo, "")).strip().upper() if col_tipo in row.index else ""
         if motivo_link_localizacao:
             alertas["link_localizacao"] = motivo_link_localizacao
-        elif status_atual == "ANDAMENTO" and _texto_vazio(valor_link_localizacao):
+        elif (
+            status_atual == "ANDAMENTO"
+            and tipo_atual not in {"EQUIPAMENTOS", "PROJETO"}
+            and _texto_vazio(valor_link_localizacao)
+        ):
             # Obra em ANDAMENTO é o único caso em que o campo em branco É o
             # problema: enquanto a obra está sendo executada, o link é o que
             # permite localizá-la em campo — sem ele, não dá pra fiscalizar.
@@ -8798,14 +8808,9 @@ def montar_html_painel(df_base):
     padding: 10px 20px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     background: var(--cor-card-elevado);
     border-bottom: 1px solid var(--cor-card);
-  }
-  .mapa-mental-titulo {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--cor-texto-primario);
   }
   #mapa-mental-iframe {
     flex: 1 1 auto;
@@ -8873,7 +8878,16 @@ def montar_html_painel(df_base):
     padding: 7px 14px;
     box-shadow: none;
   }
-  #preview-compartilhar {
+  /* --- Acesso Rápido: botão de ícone (grade 2x2) que abre um menu com os
+     atalhos MAPA MENTAL, FILTROS e PUBLICAR — mesmo componente nas duas
+     barras (painel de filtros e dash), sempre no fim da fileira de
+     botões. O menu (.acesso-rapido-menu) fica escondido (display:none)
+     até ganhar a classe "aberto". */
+  .acesso-rapido-wrap {
+    position: relative;
+    display: flex;
+  }
+  .botao-icone-topo {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -8885,30 +8899,46 @@ def montar_html_painel(df_base):
     border-radius: var(--raio-sm);
     transition: background var(--transicao-rapida), color var(--transicao-rapida);
   }
-  #preview-compartilhar:hover {
+  .botao-icone-topo:hover, .botao-icone-topo[aria-expanded="true"] {
     background: var(--cor-acento-teal);
     color: #1A1A1A;
   }
-  /* Mesmo estilo do botão de compartilhar acima — só existe no modo
-     desktop (ver window.PAC_MODO_WEB no JS), por isso já nasce escondido
-     via inline style="display:none" no HTML e só some de vez quando o
-     JS confirma o modo desktop. */
-  #preview-publicar {
+  .acesso-rapido-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 170px;
+    background: var(--cor-card);
+    border: 1px solid var(--cor-card-elevado);
+    border-radius: var(--raio-sm);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    padding: 6px;
+    z-index: 50;
+  }
+  .acesso-rapido-menu.aberto {
+    display: flex;
+  }
+  .acesso-rapido-item {
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    background: var(--cor-card-elevado);
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    background: transparent;
     color: var(--cor-texto-primario);
     border-radius: var(--raio-sm);
-    transition: background var(--transicao-rapida), color var(--transicao-rapida);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-align: left;
+    transition: background var(--transicao-rapida);
   }
-  #preview-publicar:hover {
-    background: var(--cor-acento-teal);
-    color: #1A1A1A;
-  }
+  .acesso-rapido-item svg { flex-shrink: 0; }
+  .acesso-rapido-item:hover { background: var(--cor-card-elevado); }
+  .acesso-rapido-item:disabled { opacity: 0.5; }
 
   /* --- Linha de filtro rápido por Secretaria/Órgão + Executor, no
      cabeçalho do dashboard. O separador verde e as pills de Executor só
@@ -9852,8 +9882,51 @@ def montar_html_painel(df_base):
       <button class="btn" id="btn-limpar-tudo">LIMPAR FILTROS</button>
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
       <button class="btn" id="btn-preview">DASHBOARD</button>
-      <button class="btn" id="btn-mapa-mental">MAPA MENTAL</button>
       <button class="btn-acento" id="btn-gerar">GERAR RELATÓRIO</button>
+      <div class="acesso-rapido-wrap" id="acesso-rapido-filtros-wrap">
+        <button class="botao-icone-topo" id="acesso-rapido-filtros-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+          </svg>
+        </button>
+        <div class="acesso-rapido-menu" id="acesso-rapido-filtros-menu">
+          <button class="acesso-rapido-item" id="acesso-rapido-filtros-mapa-mental" title="Mapa Mental">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"></line>
+              <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line>
+            </svg>
+            <span>MAPA MENTAL</span>
+          </button>
+          <button class="acesso-rapido-item" id="acesso-rapido-filtros-filtros" title="Filtros">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" y1="21" x2="4" y2="14"></line>
+              <line x1="4" y1="10" x2="4" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12" y2="3"></line>
+              <line x1="20" y1="21" x2="20" y2="16"></line>
+              <line x1="20" y1="12" x2="20" y2="3"></line>
+              <line x1="1" y1="14" x2="7" y2="14"></line>
+              <line x1="9" y1="8" x2="15" y2="8"></line>
+              <line x1="17" y1="16" x2="23" y2="16"></line>
+            </svg>
+            <span>FILTROS</span>
+          </button>
+          <button class="acesso-rapido-item" id="acesso-rapido-filtros-publicar" style="display:none" title="Publicar planilha/código atualizados no site (GitHub + Render)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4"></path>
+              <path d="M6 10l6-6 6 6"></path>
+              <path d="M4 20h16"></path>
+            </svg>
+            <span>PUBLICAR</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
   <div id="grade"></div>
@@ -9951,7 +10024,10 @@ def montar_html_painel(df_base):
 
 <div id="mapa-mental-overlay">
   <div id="mapa-mental-topo">
-    <span class="mapa-mental-titulo">Mapa Mental — BALANÇO PAC</span>
+    <!-- Sem título aqui de propósito: a página dentro do iframe (ver
+         mapa_mental_html.py) já tem o próprio cabeçalho completo
+         (título, subtítulo, contagem e data) — repetir o título nesta
+         barra externa só duplicava a informação. -->
     <button class="btn" id="mapa-mental-fechar">&larr; Voltar aos filtros</button>
   </div>
   <iframe id="mapa-mental-iframe" title="Mapa Mental do BALANÇO PAC"></iframe>
@@ -9967,27 +10043,54 @@ def montar_html_painel(df_base):
       <div class="modal-titulo-botoes">
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
-        <button class="btn" id="dash-filtros">FILTROS</button>
         <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
-        <button id="preview-compartilhar" title="Salvar esta pré-visualização como página HTML na pasta Downloads">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="18" cy="5" r="3"></circle>
-            <circle cx="6" cy="12" r="3"></circle>
-            <circle cx="18" cy="19" r="3"></circle>
-            <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"></line>
-            <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line>
-          </svg>
-        </button>
-        <!-- Só existe no modo desktop (roda git de verdade na máquina de
-             quem clica) — nasce escondida e o JS decide se mostra, ver
-             window.PAC_MODO_WEB logo no início do <script> principal. -->
-        <button id="preview-publicar" style="display:none" title="Publicar planilha/código atualizados no site (GitHub + Render)">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 16V4"></path>
-            <path d="M6 10l6-6 6 6"></path>
-            <path d="M4 20h16"></path>
-          </svg>
-        </button>
+        <div class="acesso-rapido-wrap" id="acesso-rapido-dash-wrap">
+          <button class="botao-icone-topo" id="acesso-rapido-dash-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+              <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+              <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+              <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+            </svg>
+          </button>
+          <div class="acesso-rapido-menu" id="acesso-rapido-dash-menu">
+            <button class="acesso-rapido-item" id="acesso-rapido-dash-mapa-mental" title="Mapa Mental">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"></circle>
+                <circle cx="6" cy="12" r="3"></circle>
+                <circle cx="18" cy="19" r="3"></circle>
+                <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"></line>
+                <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line>
+              </svg>
+              <span>MAPA MENTAL</span>
+            </button>
+            <button class="acesso-rapido-item" id="acesso-rapido-dash-filtros" title="Filtros">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" y1="21" x2="4" y2="14"></line>
+                <line x1="4" y1="10" x2="4" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12" y2="3"></line>
+                <line x1="20" y1="21" x2="20" y2="16"></line>
+                <line x1="20" y1="12" x2="20" y2="3"></line>
+                <line x1="1" y1="14" x2="7" y2="14"></line>
+                <line x1="9" y1="8" x2="15" y2="8"></line>
+                <line x1="17" y1="16" x2="23" y2="16"></line>
+              </svg>
+              <span>FILTROS</span>
+            </button>
+            <!-- Só existe no modo desktop (roda git de verdade na máquina de
+                 quem clica) — nasce escondido e o JS decide se mostra, ver
+                 window.PAC_MODO_WEB logo no início do <script> principal. -->
+            <button class="acesso-rapido-item" id="acesso-rapido-dash-publicar" style="display:none" title="Publicar planilha/código atualizados no site (GitHub + Render)">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 16V4"></path>
+                <path d="M6 10l6-6 6 6"></path>
+                <path d="M4 20h16"></path>
+              </svg>
+              <span>PUBLICAR</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="dash-filtros-rapidos-linha">
@@ -11955,232 +12058,74 @@ def montar_html_painel(df_base):
     });
   }
 
-  var btnCompartilhar = document.getElementById("preview-compartilhar");
-
-  btnCompartilhar.onclick = async function () {
-    // Salva um retrato (snapshot) só do PAINEL DE PRÉ-VISUALIZAÇÃO (não a
-    // página inteira) — sem o painel de filtros por trás, sem o bloco de
-    // dados brutos (que pode ser grande) e sem os botões que não
-    // funcionariam num arquivo isolado (Gerar Relatório, Filtro etc.). O
-    // salvamento é automático, direto na pasta Downloads — sem diálogo.
-    btnCompartilhar.disabled = true;
-
-    var modalClone = document.getElementById("preview-modal").cloneNode(true);
-    var botoesTopo = modalClone.querySelector(".modal-titulo-botoes");
-    if (botoesTopo) botoesTopo.remove();
-    var filtroSecretariaClone = modalClone.querySelector(".dash-secretaria-filtro");
-    if (filtroSecretariaClone) filtroSecretariaClone.remove();
-    var botoesRodape = modalClone.querySelector(".preview-rodape-acoes");
-    if (botoesRodape) botoesRodape.remove();
-    // Remove os limites de altura/rolagem do modal — no arquivo isolado,
-    // sem os outros elementos da página ao redor, o ideal é mostrar TUDO de
-    // uma vez, sem cortar nem precisar rolar dentro de uma caixa pequena.
-    modalClone.style.maxHeight = "none";
-    modalClone.style.overflow = "visible";
-    modalClone.style.width = "100%";
-    modalClone.style.maxWidth = "1200px";
-    modalClone.style.border = "none";
-    var corpoClone = modalClone.querySelector("#preview-corpo");
-    if (corpoClone) corpoClone.style.overflow = "visible";
-
-    var estiloCompleto = document.querySelector("style").outerHTML;
-    var estiloExtra =
-      "<style>\n" +
-      "  html, body { height: auto !important; overflow: visible !important; }\n" +
-      "  body { align-items: flex-start !important; }\n" +
-      "</style>";
-
-    // Script mínimo e autônomo para o tooltip dos ícones "i" (objetos por
-    // fase) continuarem funcionando no arquivo isolado — clonar o HTML
-    // preserva atributos (por isso os dados de cada card foram guardados
-    // em data-item ao criar o ícone), mas NÃO preserva os eventos
-    // addEventListener presos em memória, então precisa religar tudo aqui.
-    var scriptTooltip = "<script>\n" + `
-(function () {
-  // (formatarMiBi vive lá em cima, perto dos gráficos — havia uma segunda
-  // cópia idêntica aqui, que o JavaScript silenciosamente usava no lugar
-  // da primeira por causa do hoisting.)
-  var tooltipEl = null;
-  function obterTooltip() {
-    if (!tooltipEl) {
-      tooltipEl = document.createElement("div");
-      tooltipEl.id = "tooltip-objetos";
-      tooltipEl.addEventListener("mouseleave", function () { tooltipEl.classList.remove("visivel"); });
-      document.body.appendChild(tooltipEl);
-    }
-    return tooltipEl;
-  }
-  function posicionar(el) {
-    var tooltip = obterTooltip();
-    var rect = el.getBoundingClientRect();
-    var largura = 260;
-    var espacoAbaixo = window.innerHeight - rect.bottom;
-    tooltip.style.width = largura + "px";
-    var esquerda = Math.min(rect.left, Math.max(window.innerWidth - largura - 10, 0));
-    tooltip.style.left = esquerda + "px";
-    if (espacoAbaixo < 160 && rect.top > espacoAbaixo) {
-      tooltip.style.top = "";
-      tooltip.style.bottom = (window.innerHeight - rect.top + 6) + "px";
-    } else {
-      tooltip.style.bottom = "";
-      tooltip.style.top = (rect.bottom + 6) + "px";
-    }
-  }
-  document.querySelectorAll(".mini-card-icone-detalhe[data-item]").forEach(function (icone) {
-    var item;
-    try { item = JSON.parse(icone.getAttribute("data-item")); } catch (e) { return; }
-    icone.addEventListener("mouseenter", function () {
-      var tooltip = obterTooltip();
-      var corpo = "";
-      item.fases.forEach(function (fase) {
-        if (!fase.objetos || fase.objetos.length === 0) return;
-        corpo += '<div class="tooltip-objetos-titulo">' + fase.rotulo + "</div>";
-        fase.objetos.forEach(function (o) {
-          corpo +=
-            '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">' +
-            o.objeto + ' <span class="tooltip-objetos-qtd">(' + o.qtd + ")</span></span>" +
-            '<span class="tooltip-objetos-valor">' + formatarMiBi(o.valor) + "</span></div>";
-        });
-      });
-      tooltip.innerHTML = corpo;
-      tooltip.classList.add("visivel");
-      posicionar(icone);
-    });
-    icone.addEventListener("mouseleave", function () {
-      var tooltip = obterTooltip();
-      setTimeout(function () {
-        if (!tooltip.matches(":hover") && !icone.matches(":hover")) tooltip.classList.remove("visivel");
-      }, 50);
-    });
-  });
-  document.querySelectorAll(".grafico-secretaria-linha[data-secretaria]").forEach(function (linha) {
-    var item;
-    try { item = JSON.parse(linha.getAttribute("data-secretaria")); } catch (e) { return; }
-    linha.addEventListener("mouseenter", function () {
-      var tooltip = obterTooltip();
-      tooltip.innerHTML =
-        '<div class="tooltip-objetos-titulo">' + item.secretaria + "</div>" +
-        '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Valor Contratado</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.valorContratado) + "</span></div>" +
-        '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Valor Apoiado OGU</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.valorApoiadoOgu) + "</span></div>" +
-        '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Recurso Estadual</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.recursoEstadual) + "</span></div>" +
-        '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Financiamento</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.financiamento) + "</span></div>";
-      tooltip.classList.add("visivel");
-      posicionar(linha);
-    });
-    linha.addEventListener("mouseleave", function () {
-      var tooltip = obterTooltip();
-      setTimeout(function () {
-        if (!tooltip.matches(":hover") && !linha.matches(":hover")) tooltip.classList.remove("visivel");
-      }, 50);
-    });
-  });
-})();
-` + "<\/script>";
-
-    var htmlAtual =
-      "<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"UTF-8\">\n" +
-      "<title>PAC - Pré-visualização do Painel Geral</title>\n" +
-      estiloCompleto +
-      "\n" + estiloExtra +
-      "\n</head>\n<body style=\"display:flex;justify-content:center;padding:24px;\">\n" +
-      modalClone.outerHTML +
-      "\n" + scriptTooltip +
-      "\n</body>\n</html>";
-
-    var resultado;
-    if (pacApiDesktopDisponivel()) {
-      try {
-        resultado = await window.pywebview.api.salvar_visualizacao_html(htmlAtual);
-      } catch (erro) {
-        alert("Ocorreu um erro ao salvar a pré-visualização:" + NL + NL + erro);
-        btnCompartilhar.disabled = false;
-        return;
-      }
-    } else {
-      // Num navegador comum não existe "salvar no Downloads do servidor" —
-      // a pré-visualização abre direto numa nova aba, pronta pro usuário
-      // compartilhar o link ou salvar como PDF pelo próprio navegador
-      // (Ctrl+P).
-      try {
-        const blob = new Blob([htmlAtual], { type: "text/html" });
-        const url = URL.createObjectURL(blob);
-        window.open(url, "_blank");
-        resultado = { ok: true };
-      } catch (erro) {
-        alert("Ocorreu um erro ao abrir a pré-visualização:" + NL + NL + erro);
-        btnCompartilhar.disabled = false;
-        return;
-      }
-    }
-    btnCompartilhar.disabled = false;
-
-    if (!resultado || resultado.ok === false) {
-      alert("Ocorreu um erro ao salvar a pré-visualização:" + NL + NL + (resultado ? resultado.erro : "erro desconhecido"));
-    }
-  };
-
   // Botão "Publicar Atualização" — só existe no modo desktop (roda git de
   // verdade na máquina de quem clica; não tem equivalente no site, por
   // segurança, ver os comentários em _git_publicar_atualizacao no lado
   // Python). Fica escondido e sem ação nenhuma quando o painel está rodando
-  // no servidor web.
-  var btnPublicar = document.getElementById("preview-publicar");
+  // no servidor web. Existe um botão dentro de cada menu de Acesso Rápido
+  // (painel de filtros e dash) — os dois chamam a mesma ação.
+  var botoesPublicar = [
+    document.getElementById("acesso-rapido-filtros-publicar"),
+    document.getElementById("acesso-rapido-dash-publicar"),
+  ];
   if (!window.PAC_MODO_WEB) {
-    btnPublicar.style.display = "";
-    btnPublicar.onclick = async function () {
-      btnPublicar.disabled = true;
+    botoesPublicar.forEach(function (btnPublicar) {
+      btnPublicar.style.display = "";
+      btnPublicar.onclick = async function () {
+        botoesPublicar.forEach(function (b) { b.disabled = true; });
 
-      var verificacao;
-      try {
-        verificacao = await window.pywebview.api.verificar_mudancas_git();
-      } catch (erro) {
-        alert("Não foi possível verificar o que mudou:" + NL + NL + erro);
-        btnPublicar.disabled = false;
-        return;
-      }
-      if (!verificacao || verificacao.ok === false) {
-        alert(verificacao ? verificacao.erro : "Erro desconhecido ao verificar o que mudou.");
-        btnPublicar.disabled = false;
-        return;
-      }
-      if (!verificacao.mudancas || verificacao.mudancas.length === 0) {
-        alert("Nada para publicar — a base local já está igual ao site.");
-        btnPublicar.disabled = false;
-        return;
-      }
-
-      var confirmar = window.confirm(
-        "Isto vai publicar as mudanças abaixo no repositório PÚBLICO do GitHub, " +
-        "atualizando o link do painel web em alguns minutos:" + NL + NL +
-        verificacao.mudancas.join(NL) + NL + NL + "Confirma?"
-      );
-      if (!confirmar) {
-        btnPublicar.disabled = false;
-        return;
-      }
-
-      var mensagem = window.prompt("Descreva rapidamente o que mudou (opcional):", "") || "";
-
-      var resultadoPublicacao;
-      try {
-        resultadoPublicacao = await window.pywebview.api.publicar_atualizacao_git(mensagem);
-      } catch (erro) {
-        alert("Ocorreu um erro ao publicar:" + NL + NL + erro);
-        btnPublicar.disabled = false;
-        return;
-      }
-      btnPublicar.disabled = false;
-
-      if (resultadoPublicacao && resultadoPublicacao.ok) {
-        if (resultadoPublicacao.nada_a_publicar) {
-          alert("Nada para publicar — a base local já está igual ao site.");
-        } else {
-          alert("Publicado com sucesso! O link do painel web vai se atualizar sozinho em alguns minutos.");
+        var verificacao;
+        try {
+          verificacao = await window.pywebview.api.verificar_mudancas_git();
+        } catch (erro) {
+          alert("Não foi possível verificar o que mudou:" + NL + NL + erro);
+          botoesPublicar.forEach(function (b) { b.disabled = false; });
+          return;
         }
-      } else {
-        alert("Não foi possível publicar:" + NL + NL + (resultadoPublicacao ? resultadoPublicacao.erro : "erro desconhecido"));
-      }
-    };
+        if (!verificacao || verificacao.ok === false) {
+          alert(verificacao ? verificacao.erro : "Erro desconhecido ao verificar o que mudou.");
+          botoesPublicar.forEach(function (b) { b.disabled = false; });
+          return;
+        }
+        if (!verificacao.mudancas || verificacao.mudancas.length === 0) {
+          alert("Nada para publicar — a base local já está igual ao site.");
+          botoesPublicar.forEach(function (b) { b.disabled = false; });
+          return;
+        }
+
+        var confirmar = window.confirm(
+          "Isto vai publicar as mudanças abaixo no repositório PÚBLICO do GitHub, " +
+          "atualizando o link do painel web em alguns minutos:" + NL + NL +
+          verificacao.mudancas.join(NL) + NL + NL + "Confirma?"
+        );
+        if (!confirmar) {
+          botoesPublicar.forEach(function (b) { b.disabled = false; });
+          return;
+        }
+
+        var mensagem = window.prompt("Descreva rapidamente o que mudou (opcional):", "") || "";
+
+        var resultadoPublicacao;
+        try {
+          resultadoPublicacao = await window.pywebview.api.publicar_atualizacao_git(mensagem);
+        } catch (erro) {
+          alert("Ocorreu um erro ao publicar:" + NL + NL + erro);
+          botoesPublicar.forEach(function (b) { b.disabled = false; });
+          return;
+        }
+        botoesPublicar.forEach(function (b) { b.disabled = false; });
+
+        if (resultadoPublicacao && resultadoPublicacao.ok) {
+          if (resultadoPublicacao.nada_a_publicar) {
+            alert("Nada para publicar — a base local já está igual ao site.");
+          } else {
+            alert("Publicado com sucesso! O link do painel web vai se atualizar sozinho em alguns minutos.");
+          }
+        } else {
+          alert("Não foi possível publicar:" + NL + NL + (resultadoPublicacao ? resultadoPublicacao.erro : "erro desconhecido"));
+        }
+      };
+    });
   }
 
   var btnPreview = document.getElementById("btn-preview");
@@ -12244,71 +12189,120 @@ def montar_html_painel(df_base):
     await carregarDashboard();
   };
 
-  // Botão "MAPA MENTAL": pede ao backend a página autônoma do mapa mental
-  // (mesmo recorte dos filtros atuais) e mostra numa página dedicada, DENTRO
-  // do mesmo ambiente (um <iframe> em tela cheia por cima do painel — ver
-  // #mapa-mental-overlay), em vez de abrir aba/janela separada. Um
-  // window.open com Blob de HTML chegou a ser usado aqui, mas no modo
-  // desktop (WebView2/pywebview) isso faz o Windows tratar o link como um
-  // arquivo para "abrir com outro app" em vez de exibir a página — por
-  // isso o iframe embutido, que nunca sai da janela do programa.
-  var btnMapaMental = document.getElementById("btn-mapa-mental");
-  var textoOriginalBtnMapaMental = btnMapaMental.textContent;
+  // Botão "MAPA MENTAL" (dentro do menu de Acesso Rápido, nas duas barras):
+  // pede ao backend a página autônoma do mapa mental (mesmo recorte dos
+  // filtros atuais) e mostra numa página dedicada, DENTRO do mesmo ambiente
+  // (um <iframe> em tela cheia por cima do painel — ver #mapa-mental-overlay),
+  // em vez de abrir aba/janela separada. Um window.open com Blob de HTML
+  // chegou a ser usado aqui, mas no modo desktop (WebView2/pywebview) isso
+  // faz o Windows tratar o link como um arquivo para "abrir com outro app"
+  // em vez de exibir a página — por isso o iframe embutido, que nunca sai
+  // da janela do programa.
+  var botoesMapaMental = [
+    document.getElementById("acesso-rapido-filtros-mapa-mental"),
+    document.getElementById("acesso-rapido-dash-mapa-mental"),
+  ];
   var mapaMentalOverlay = document.getElementById("mapa-mental-overlay");
   var mapaMentalIframe = document.getElementById("mapa-mental-iframe");
 
-  btnMapaMental.onclick = async function () {
-    if (!window.PAC_MODO_WEB && !window.pywebview) {
-      await new Promise(function (resolve) {
-        var jaResolveu = false;
-        var finalizar = function () { if (!jaResolveu) { jaResolveu = true; resolve(); } };
-        window.addEventListener("pywebviewready", finalizar, { once: true });
-        setTimeout(finalizar, 5000);
-      });
-      if (!window.pywebview) {
-        alert("O painel ainda não terminou de carregar — tente novamente em instantes.");
+  botoesMapaMental.forEach(function (btnMapaMental) {
+    btnMapaMental.onclick = async function () {
+      if (!window.PAC_MODO_WEB && !window.pywebview) {
+        await new Promise(function (resolve) {
+          var jaResolveu = false;
+          var finalizar = function () { if (!jaResolveu) { jaResolveu = true; resolve(); } };
+          window.addEventListener("pywebviewready", finalizar, { once: true });
+          setTimeout(finalizar, 5000);
+        });
+        if (!window.pywebview) {
+          alert("O painel ainda não terminou de carregar — tente novamente em instantes.");
+          return;
+        }
+      }
+
+      var filtros = montarFiltrosAtuais();
+      botoesMapaMental.forEach(function (b) { b.disabled = true; });
+      var resultado;
+      try {
+        resultado = await chamarAPI("mapa_mental", filtros);
+      } catch (erro) {
+        alert("Ocorreu um erro ao abrir o mapa mental:" + NL + NL + erro);
+        botoesMapaMental.forEach(function (b) { b.disabled = false; });
         return;
       }
-    }
+      botoesMapaMental.forEach(function (b) { b.disabled = false; });
 
-    var filtros = montarFiltrosAtuais();
-    btnMapaMental.disabled = true;
-    btnMapaMental.textContent = "ABRINDO...";
-    var resultado;
-    try {
-      resultado = await chamarAPI("mapa_mental", filtros);
-    } catch (erro) {
-      alert("Ocorreu um erro ao abrir o mapa mental:" + NL + NL + erro);
-      btnMapaMental.disabled = false;
-      btnMapaMental.textContent = textoOriginalBtnMapaMental;
-      return;
-    }
-    btnMapaMental.disabled = false;
-    btnMapaMental.textContent = textoOriginalBtnMapaMental;
-
-    if (!resultado || resultado.ok === false) {
-      if (resultado && resultado.vazio) {
-        alert("Nenhum registro encontrado para os filtros selecionados.");
-      } else {
-        alert("Ocorreu um erro ao abrir o mapa mental:" + NL + NL + (resultado ? resultado.erro : "erro desconhecido"));
+      if (!resultado || resultado.ok === false) {
+        if (resultado && resultado.vazio) {
+          alert("Nenhum registro encontrado para os filtros selecionados.");
+        } else {
+          alert("Ocorreu um erro ao abrir o mapa mental:" + NL + NL + (resultado ? resultado.erro : "erro desconhecido"));
+        }
+        return;
       }
-      return;
-    }
 
-    mapaMentalIframe.srcdoc = resultado.html;
-    mapaMentalOverlay.style.display = "flex";
-  };
+      mapaMentalIframe.srcdoc = resultado.html;
+      mapaMentalOverlay.style.display = "flex";
+    };
+  });
 
   document.getElementById("mapa-mental-fechar").onclick = function () {
     mapaMentalOverlay.style.display = "none";
     mapaMentalIframe.srcdoc = "";
   };
 
-  // Botão "FILTROS" no topo do dashboard: abre o painel de filtros
-  // maximizado, por cima do dashboard.
-  document.getElementById("dash-filtros").onclick = function () {
-    document.getElementById("app").style.display = "flex";
-  };
+  // Botão "FILTROS" (dentro do menu de Acesso Rápido, nas duas barras):
+  // abre o painel de filtros maximizado, por cima do dashboard. No próprio
+  // painel de filtros não tem efeito visível (já está aberto) — existe ali
+  // só pra manter o mesmo menu nas duas telas.
+  [
+    document.getElementById("acesso-rapido-filtros-filtros"),
+    document.getElementById("acesso-rapido-dash-filtros"),
+  ].forEach(function (btnFiltros) {
+    btnFiltros.onclick = function () {
+      document.getElementById("app").style.display = "flex";
+    };
+  });
+
+  // Menu de Acesso Rápido: o botão de ícone (grade 2x2) alterna a exibição
+  // do menu com MAPA MENTAL/FILTROS/PUBLICAR; clicar num item do menu ou
+  // fora dele fecha de volta. Mesmo componente nas duas barras.
+  function configurarAcessoRapido(idWrap) {
+    var wrap = document.getElementById(idWrap);
+    var botao = wrap.querySelector(".botao-icone-topo");
+    var menu = wrap.querySelector(".acesso-rapido-menu");
+    function fechar() {
+      menu.classList.remove("aberto");
+      botao.setAttribute("aria-expanded", "false");
+    }
+    botao.onclick = function (e) {
+      e.stopPropagation();
+      var vaiAbrir = !menu.classList.contains("aberto");
+      document.querySelectorAll(".acesso-rapido-menu.aberto").forEach(function (m) {
+        m.classList.remove("aberto");
+      });
+      document.querySelectorAll(".botao-icone-topo[aria-expanded=\"true\"]").forEach(function (b) {
+        b.setAttribute("aria-expanded", "false");
+      });
+      if (vaiAbrir) {
+        menu.classList.add("aberto");
+        botao.setAttribute("aria-expanded", "true");
+      }
+    };
+    menu.addEventListener("click", function (e) {
+      if (e.target.closest(".acesso-rapido-item")) fechar();
+    });
+  }
+  configurarAcessoRapido("acesso-rapido-filtros-wrap");
+  configurarAcessoRapido("acesso-rapido-dash-wrap");
+  document.addEventListener("click", function (e) {
+    document.querySelectorAll(".acesso-rapido-wrap").forEach(function (wrap) {
+      if (!wrap.contains(e.target)) {
+        wrap.querySelector(".acesso-rapido-menu").classList.remove("aberto");
+        wrap.querySelector(".botao-icone-topo").setAttribute("aria-expanded", "false");
+      }
+    });
+  });
 
   // Botão "GERENCIAL" no topo do dashboard: mesma seleção rápida de STATUS
   // do botão "Gerencial" de dentro do painel de filtros, só que acionável
@@ -13512,34 +13506,6 @@ def abrir_interface_filtros(df_base):
 
                 _gerar_pdf(df, arquivo_pdf, filtros.get("COLUNAS_DETALHAMENTO"), secoes)
                 return {"ok": True, "arquivo": arquivo_pdf, "fallback": fallback_usado}
-            except Exception as erro:
-                import traceback
-                traceback.print_exc()
-                return {"ok": False, "erro": str(erro)}
-
-        def salvar_visualizacao_html(self, html_conteudo):
-            # Salva um retrato (snapshot) só do painel de pré-visualização —
-            # como está no momento do clique — como um arquivo HTML
-            # autônomo, direto na pasta Downloads, sem pedir confirmação de
-            # local (salvamento automático), e abre no navegador padrão do
-            # Windows em seguida.
-            try:
-                pasta_destino = (
-                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
-                )
-                nome_arquivo = f"PAC_dashboard_{datetime.now().strftime('%Y%m%d_%Hh%Mm%Ss')}.html"
-                caminho = os.path.join(pasta_destino, nome_arquivo)
-
-                with open(caminho, "w", encoding="utf-8") as f:
-                    f.write(html_conteudo)
-
-                # Método exclusivo do modo desktop (não é exposto pelo
-                # servidor web — ver servidor_web.py): salva e abre no
-                # Downloads da PRÓPRIA máquina onde o programa está rodando,
-                # o que só faz sentido quando essa máquina é a do usuário.
-                if not MODO_WEB and os.name == "nt":
-                    os.startfile(caminho)
-                return {"ok": True, "arquivo": caminho}
             except Exception as erro:
                 import traceback
                 traceback.print_exc()

@@ -106,10 +106,10 @@ def _rota_pdf(funcao):
 
 # Uma rota por método que a ponte APIFiltros já expunha no desktop (mesmos
 # nomes — o JS do painel chama "/api/<nome do método>" sem precisar saber
-# a diferença). compartilhar_whatsapp, salvar_visualizacao_html e
-# fechar_por_inatividade ficaram só no lado do JS (ver montar_html_painel):
-# são operações puramente de navegador (abrir link, criar um Blob local) ou
-# exclusivas de janela desktop, sem contrapartida útil num servidor.
+# a diferença). compartilhar_whatsapp e fechar_por_inatividade ficaram só
+# no lado do JS (ver montar_html_painel): são operações puramente de
+# navegador (abrir link, criar um Blob local), sem contrapartida útil num
+# servidor.
 app.add_url_rule(
     "/api/pre_visualizar", view_func=_rota_json(pac._api_pre_visualizar), methods=["POST"]
 )
