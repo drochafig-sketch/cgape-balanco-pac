@@ -762,10 +762,21 @@ document.getElementById('busca').addEventListener('input', e=>{
 });
 
 document.getElementById('btn-reset').onclick = ()=>{
-  const algumAberto = [...colapsado].length < contarNos(DADOS)-contarFolhas(DADOS);
+  // "Expandir tudo" para no nível do OBJETO, não da ação: o nó "objeto"
+  // nunca abre dentro da árvore (as ações vivem no painel lateral), então
+  // a expansão total revela secretaria/órgão > executor > objeto e mantém
+  // todo objeto recolhido. Alterna com "recolher tudo".
+  const expansiveis = [];
+  (function rec(no){
+    if(no.tipo!=='raiz' && no.tipo!=='objeto' && no.tipo!=='item' && no.filhos.length>0) expansiveis.push(no._id);
+    no.filhos.forEach(rec);
+  })(DADOS);
+  const algumFechado = expansiveis.some(id=>colapsado.has(id));
   colapsado.clear();
-  if(algumAberto){
-    // se nada relevante estava colapsado, agora recolhe tudo que tem filhos exceto raiz
+  // objeto sempre recolhido — a expansão total para nele
+  (function rec(no){ if(no.tipo==='objeto' && no.filhos.length>0) colapsado.add(no._id); no.filhos.forEach(rec); })(DADOS);
+  if(!algumFechado){
+    // já estava tudo aberto até o objeto -> agora recolhe tudo (menos a raiz)
     (function rec(no){ if(no.tipo!=='raiz' && no.filhos.length>0) colapsado.add(no._id); no.filhos.forEach(rec); })(DADOS);
   }
   desenhar();
@@ -781,8 +792,6 @@ function ajustarParaCaber(){
   panY = Math.max(margem, (vh - h*zoom)/2);
   aplicarTransform();
 }
-function contarNos(no){ return 1+no.filhos.reduce((s,f)=>s+contarNos(f),0); }
-function contarFolhas(no){ return no.tipo==='item'?1:no.filhos.reduce((s,f)=>s+contarFolhas(f),0); }
 
 function atualizarRelogio(){
   const agora = new Date();

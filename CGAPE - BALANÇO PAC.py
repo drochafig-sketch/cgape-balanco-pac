@@ -5178,6 +5178,10 @@ def _montar_aviso_qualidade(df):
                 f"{texto_verbo_total} {qtd_total_itens} {texto_item_total} com pendência(s) de qualidade na base:"
             ),
             "grupos": grupos,
+            # Número de ações (itens) com alguma pendência de qualidade no
+            # recorte — o painel web usa isso no badge do botão de Controle
+            # de Qualidade ao lado da lupa.
+            "total_itens": qtd_total_itens,
         }
 
     return None
@@ -7981,49 +7985,78 @@ def montar_html_painel(df_base):
   }
   .bloco:hover { border-color: var(--cor-acento-teal); }
 
-  /* --- Bloco COLUNAS DO DETALHAMENTO: acento em gold ---
-     Ele não filtra dados, escolhe o que a tabela mostra. O contorno e a
-     marca de seleção em gold separam esse bloco dos demais, que continuam
-     no teal. Escopo pelo data-chave que o próprio bloco recebe na
-     criação, então nenhuma outra parte do painel é afetada. --- */
-  .bloco[data-chave="COLUNAS_DETALHAMENTO"] {
-    border-color: rgba(224, 171, 69, 0.30);
+  /* --- Seção COLUNAS DO DETALHAMENTO ---
+     Não fica mais no painel de filtros: virou uma seção da janela
+     "Selecione as páginas do relatório" (ela não filtra dados nem escolhe
+     páginas — escolhe o que a tabela de Detalhamento mostra). O acento em
+     gold, a marca de seleção e a barra de rolagem em gold separam essa
+     seção da grade de páginas logo acima. --- */
+  #paginas-colunas {
+    flex-shrink: 0;
+    border-top: 1px solid var(--cor-card-elevado);
+    padding: 12px 22px 4px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
-  .bloco[data-chave="COLUNAS_DETALHAMENTO"]:hover {
-    border-color: var(--cor-acento-gold);
+  .paginas-colunas-topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
-  .bloco[data-chave="COLUNAS_DETALHAMENTO"] label.item input[type="checkbox"]:checked {
-    background: var(--cor-acento-gold);
-    border-color: var(--cor-acento-gold);
+  .paginas-colunas-titulo {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--cor-texto-primario);
   }
-  /* Os botões "Padrão" e "Só o essencial" seguem o mesmo acento do bloco:
-     contorno em gold e texto no gold claro, no lugar do par teal/mint que
-     os botões dos blocos de filtro usam. */
-  .bloco[data-chave="COLUNAS_DETALHAMENTO"] .btn-mini:hover,
-  .bloco[data-chave="COLUNAS_DETALHAMENTO"] .btn-mini:focus {
+  .paginas-colunas-contador {
+    font-size: 12px;
+    color: var(--cor-texto-secundario);
+  }
+  .paginas-colunas-botoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .paginas-colunas-botoes .btn-mini:hover,
+  .paginas-colunas-botoes .btn-mini:focus {
     border-color: var(--cor-acento-gold);
     color: var(--cor-acento-gold-claro);
   }
-  /* A barra de rolagem da lista segue o mesmo comportamento dos demais
-     blocos — puxador cinza em repouso, acendendo sob o cursor — só que
-     acendendo em gold no lugar do teal. */
-  .bloco[data-chave="COLUNAS_DETALHAMENTO"] .bloco-lista::-webkit-scrollbar-thumb:hover {
+  .paginas-colunas-lista {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 0 14px;
+    max-height: 168px;
+    overflow-y: auto;
+    padding: 2px 0 6px 0;
+  }
+  .paginas-colunas-lista::-webkit-scrollbar { width: 8px; }
+  .paginas-colunas-lista::-webkit-scrollbar-track { background: var(--cor-card); border-radius: var(--raio-sm); }
+  .paginas-colunas-lista::-webkit-scrollbar-thumb {
+    background: var(--cor-card-elevado);
+    border-radius: var(--raio-sm);
+  }
+  .paginas-colunas-lista::-webkit-scrollbar-thumb:hover { background: var(--cor-acento-gold); }
+  #paginas-colunas label.item input[type="checkbox"]:checked {
     background: var(--cor-acento-gold);
+    border-color: var(--cor-acento-gold);
   }
-
-  /* --- Par vertical: Cláusula Suspensiva + Termo de Compromisso dividem
-     UM único espaço da grade, cada um com metade da altura, em vez de um
-     slot inteiro para cada. --- */
-  .bloco-par-vertical {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    min-height: 0;
-    overflow: hidden;
+  /* Ao bater o limite de colunas, as não marcadas NÃO somem da lista — só
+     o quadrado de seleção esmaece, deixando visível que a lista inteira
+     continua ali e basta desmarcar uma para liberar outra. Mesmo
+     tratamento na coluna obrigatória (sempre marcada, nunca editável). */
+  #paginas-colunas label.item.col-trava,
+  #paginas-colunas label.item.col-trava:hover {
+    cursor: not-allowed;
+    background: transparent;
   }
-  .bloco-par-vertical .bloco {
-    flex: 1 1 0;
-    min-height: 0;
+  #paginas-colunas label.item.col-trava input[type="checkbox"] {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 
   .bloco-titulo {
@@ -8649,13 +8682,13 @@ def montar_html_painel(df_base):
     border-radius: var(--raio-lg);
     box-shadow: var(--sombra-card);
     width: min(1100px, 92vw);
-    max-height: 88vh;
+    max-height: 95vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
   #paginas-painel .modal-titulo {
-    padding: 16px 22px;
+    padding: 13px 22px;
     font-size: 16px;
     font-weight: 700;
     border-bottom: 1px solid var(--cor-card-elevado);
@@ -8664,7 +8697,7 @@ def montar_html_painel(df_base):
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 22px 0 22px;
+    padding: 10px 22px 0 22px;
   }
   .paginas-contador {
     margin-left: auto;
@@ -8672,10 +8705,12 @@ def montar_html_painel(df_base):
     color: var(--cor-texto-secundario);
   }
   .paginas-grade {
+    flex: 1 1 auto;
+    min-height: 0;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 14px;
-    padding: 16px 22px 20px 22px;
+    gap: 12px;
+    padding: 14px 22px 16px 22px;
     overflow-y: auto;
   }
   /* Cada miniatura é um botão inteiro: clicar em qualquer ponto do cartão
@@ -9054,6 +9089,55 @@ def montar_html_painel(df_base):
     /* Sob o cursor, inverte: fundo teal e lupa escura. */
     background: var(--cor-acento-teal-hover);
     color: #1A1A1A;
+  }
+
+  /* --- Botão do Controle de Qualidade (ao lado da lupa) ---
+     Mesmo tamanho/estilo da lupa, mas em pêssego, com um badge vermelho
+     no padrão Android (círculo sobreposto no canto) mostrando quantas
+     ações têm pendência de qualidade no recorte atual. Quando não há
+     nenhuma pendência depois dos filtros, o JS esconde o botão inteiro
+     (display:none). */
+  .dash-qc-btn {
+    position: relative;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--raio-md);
+    border: none;
+    background: var(--cor-card-elevado);
+    color: var(--cor-acento-peach);
+    cursor: pointer;
+    transition: background var(--transicao-rapida), color var(--transicao-rapida);
+  }
+  .dash-qc-btn:hover {
+    background: var(--cor-acento-peach);
+    color: #1A1A1A;
+  }
+  .dash-qc-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #E2574C;
+    color: #FFFFFF;
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    box-shadow: 0 0 0 2px var(--cor-fundo), 0 1px 3px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Na linha de filtros rápidos do dashboard o fundo é o do card, então o
+     anel do badge acompanha para não ficar um halo mais escuro. */
+  .dash-filtros-rapidos-linha .dash-qc-badge {
+    box-shadow: 0 0 0 2px var(--cor-card), 0 1px 3px rgba(0, 0, 0, 0.35);
   }
   .dash-secretaria-pill {
     flex-shrink: 0;
@@ -9724,9 +9808,6 @@ def montar_html_painel(df_base):
     .bloco {
       flex: 0 0 auto;
     }
-    .bloco-par-vertical .bloco {
-      flex: 0 0 auto;
-    }
     .bloco-titulo {
       cursor: pointer;
       justify-content: flex-start;
@@ -9879,6 +9960,15 @@ def montar_html_painel(df_base):
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
       </button>
+      <button id="filtros-qc-btn" class="dash-qc-btn" style="display:none;" title="Controle de Qualidade da Base de Dados">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
+          <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"></path>
+          <path d="M4 11v6c0 1.66 3.58 3 8 3 1.2 0 2.34-.1 3.36-.28"></path>
+          <path d="M15 18.5l2 2 4-4.5"></path>
+        </svg>
+        <span class="dash-qc-badge" id="filtros-qc-badge">0</span>
+      </button>
       <button class="btn" id="btn-limpar-tudo">LIMPAR FILTROS</button>
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
       <button class="btn" id="btn-preview">DASHBOARD</button>
@@ -10015,6 +10105,17 @@ def montar_html_painel(df_base):
       <span id="paginas-contador" class="paginas-contador"></span>
     </div>
     <div id="paginas-grade" class="paginas-grade"></div>
+    <div id="paginas-colunas">
+      <div class="paginas-colunas-topo">
+        <span class="paginas-colunas-titulo">Colunas do detalhamento</span>
+        <span id="paginas-colunas-contador" class="paginas-colunas-contador"></span>
+      </div>
+      <div class="paginas-colunas-botoes">
+        <button class="btn-mini" id="paginas-colunas-padrao">Padrão</button>
+        <button class="btn-mini" id="paginas-colunas-essencial">Só o essencial</button>
+      </div>
+      <div id="paginas-colunas-lista" class="paginas-colunas-lista"></div>
+    </div>
     <div class="modal-rodape">
       <button class="btn" id="paginas-cancelar">Cancelar</button>
       <button class="btn-acento" id="paginas-confirmar">GERAR PDF</button>
@@ -10108,6 +10209,15 @@ def montar_html_painel(df_base):
           <circle cx="11" cy="11" r="7"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
+      </button>
+      <button id="dash-qc-btn" class="dash-qc-btn" style="display:none;" title="Controle de Qualidade da Base de Dados">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
+          <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"></path>
+          <path d="M4 11v6c0 1.66 3.58 3 8 3 1.2 0 2.34-.1 3.36-.28"></path>
+          <path d="M15 18.5l2 2 4-4.5"></path>
+        </svg>
+        <span class="dash-qc-badge" id="dash-qc-badge">0</span>
       </button>
     </div>
     <div id="preview-corpo">
@@ -10678,10 +10788,10 @@ def montar_html_painel(df_base):
     return filtros;
   }
 
-  // --- Bloco de CUSTOMIZAÇÃO DE COLUNAS do Detalhamento ---
-  // Ocupa na grade o espaço que era do bloco GESTÃO (o filtro de gestão
-  // continua existindo, nas pills do topo do dashboard, que já eram a
-  // forma mais usada de mexer nele).
+  // --- CUSTOMIZAÇÃO DE COLUNAS do Detalhamento ---
+  // Não fica mais no painel de filtros: a lista é desenhada dentro da
+  // janela "Selecione as páginas do relatório" (ver mostrarJanelaPaginas),
+  // já que escolher colunas é decisão de geração, não de recorte de dados.
   //
   // Três regras são aplicadas aqui, ao vivo, para o usuário não descobrir
   // o problema só depois de gerar o PDF:
@@ -10689,7 +10799,8 @@ def montar_html_painel(df_base):
   //   - dependências de hierarquia (FASE exige OBJETO, STATUS exige
   //     OBJETO+FASE) são resolvidas automaticamente nos dois sentidos:
   //     marcar um filho puxa os pais, desmarcar um pai solta os filhos;
-  //   - ao bater o limite de colunas, as não marcadas ficam desabilitadas.
+  //   - ao bater o limite de colunas, as não marcadas continuam na lista,
+  //     só com o quadrado de seleção esmaecido (não somem).
   // O Python revalida tudo de novo antes de montar a tabela.
   const CATALOGO_COLUNAS = (DADOS.colunasDetalhamento || []);
   const LIMITE_COLUNAS = DADOS.limiteColunasDetalhamento || 9;
@@ -10734,7 +10845,7 @@ def montar_html_painel(df_base):
   }
 
   function renderizarBlocoColunas() {
-    const lista = document.getElementById("lista-COLUNAS_DETALHAMENTO");
+    const lista = document.getElementById("paginas-colunas-lista");
     if (!lista) return;
     lista.innerHTML = "";
 
@@ -10753,11 +10864,11 @@ def montar_html_painel(df_base):
 
       if (coluna.obrigatoria) {
         input.disabled = true;
-        label.classList.add("indisponivel");
+        label.classList.add("col-trava");
         label.title = "Coluna obrigatória: é ela que ancora a ordenação e as mesclas da tabela.";
       } else if (!cabeLimite) {
         input.disabled = true;
-        label.classList.add("indisponivel");
+        label.classList.add("col-trava");
         label.title = "Limite de " + LIMITE_COLUNAS + " colunas atingido — desmarque outra antes.";
       } else if ((coluna.requer || []).length) {
         label.title = "Depende de: " + coluna.requer.join(", ");
@@ -10777,68 +10888,32 @@ def montar_html_painel(df_base):
       lista.appendChild(label);
     });
 
-    const contador = document.getElementById("contador-colunas-detalhamento");
+    const contador = document.getElementById("paginas-colunas-contador");
     if (contador) {
       contador.textContent = estadoColunas.size + "/" + LIMITE_COLUNAS;
       contador.style.color = estadoColunas.size >= LIMITE_COLUNAS ? "#C77" : "";
     }
   }
 
-  function criarBlocoColunasDetalhamento() {
-    const el = document.createElement("div");
-    el.className = "bloco";
-    el.dataset.chave = "COLUNAS_DETALHAMENTO";
-
-    const titulo = document.createElement("div");
-    titulo.className = "bloco-titulo";
-    const tituloTexto = document.createElement("span");
-    tituloTexto.textContent = "COLUNAS DO DETALHAMENTO";
-    titulo.appendChild(tituloTexto);
-    const contador = document.createElement("span");
-    contador.id = "contador-colunas-detalhamento";
-    titulo.appendChild(contador);
-    el.appendChild(titulo);
-
-    const botoes = document.createElement("div");
-    botoes.className = "bloco-botoes";
-
-    const btnPadrao = document.createElement("button");
-    btnPadrao.className = "btn-mini";
-    btnPadrao.textContent = "Padrão";
-    btnPadrao.onclick = () => {
-      estadoColunas.clear();
-      CATALOGO_COLUNAS.filter(c => c.padrao).forEach(c => estadoColunas.add(c.chave));
-      renderizarBlocoColunas();
-    };
-    botoes.appendChild(btnPadrao);
-
-    const btnMinimo = document.createElement("button");
-    btnMinimo.className = "btn-mini";
-    btnMinimo.textContent = "Só o essencial";
-    btnMinimo.onclick = () => {
-      estadoColunas.clear();
-      CATALOGO_COLUNAS.filter(c => c.obrigatoria).forEach(c => estadoColunas.add(c.chave));
-      ["FASE", "STATUS", "MUNICIPIOS", "INVESTIMENTO"].forEach(marcarColuna);
-      renderizarBlocoColunas();
-    };
-    botoes.appendChild(btnMinimo);
-
-    el.appendChild(botoes);
-
-    const lista = document.createElement("div");
-    lista.className = "bloco-lista";
-    lista.id = "lista-COLUNAS_DETALHAMENTO";
-    el.appendChild(lista);
-
-    return el;
+  // Atalhos "Padrão" / "Só o essencial" da seção de colunas (ligados pela
+  // mostrarJanelaPaginas quando a janela abre).
+  function colunasAplicarPadrao() {
+    estadoColunas.clear();
+    CATALOGO_COLUNAS.filter(c => c.padrao).forEach(c => estadoColunas.add(c.chave));
+    renderizarBlocoColunas();
+  }
+  function colunasAplicarEssencial() {
+    estadoColunas.clear();
+    CATALOGO_COLUNAS.filter(c => c.obrigatoria).forEach(c => estadoColunas.add(c.chave));
+    ["FASE", "STATUS", "MUNICIPIOS", "INVESTIMENTO"].forEach(marcarColuna);
+    renderizarBlocoColunas();
   }
 
   // Transforma a grade de filtros num acordeão no celular (ver
   // @media (max-width: 768px) no <style>): cada ".bloco-titulo" ganha uma
   // seta e ao ser clicado alterna ".bloco-colapsado" no ".bloco" pai, que é
   // quem esconde os botões/busca/lista via CSS. Roda uma única vez, depois
-  // que TODOS os blocos (inclusive COLUNAS_DETALHAMENTO e o par CLÁUSULA
-  // SUSPENSIVA/TERMO DE COMPROMISSO) já estão na grade — assim a seta
+  // que TODOS os blocos já estão na grade — assim a seta
   // sempre entra como o último filho de cada título, mesmo nos blocos
   // FASE/STATUS, que só ganham o ícone de calendário (arvore-data-secao)
   // dentro do título depois que criarBloco() já terminou.
@@ -10904,10 +10979,10 @@ def montar_html_painel(df_base):
   function renderizarBloco(chave) {
     const bloco = DADOS.blocos.find(b => b.chave === chave);
     const lista = document.getElementById("lista-" + chave);
-    // O bloco GESTÃO não tem mais card na grade (deu lugar ao bloco de
-    // colunas), mas continua no estadoSelecao e nas pills do dashboard —
-    // então quem chamar renderizarBloco("GESTAO") simplesmente não faz nada
-    // aqui, em vez de estourar um erro de elemento inexistente.
+    // O bloco GESTÃO não tem card na grade (é controlado pelas pills do
+    // topo do dashboard), mas continua no estadoSelecao — então quem chamar
+    // renderizarBloco("GESTAO") simplesmente não faz nada aqui, em vez de
+    // estourar um erro de elemento inexistente.
     if (!bloco || !lista) return;
     lista.innerHTML = "";
     bloco.opcoes.forEach(opcao => {
@@ -11013,36 +11088,16 @@ def montar_html_painel(df_base):
   if (!DADOS || !DADOS.blocos || DADOS.blocos.length === 0) {
     grade.innerHTML = '<p style="color:#fff;padding:20px;">Nenhum bloco de filtro foi carregado (DADOS vazio ou ausente).</p>';
   } else {
-    // CLÁUSULA SUSPENSIVA e TERMO DE COMPROMISSO dividem um único espaço da
-    // grade, empilhados verticalmente (cada um com metade da altura), em
-    // vez de ocupar um slot inteiro cada um.
-    var blocoTermoCompromisso = DADOS.blocos.find(function (b) { return b.chave === "TERMO_COMPROMISSO"; });
+    // GESTÃO não tem card na grade (é controlada pelas pills do topo do
+    // dashboard, ligadas ao mesmo estadoSelecao.GESTAO). Todos os demais
+    // blocos — inclusive CLÁUSULA SUSPENSIVA e TERMO DE COMPROMISSO, que
+    // voltaram a ocupar um slot inteiro cada — entram lado a lado na grade.
+    // O slot que sobrou era do antigo bloco "Colunas do Detalhamento", que
+    // se mudou para a janela "Selecione as páginas do relatório".
     DADOS.blocos.forEach(function (bloco) {
-      if (bloco.chave === "TERMO_COMPROMISSO") return; // já entra junto com CLAUSULA_SUSPENSIVA, abaixo
-      if (bloco.chave === "GESTAO") {
-        // GESTÃO cede o lugar na grade para a customização de colunas do
-        // Detalhamento. O filtro de gestão continua inteiro — só que pelas
-        // pills do topo do dashboard, que já eram a forma mais prática de
-        // usá-lo (e continuam ligadas ao mesmo estadoSelecao.GESTAO).
-        grade.appendChild(criarBlocoColunasDetalhamento());
-        renderizarBlocoColunas();
-        return;
-      }
-      if (bloco.chave === "CLAUSULA_SUSPENSIVA" && blocoTermoCompromisso) {
-        var par = document.createElement("div");
-        par.className = "bloco-par-vertical";
-        par.appendChild(criarBloco(bloco));
-        par.appendChild(criarBloco(blocoTermoCompromisso));
-        grade.appendChild(par);
-        // Só depois do elemento estar de fato na página é que
-        // renderizarBloco consegue achar a lista pelo id (getElementById
-        // não encontra elementos ainda fora da árvore do documento).
-        renderizarBloco(bloco.chave);
-        renderizarBloco(blocoTermoCompromisso.chave);
-      } else {
-        grade.appendChild(criarBloco(bloco));
-        renderizarBloco(bloco.chave);
-      }
+      if (bloco.chave === "GESTAO") return;
+      grade.appendChild(criarBloco(bloco));
+      renderizarBloco(bloco.chave);
     });
     atualizarDisponibilidade();
     montarFiltroGestaoDash();
@@ -12167,6 +12222,7 @@ def montar_html_painel(df_base):
     }
 
     if (!resultado || resultado.ok === false) {
+      atualizarBotaoQualidade(null);
       if (resultado && resultado.vazio) {
         alert("Nenhum registro encontrado para os filtros selecionados.");
       } else {
@@ -12176,6 +12232,7 @@ def montar_html_painel(df_base):
     }
 
     montarPreVisualizacao(resultado.dados);
+    atualizarBotaoQualidade(resultado.aviso);
     document.getElementById("preview-overlay").style.display = "flex";
   }
 
@@ -12346,7 +12403,7 @@ def montar_html_painel(df_base):
   // fica bloqueado por 10s com contagem regressiva, forcando a leitura do
   // aviso antes de prosseguir), so que como um modal HTML em vez de uma
   // janela Tkinter separada.
-  function montarHtmlAvisoQualidade(aviso) {
+  function montarHtmlAvisoQualidade(aviso, somenteVisualizar) {
     var html = '<div class="qc-cabecalho">' + escaparHtmlFicha(aviso.cabecalho).replace(/\n/g, "<br>") + '</div>';
     aviso.grupos.forEach(function (grupo) {
       html += '<div class="qc-grupo-titulo">— ' + escaparHtmlFicha(grupo.gestao) + ' —</div>';
@@ -12381,7 +12438,11 @@ def montar_html_painel(df_base):
         html += '<div class="qc-linha">... e mais ' + grupo.qtd_restante + ' ' + textoResto + ' com prazo vencido.</div>';
       }
     });
-    html += '<div class="qc-instrucao">Clique em OK para gerar o relatório normalmente, ou em Cancelar para interromper a geração.</div>';
+    if (somenteVisualizar) {
+      html += '<div class="qc-instrucao">Clique num item para abrir a Ficha Cadastral e corrigir a pendência na planilha.</div>';
+    } else {
+      html += '<div class="qc-instrucao">Clique em OK para gerar o relatório normalmente, ou em Cancelar para interromper a geração.</div>';
+    }
     return html;
   }
 
@@ -12610,7 +12671,19 @@ def montar_html_painel(df_base):
         document.getElementById("paginas-cancelar").onclick = null;
         document.getElementById("paginas-marcar-tudo").onclick = null;
         document.getElementById("paginas-limpar").onclick = null;
+        document.getElementById("paginas-colunas-padrao").onclick = null;
+        document.getElementById("paginas-colunas-essencial").onclick = null;
       }
+
+      // Seção "Colunas do Detalhamento" — mesma seleção (estadoColunas) que
+      // antes vivia no painel de filtros. renderizarBlocoColunas() já lê e
+      // escreve direto em estadoColunas; aqui é só (re)desenhá-la com a
+      // janela aberta e ligar os dois atalhos. O que ficar marcado ao
+      // confirmar entra no relatório porque executarGeracaoRelatorio
+      // remonta os filtros depois que esta janela fecha.
+      renderizarBlocoColunas();
+      document.getElementById("paginas-colunas-padrao").onclick = colunasAplicarPadrao;
+      document.getElementById("paginas-colunas-essencial").onclick = colunasAplicarEssencial;
 
       document.getElementById("paginas-marcar-tudo").onclick = function () {
         lista.secoes.forEach(function (s) { marcadas[s.chave] = true; });
@@ -12638,7 +12711,11 @@ def montar_html_painel(df_base):
     });
   }
 
-  function mostrarModalQualidade(aviso) {
+  // somenteVisualizar: aberto pelo botão de Controle de Qualidade ao lado
+  // da lupa — é só consulta, então sem contagem regressiva, sem "Cancelar"
+  // e o OK vira "Fechar". Sem esse sinal mantém o comportamento do gate da
+  // geração do relatório (OK travado por 10s, OK/Cancelar decidem seguir).
+  function mostrarModalQualidade(aviso, somenteVisualizar) {
     return new Promise(function (resolve) {
       _avisoQualidadeAtual = aviso;
       var overlay = document.getElementById("modal-overlay");
@@ -12647,7 +12724,7 @@ def montar_html_painel(df_base):
       var btnOk = document.getElementById("modal-btn-ok");
       var btnCancelar = document.getElementById("modal-btn-cancelar");
 
-      corpo.innerHTML = montarHtmlAvisoQualidade(aviso);
+      corpo.innerHTML = montarHtmlAvisoQualidade(aviso, somenteVisualizar);
       corpo.querySelectorAll(".qc-item-link").forEach(function (link) {
         link.addEventListener("click", async function (ev) {
           ev.preventDefault();
@@ -12661,26 +12738,38 @@ def montar_html_painel(df_base):
         });
       });
       overlay.style.display = "flex";
-      btnOk.disabled = true;
 
-      var restante = 10;
-      contagem.textContent = "Aguarde " + restante + "s...";
-      var intervalo = setInterval(function () {
-        restante -= 1;
-        if (restante <= 0) {
-          clearInterval(intervalo);
-          contagem.textContent = "";
-          btnOk.disabled = false;
-        } else {
-          contagem.textContent = "Aguarde " + restante + "s...";
-        }
-      }, 1000);
+      var intervalo = null;
+      if (somenteVisualizar) {
+        contagem.textContent = "";
+        btnOk.disabled = false;
+        btnOk.textContent = "Fechar";
+        btnCancelar.style.display = "none";
+      } else {
+        btnOk.disabled = true;
+        btnOk.textContent = "OK";
+        btnCancelar.style.display = "";
+        var restante = 10;
+        contagem.textContent = "Aguarde " + restante + "s...";
+        intervalo = setInterval(function () {
+          restante -= 1;
+          if (restante <= 0) {
+            clearInterval(intervalo);
+            contagem.textContent = "";
+            btnOk.disabled = false;
+          } else {
+            contagem.textContent = "Aguarde " + restante + "s...";
+          }
+        }, 1000);
+      }
 
       function finalizar(confirmado) {
-        clearInterval(intervalo);
+        if (intervalo) clearInterval(intervalo);
         overlay.style.display = "none";
         btnOk.onclick = null;
         btnCancelar.onclick = null;
+        btnOk.textContent = "OK";
+        btnCancelar.style.display = "";
         resolve(confirmado);
       }
 
@@ -12688,6 +12777,34 @@ def montar_html_painel(df_base):
       btnCancelar.onclick = function () { finalizar(false); };
     });
   }
+
+  // Botão do Controle de Qualidade ao lado da lupa (nas duas barras).
+  // Acende com um badge vermelho quando o recorte atual tem ações com
+  // pendência de qualidade; some por inteiro quando não tem nenhuma.
+  // O aviso é o mesmo objeto que _api_pre_visualizar devolve, guardado em
+  // _avisoQualidadeAtual (também usado pelo compartilhamento no WhatsApp).
+  function atualizarBotaoQualidade(aviso) {
+    _avisoQualidadeAtual = aviso || null;
+    var total = (aviso && aviso.total_itens) ? aviso.total_itens : 0;
+    document.querySelectorAll(".dash-qc-btn").forEach(function (btn) {
+      if (total > 0) {
+        btn.style.display = "inline-flex";
+        var badge = btn.querySelector(".dash-qc-badge");
+        if (badge) badge.textContent = total > 99 ? "99+" : String(total);
+        btn.title = "Controle de Qualidade — " + total
+          + (total === 1 ? " ação com pendência na base" : " ações com pendências na base");
+      } else {
+        btn.style.display = "none";
+      }
+    });
+  }
+
+  function abrirModalQualidadeVisualizacao() {
+    if (!_avisoQualidadeAtual) return;
+    mostrarModalQualidade(_avisoQualidadeAtual, true);
+  }
+  document.getElementById("dash-qc-btn").onclick = abrirModalQualidadeVisualizacao;
+  document.getElementById("filtros-qc-btn").onclick = abrirModalQualidadeVisualizacao;
 
   // =====================================================
   // Ficha Cadastral de uma ação — aberta pela lupa ao lado dos campos de
@@ -13046,6 +13163,9 @@ def montar_html_painel(df_base):
       destravarBotaoGerar();
       return;
     }
+    // A janela de páginas é também onde as colunas do Detalhamento são
+    // escolhidas agora — remonta os filtros para levar a seleção final.
+    filtros = montarFiltrosAtuais();
 
     travarBotaoGerar("Gerando...");
     var resultado;
@@ -13246,7 +13366,14 @@ def _api_pre_visualizar(filtros):
         df = _filtrar_dataframe(filtros)
         if df.empty:
             return {"ok": False, "vazio": True}
-        return {"ok": True, "dados": _dados_pre_visualizacao(df)}
+        # Vai junto o aviso do Controle de Qualidade do MESMO recorte, para
+        # o painel acender (ou esconder) o botão de qualidade ao lado da
+        # lupa sem uma segunda chamada.
+        return {
+            "ok": True,
+            "dados": _dados_pre_visualizacao(df),
+            "aviso": _montar_aviso_qualidade(df),
+        }
     except Exception as erro:
         import traceback
         traceback.print_exc()
