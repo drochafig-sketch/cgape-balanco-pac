@@ -11061,6 +11061,36 @@ def montar_html_painel(df_base):
       });
     });
     atualizarDisponibilidadeDatas();
+    agendarAtualizacaoQualidadeFiltros();
+  }
+
+  // O botão de Controle de Qualidade ao lado da lupa precisa acompanhar os
+  // filtros ENQUANTO a pessoa mexe no painel — não só quando o dashboard é
+  // recarregado ao fechar os filtros. Cada mudança de filtro reagenda uma
+  // consulta leve ao backend (só o aviso, sem os agregados do dashboard),
+  // com debounce para não disparar uma chamada por clique numa marcação em
+  // lote ("Marcar tudo"/"Limpar"). Só roda com o painel de filtros à mostra:
+  // do lado do dashboard quem cuida do botão é o carregarDashboard().
+  var _timerQualidadeFiltros = null;
+  var _qualidadeFiltrosEmCurso = 0;
+  function agendarAtualizacaoQualidadeFiltros() {
+    // #app é position:fixed — offsetParent é sempre null nele, mesmo aberto,
+    // então quem diz se o painel está à mostra é o display computado.
+    var app = document.getElementById("app");
+    if (!app || getComputedStyle(app).display === "none") return;
+    if (_timerQualidadeFiltros) clearTimeout(_timerQualidadeFiltros);
+    _timerQualidadeFiltros = setTimeout(async function () {
+      _timerQualidadeFiltros = null;
+      var minhaVez = ++_qualidadeFiltrosEmCurso;
+      var resultado;
+      try {
+        resultado = await chamarAPI("aviso_qualidade", montarFiltrosAtuais());
+      } catch (erro) {
+        return; // sem rede/ponte: mantém o badge como está
+      }
+      if (minhaVez !== _qualidadeFiltrosEmCurso) return; // resposta atrasada
+      if (resultado && resultado.ok) atualizarBotaoQualidade(resultado.aviso);
+    }, 350);
   }
 
   // Mesma lógica de acinzentamento, só que para as folhas (dias) das três
@@ -13396,6 +13426,24 @@ def _api_iniciar_geracao(filtros):
         return {"ok": False, "erro": str(erro)}
 
 
+def _api_aviso_qualidade(filtros):
+    # Só o aviso do Controle de Qualidade do recorte atual — sem os
+    # agregados do dashboard nem geração de PDF. O painel de filtros chama
+    # isto a cada mudança de filtro (com debounce) para o botão de qualidade
+    # ao lado da lupa acender, esconder ou atualizar o badge na hora, sem
+    # precisar fechar os filtros e recarregar o dashboard. Recorte vazio não
+    # é erro aqui: só significa "nenhuma pendência" (aviso = None).
+    try:
+        df = _filtrar_dataframe(filtros)
+        if df.empty:
+            return {"ok": True, "aviso": None}
+        return {"ok": True, "aviso": _montar_aviso_qualidade(df)}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
 def _api_listar_paginas_relatorio(filtros):
     # Alimenta a janela de seleção de páginas: devolve só as seções que
     # este recorte realmente produziria. Barato — não gera PDF nenhum, só
@@ -13589,6 +13637,9 @@ def abrir_interface_filtros(df_base):
 
         def iniciar_geracao(self, filtros):
             return _api_iniciar_geracao(filtros)
+
+        def aviso_qualidade(self, filtros):
+            return _api_aviso_qualidade(filtros)
 
         def listar_paginas_relatorio(self, filtros):
             return _api_listar_paginas_relatorio(filtros)

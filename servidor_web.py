@@ -120,6 +120,9 @@ app.add_url_rule(
     "/api/iniciar_geracao", view_func=_rota_json(pac._api_iniciar_geracao), methods=["POST"]
 )
 app.add_url_rule(
+    "/api/aviso_qualidade", view_func=_rota_json(pac._api_aviso_qualidade), methods=["POST"]
+)
+app.add_url_rule(
     "/api/listar_paginas_relatorio",
     view_func=_rota_json(pac._api_listar_paginas_relatorio),
     methods=["POST"],
