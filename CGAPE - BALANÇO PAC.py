@@ -8840,12 +8840,20 @@ def montar_html_painel(df_base):
   }
   #mapa-mental-topo {
     flex: 0 0 auto;
-    padding: 10px 20px;
+    /* padding-left igual ao padding lateral do #dashboard dentro do iframe
+       (ver mapa_mental_html.py) -- alinha o botão com os chips de fase do
+       lado esquerdo, já que aqui fora não dá pra enxergar o iframe */
+    padding: 10px 22px;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: flex-start;
     background: var(--cor-card-elevado);
     border-bottom: 1px solid var(--cor-card);
+  }
+  #mapa-mental-fechar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   #mapa-mental-iframe {
     flex: 1 1 auto;
@@ -10129,7 +10137,13 @@ def montar_html_painel(df_base):
          mapa_mental_html.py) já tem o próprio cabeçalho completo
          (título, subtítulo, contagem e data) — repetir o título nesta
          barra externa só duplicava a informação. -->
-    <button class="btn" id="mapa-mental-fechar">&larr; Voltar aos filtros</button>
+    <button class="btn" id="mapa-mental-fechar">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="19" y1="12" x2="5" y2="12"></line>
+        <polyline points="12 19 5 12 12 5"></polyline>
+      </svg>
+      Voltar aos filtros
+    </button>
   </div>
   <iframe id="mapa-mental-iframe" title="Mapa Mental do BALANÇO PAC"></iframe>
 </div>

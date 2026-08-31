@@ -62,6 +62,12 @@ button{font-family:inherit;cursor:pointer;}
 }
 #topo h1{font-size:18px; margin:0; font-weight:700; letter-spacing:.2px; color:var(--cor-texto-primario);}
 #topo .sub{font-size:12px; color:var(--cor-texto-secundario); margin-top:2px;}
+#fechar-mapa{
+  flex:0 0 auto; width:34px; height:34px; border-radius:50%; border:1px solid var(--borda-card);
+  background:var(--cor-card-elevado); color:var(--cor-texto-primario); display:flex; align-items:center; justify-content:center;
+  transition:background var(--transicao-rapida);
+}
+#fechar-mapa:hover{background:var(--cor-acento-teal-hover); color:#1A1A1A;}
 #relogio{margin-left:auto; text-align:right; font-size:12px; color:var(--cor-texto-secundario);}
 #relogio b{display:block; font-size:15px; color:var(--cor-texto-primario); font-variant-numeric:tabular-nums;}
 
@@ -99,12 +105,21 @@ button{font-family:inherit;cursor:pointer;}
 .radar-card .rd{color:var(--cor-texto-secundario); font-size:11px;}
 .radar-card .rc{font-weight:700; margin-top:3px; font-variant-numeric:tabular-nums;}
 
-#corpo{flex:1 1 auto; display:flex; min-height:0;}
+#corpo{flex:1 1 auto; display:flex; min-height:0; position:relative;}
 
 #lateral{
   width:250px; flex:0 0 auto; background:var(--cor-card); border-right:1px solid var(--cor-card-elevado);
-  padding:14px; overflow-y:auto;
+  padding:14px; overflow-y:auto; overflow-x:hidden; transition:width .22s ease,padding .22s ease;
 }
+#corpo.lateral-recolhido #lateral{width:0; padding-left:0; padding-right:0; border-right:none;}
+#lateral-toggle{
+  position:absolute; top:14px; left:250px; transform:translateX(-50%); z-index:4;
+  width:26px; height:26px; border-radius:50%; border:1px solid var(--borda-card);
+  background:var(--cor-card-elevado); color:var(--cor-texto-primario); display:flex; align-items:center; justify-content:center;
+  padding:0; font-size:14px; line-height:1; box-shadow:var(--sombra-card); transition:left .22s ease,background var(--transicao-rapida);
+}
+#lateral-toggle:hover{background:var(--cor-acento-teal-hover); color:#1A1A1A;}
+#corpo.lateral-recolhido #lateral-toggle{left:0;}
 #lateral h3{font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--cor-texto-terciario); margin:14px 0 8px;}
 #lateral h3:first-child{margin-top:0;}
 #busca{width:100%; padding:8px 10px; border:1px solid var(--borda-card); border-radius:var(--raio-md); font-size:13px; background:var(--cor-card-elevado); color:var(--cor-texto-primario);}
@@ -117,7 +132,7 @@ button{font-family:inherit;cursor:pointer;}
 #btn-reset{margin-top:12px; width:100%; padding:8px; border-radius:var(--raio-md); border:1px solid var(--borda-card); background:var(--cor-card-elevado); color:var(--cor-texto-primario); font-size:12.5px; font-weight:600; transition:background var(--transicao-rapida);}
 #btn-reset:hover{background:var(--cor-acento-teal-hover); color:#1A1A1A;}
 
-#viewport{flex:1 1 auto; position:relative; overflow:hidden; cursor:grab; background:
+#viewport{flex:1 1 auto; position:relative; overflow:hidden; cursor:grab; touch-action:none; background:
   radial-gradient(circle,rgba(255,255,255,.05) 1px,transparent 1px) 0 0/22px 22px, var(--cor-fundo);}
 #viewport.arrastando{cursor:grabbing;}
 #canvas{position:absolute; top:0; left:0; transform-origin:0 0;}
@@ -207,6 +222,12 @@ def montar_html_mapa_mental(arvore: dict, meta: dict) -> str:
 <body>
 
 <div id="topo">
+  <button id="fechar-mapa" title="Voltar aos filtros" aria-label="Voltar aos filtros">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="19" y1="12" x2="5" y2="12"></line>
+      <polyline points="12 19 5 12 12 5"></polyline>
+    </svg>
+  </button>
   <div class="titulo-wrap">
     <h1>{titulo} &middot; Mapa Mental</h1>
     <div class="sub">{subtitulo} &middot; {total} ações no recorte &middot; gerado em {gerado_em}</div>
@@ -231,6 +252,7 @@ def montar_html_mapa_mental(arvore: dict, meta: dict) -> str:
     <div id="legenda-item"></div>
     <button id="btn-reset">Expandir tudo / recolher tudo</button>
   </div>
+  <button id="lateral-toggle" title="Recolher painel" aria-label="Recolher painel">&lsaquo;</button>
 
   <div id="viewport">
     <svg id="svg-linhas"></svg>
@@ -549,6 +571,72 @@ viewport.addEventListener('wheel', e=>{
   zoom = novoZoom;
   aplicarTransform();
 }, {passive:false});
+// telas touch: 1 dedo arrasta (pan, mesma lógica do mouse acima) e 2 dedos
+// em pinça dão zoom, ancorado no ponto médio entre os dois toques (mesma
+// ideia do zoom da roda do mouse, só que a "âncora" se move junto com os
+// dedos em vez de ficar fixa)
+let touchModo = null; // 'pan' | 'pinch'
+let touchDistInicial = 0, touchZoomInicial = 1;
+let touchMeioInicial = {x:0,y:0}, touchPanInicial = {x:0,y:0};
+
+function distanciaToques(t0, t1){
+  return Math.hypot(t1.clientX-t0.clientX, t1.clientY-t0.clientY);
+}
+function meioToques(t0, t1, rect){
+  return {x:(t0.clientX+t1.clientX)/2-rect.left, y:(t0.clientY+t1.clientY)/2-rect.top};
+}
+
+viewport.addEventListener('touchstart', e=>{
+  if(e.target.closest('.no')) return;
+  if(e.touches.length === 1){
+    touchModo = 'pan';
+    arrastando = true; arrastouBastante = false;
+    ax = e.touches[0].clientX; ay = e.touches[0].clientY;
+    viewport.classList.add('arrastando');
+  } else if(e.touches.length === 2){
+    e.preventDefault();
+    touchModo = 'pinch';
+    arrastando = false;
+    touchDistInicial = distanciaToques(e.touches[0], e.touches[1]);
+    touchZoomInicial = zoom;
+    const rect = viewport.getBoundingClientRect();
+    touchMeioInicial = meioToques(e.touches[0], e.touches[1], rect);
+    touchPanInicial = {x:panX, y:panY};
+  }
+}, {passive:false});
+
+viewport.addEventListener('touchmove', e=>{
+  if(touchModo === 'pan' && e.touches.length === 1){
+    e.preventDefault();
+    const t = e.touches[0];
+    const dx = t.clientX-ax, dy = t.clientY-ay;
+    if(Math.abs(dx)+Math.abs(dy) > 3) arrastouBastante = true;
+    panX += dx; panY += dy; ax = t.clientX; ay = t.clientY;
+    aplicarTransform();
+  } else if(touchModo === 'pinch' && e.touches.length === 2){
+    e.preventDefault();
+    const distAtual = distanciaToques(e.touches[0], e.touches[1]);
+    const novoZoom = Math.min(2.2, Math.max(0.25, touchZoomInicial*(distAtual/touchDistInicial)));
+    const razao = novoZoom/touchZoomInicial;
+    panX = touchMeioInicial.x - (touchMeioInicial.x-touchPanInicial.x)*razao;
+    panY = touchMeioInicial.y - (touchMeioInicial.y-touchPanInicial.y)*razao;
+    zoom = novoZoom;
+    aplicarTransform();
+  }
+}, {passive:false});
+
+function finalizarToque(e){
+  if(e.touches.length === 0){
+    touchModo = null; arrastando = false; viewport.classList.remove('arrastando');
+  } else if(e.touches.length === 1){
+    // saiu da pinça e ainda sobrou um dedo -> vira pan a partir daqui
+    touchModo = 'pan'; arrastando = true; arrastouBastante = false;
+    ax = e.touches[0].clientX; ay = e.touches[0].clientY;
+  }
+}
+viewport.addEventListener('touchend', finalizarToque);
+viewport.addEventListener('touchcancel', finalizarToque);
+
 document.getElementById('zoom-mais').onclick = ()=>{zoom=Math.min(2.2,zoom*1.15); aplicarTransform();};
 document.getElementById('zoom-menos').onclick = ()=>{zoom=Math.max(0.25,zoom*0.87); aplicarTransform();};
 document.getElementById('zoom-fit').onclick = ()=>{zoom=1; panX=60; panY=40; aplicarTransform();};
@@ -743,7 +831,6 @@ function montarFiltroOrgao(){
 }
 
 function montarLegenda(){
-  const linhasFase = FASE_ORDEM.map(f=>`<div><span style="background:${corFase(f)}"></span><b>${f}</b></div>`).join('');
   const linhasSituacao = [
     ['Atrasada','previsão de conclusão atual já passou'],
     ['Em dia','dentro da previsão atual'],
@@ -751,9 +838,18 @@ function montarLegenda(){
     ['Concluída','fase já concluída'],
   ].map(([s,desc])=>`<div><span style="background:${s==='Atrasada'?corResolvida('var(--atrasada)'):s==='Concluída'?corResolvida('var(--fase-azul)'):corResolvida('var(--cor-texto-terciario)')}"></span><b>${s}</b>: ${desc}</div>`).join('');
   document.getElementById('legenda-item').innerHTML =
-    '<div style="font-weight:700;color:var(--cor-texto-primario);margin-bottom:2px;">Fase (cor do nó)</div>' + linhasFase +
-    '<div style="font-weight:700;color:var(--cor-texto-primario);margin:8px 0 2px;">Situação do prazo</div>' + linhasSituacao;
+    '<div style="font-weight:700;color:var(--cor-texto-primario);margin-bottom:2px;">Situação do prazo</div>' + linhasSituacao;
 }
+
+// ---------- recolher/expandir o painel lateral ----------
+document.getElementById('lateral-toggle').onclick = ()=>{
+  const corpoEl = document.getElementById('corpo');
+  const recolhido = corpoEl.classList.toggle('lateral-recolhido');
+  const btn = document.getElementById('lateral-toggle');
+  btn.innerHTML = recolhido ? '&rsaquo;' : '&lsaquo;';
+  btn.title = recolhido ? 'Expandir painel' : 'Recolher painel';
+  btn.setAttribute('aria-label', btn.title);
+};
 
 document.getElementById('busca').addEventListener('input', e=>{
   termoBusca = e.target.value.trim().toLowerCase();
@@ -795,7 +891,7 @@ function ajustarParaCaber(){
 
 function atualizarRelogio(){
   const agora = new Date();
-  document.getElementById('relogio-data').textContent = agora.toLocaleDateString('pt-BR')+' '+agora.toLocaleTimeString('pt-BR');
+  document.getElementById('relogio-data').textContent = agora.toLocaleDateString('pt-BR');
 }
 
 function atualizarContagensAoVivo(){
@@ -817,7 +913,9 @@ montarFiltroOrgao();
 montarLegenda();
 desenhar();
 atualizarRelogio();
-setInterval(atualizarRelogio, 1000);
+// só a data aparece (sem hora/min/seg), então não precisa atualizar a cada
+// segundo — 1x por minuto já garante trocar no instante em que vira o dia
+setInterval(atualizarRelogio, 60000);
 setInterval(atualizarContagensAoVivo, 60000);
 setInterval(montarRadar, 60000);
 """
