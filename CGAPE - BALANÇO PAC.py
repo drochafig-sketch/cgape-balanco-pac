@@ -255,7 +255,9 @@ col_link_monitora = "LINK MONITORA"
 col_link_localizacao = "LINK LOCALIZACAO"
 col_aviso_licitacao = "AVISO DE LICITACAO"
 col_abertura_licitacao = "ABERTURA DE LICITACAO"
+col_previsao_contratacao = "PREVISAO DE CONTRATACAO"
 col_emissao_os = "EMISSAO DE O.S."
+col_conclusao_original = "DATA DE CONCLUSAO ORIGINAL"
 col_apoiado = "APOIADO"
 col_contrapartida = "CONTRAPARTIDA"
 col_complementar = "COMPLEMENTAR"
@@ -1391,7 +1393,9 @@ def _montar_dados_ficha_acao(row):
         "link_localizacao": _normalizar_link_ficha(campo(col_link_localizacao)),
         "aviso_licitacao": campo(col_aviso_licitacao),
         "abertura_licitacao": campo(col_abertura_licitacao),
+        "previsao_contratacao": campo(col_previsao_contratacao),
         "emissao_os": campo(col_emissao_os),
+        "conclusao_original": campo(col_conclusao_original),
         # Campos que o Controle de Qualidade sinalizou pra essa ação —
         # mesma lógica/fonte de verdade, usada pra destacar (contorno
         # vermelho) o campo na Ficha Cadastral, tanto na tela quanto na
@@ -1410,23 +1414,23 @@ def _definicao_secoes_ficha():
             ("objeto", "Objeto"), ("descricao", "Descrição"),
         ]},
         {"titulo": "EXECUÇÃO", "campos": [
-            ("secretaria", "Secretaria/Órgão"), ("executor", "Órgão Executor"), ("gestao", "Gestão"),
+            ("gestao", "Gestão"), ("secretaria", "Secretaria/Órgão"), ("executor", "Órgão Executor"),
             ("eixo", "Eixo"), ("municipio", "Município"), ("fonte", "Fonte de Recurso"),
-        ]},
-        {"titulo": "SITUAÇÃO", "campos": [
-            ("fase", "Fase"), ("status", "Status"),
-            ("clausula_suspensiva", "Cláusula Suspensiva"), ("motivo_clausula_suspensiva", "Motivo da Cláusula Suspensiva"),
-        ]},
-        {"titulo": "PRAZOS", "campos": [
-            ("vigencia", "Vigência"), ("prazo_atual", "Previsão de Conclusão Atual"),
-            ("prazo_fase", "Prazo de Conclusão da Fase"), ("avanco", "Avanço da Obra"),
-        ]},
-        {"titulo": "LICITAÇÃO", "campos": [
-            ("aviso_licitacao", "Aviso de Licitação"), ("abertura_licitacao", "Abertura de Licitação"), ("emissao_os", "Emissão de O.S."),
         ]},
         {"titulo": "FINANCEIRO", "campos": [
             ("valor_contratado", "Valor Contratado"), ("financiamento", "Financiamento"), ("apoiado", "Apoiado (OGU)"),
             ("contrapartida", "Contrapartida"), ("complementar", "Complementar"), ("investimento_total", "Investimento Total"),
+        ]},
+        {"titulo": "SITUAÇÃO", "campos": [
+            ("fase", "Fase"), ("status", "Status"),
+            ("clausula_suspensiva", "Cláusula Suspensiva"), ("vigencia", "Vigência"),
+            ("motivo_clausula_suspensiva", "Motivo da Cláusula Suspensiva"), ("avanco", "Avanço da Obra"),
+        ]},
+        {"titulo": "PRAZOS", "campos": [
+            ("aviso_licitacao", "Aviso de Licitação"), ("abertura_licitacao", "Abertura de Licitação"),
+            ("previsao_contratacao", "Previsão de Contratação"), ("emissao_os", "Emissão de O.S."),
+            ("conclusao_original", "Conclusão Original"), ("prazo_atual", "Previsão de Conclusão Atual"),
+            ("prazo_fase", "Prazo de Conclusão da Fase"),
         ]},
         {"titulo": "ACOMPANHAMENTO", "largo": True, "campos": [
             ("pendencia", "Pendências / Tarefa"), ("providencias", "Providências (Datas)"),
@@ -1487,6 +1491,18 @@ class QRCodeLink(Flowable):
         # do draw() (origem no canto do próprio Flowable), não a página
         # inteira — senão o link ficaria deslocado da imagem do QR.
         self.canv.linkURL(self.url, (0, 0, self.tamanho, self.tamanho), relative=1, thickness=0)
+
+def _nome_arquivo_ficha_pdf(dados):
+    # Nome sugerido pro PDF da Ficha Cadastral: o OBJETO da ação, em vez do
+    # antigo "Ficha_Item_<N>" — mais fácil de reconhecer o arquivo depois,
+    # numa pasta cheia de downloads. Usado tanto no diálogo nativo (desktop)
+    # quanto no nome sugerido pro navegador baixar (web).
+    objeto = str((dados or {}).get("objeto") or "").strip()
+    # Windows não aceita estes caracteres em nome de arquivo; troca por
+    # espaço em vez de remover, pra não colar duas palavras sem querer.
+    objeto = re.sub(r'[<>:"/\\|?*]', " ", objeto)
+    objeto = re.sub(r"\s+", " ", objeto).strip(" .")[:150].strip(" .")
+    return f"Ficha Cadastral - {objeto}.pdf" if objeto else "Ficha Cadastral.pdf"
 
 def gerar_pdf_ficha_acao(dados, caminho):
     # Gera um PDF de UMA página A4 com os dados completos de uma ação —
@@ -8573,8 +8589,7 @@ def montar_html_painel(df_base):
     background: var(--cor-acento-teal);
     color: #16211F;
   }
-  #ficha-btn-fechar,
-  #ficha-btn-fechar-impressao {
+  #ficha-btn-fechar {
     font-size: 20px;
     line-height: 1;
   }
@@ -8633,93 +8648,6 @@ def montar_html_painel(df_base):
     padding: 5px 8px;
     margin: -5px -8px;
     background: rgba(225, 87, 87, 0.08);
-  }
-
-  /* --- Modo impressão: reskin pra parecer uma folha A4 --- */
-  #ficha-painel.ficha-modo-impressao {
-    background: #E8E8E8;
-  }
-  #ficha-painel.ficha-modo-impressao .ficha-topo {
-    background: #F4F4F4;
-    border-bottom: 1px solid #D0D0D0;
-  }
-  #ficha-painel.ficha-modo-impressao .ficha-topo-titulo {
-    color: #222;
-  }
-  #ficha-painel.ficha-modo-impressao .ficha-corpo {
-    display: none;
-  }
-  .ficha-pagina-a4-wrap {
-    display: none;
-    flex: 1;
-    overflow-y: auto;
-    justify-content: center;
-    padding: 24px;
-  }
-  #ficha-painel.ficha-modo-impressao .ficha-pagina-a4-wrap {
-    display: flex;
-  }
-  #ficha-pagina-a4 {
-    width: 210mm;
-    min-height: 297mm;
-    height: fit-content;
-    background: #fff;
-    color: #1a1a1a;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.35);
-    padding: 16mm;
-    box-sizing: border-box;
-    font-family: Arial, Helvetica, sans-serif;
-  }
-  .ficha-a4-titulo {
-    font-size: 20px;
-    font-weight: 800;
-    margin-bottom: 2px;
-  }
-  .ficha-a4-subtitulo {
-    font-size: 11px;
-    color: #666;
-    margin-bottom: 14px;
-  }
-  .ficha-a4-secao {
-    margin-bottom: 12px;
-    break-inside: avoid;
-  }
-  .ficha-a4-secao-titulo {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #1565A3;
-    border-bottom: 1px solid #ccc;
-    padding-bottom: 3px;
-    margin-bottom: 6px;
-  }
-  .ficha-a4-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px 16px;
-  }
-  .ficha-a4-grid.ficha-a4-grid-largo {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .ficha-a4-campo-rotulo {
-    font-size: 8.5px;
-    color: #777;
-    text-transform: uppercase;
-  }
-  .ficha-a4-campo-valor {
-    font-size: 10.5px;
-    color: #1a1a1a;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .ficha-a4-campo-valor.ficha-a4-campo-alerta {
-    border: 1.2px solid #D64545;
-    border-radius: 3px;
-    padding: 3px 5px;
-    margin: -3px -5px;
-    background: rgba(214, 69, 69, 0.08);
   }
 
   /* --- Lista de desambiguação (mais de uma ação encontrada) --- */
@@ -8861,9 +8789,18 @@ def montar_html_painel(df_base):
     background: var(--cor-acento-teal);
     color: #16211F;
   }
+  /* .ficha-multiplos-item-objeto tem cor própria (--cor-texto-primario, ver
+     abaixo) pra se destacar melhor da linha de baixo -- sem isto, essa cor
+     própria venceria a herança e ficaria clara/escura demais em cima do
+     fundo teal do hover. */
+  .ficha-multiplos-item:hover .ficha-multiplos-item-objeto {
+    color: #16211F;
+  }
   .ficha-multiplos-item-info { min-width: 0; }
   .ficha-multiplos-item-objeto {
     font-size: 13px;
+    font-weight: 600;
+    color: var(--cor-texto-primario);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -10185,18 +10122,7 @@ def montar_html_painel(df_base):
         <span id="ficha-topo-item"></span>
       </div>
       <div class="ficha-topo-acoes" id="ficha-acoes-tela">
-        <button id="ficha-btn-preview-impressao" class="ficha-botao-icone" title="Visualizar impressão">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 6 2 18 2 18 9"></polyline>
-            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-            <rect x="6" y="14" width="12" height="8"></rect>
-          </svg>
-        </button>
-        <button id="ficha-btn-fechar" class="ficha-botao-icone" title="Fechar">&times;</button>
-      </div>
-      <div class="ficha-topo-acoes" id="ficha-acoes-impressao" style="display:none;">
-        <button id="ficha-btn-voltar-tela" class="btn">&larr; Voltar</button>
-        <button id="ficha-btn-salvar-pdf" class="ficha-botao-icone" title="Salvar em PDF">
+        <button id="ficha-btn-gerar-pdf" class="ficha-botao-icone" title="Gerar PDF">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
@@ -10204,13 +10130,10 @@ def montar_html_painel(df_base):
             <polyline points="9 15 12 18 15 15"></polyline>
           </svg>
         </button>
-        <button id="ficha-btn-fechar-impressao" class="ficha-botao-icone" title="Fechar">&times;</button>
+        <button id="ficha-btn-fechar" class="ficha-botao-icone" title="Fechar">&times;</button>
       </div>
     </div>
     <div id="ficha-corpo" class="ficha-corpo"></div>
-    <div id="ficha-pagina-a4-wrap" class="ficha-pagina-a4-wrap">
-      <div id="ficha-pagina-a4" class="ficha-pagina-a4"></div>
-    </div>
   </div>
 </div>
 
@@ -13043,29 +12966,12 @@ def montar_html_painel(df_base):
         { rotulo: "Descrição", chave: "descricao" },
       ]},
       { titulo: "Execução", campos: [
+        { rotulo: "Gestão", chave: "gestao" },
         { rotulo: "Secretaria/Órgão", chave: "secretaria" },
         { rotulo: "Órgão Executor", chave: "executor" },
-        { rotulo: "Gestão", chave: "gestao" },
         { rotulo: "Eixo", chave: "eixo" },
         { rotulo: "Município", chave: "municipio" },
         { rotulo: "Fonte de Recurso", chave: "fonte" },
-      ]},
-      { titulo: "Situação", campos: [
-        { rotulo: "Fase", chave: "fase" },
-        { rotulo: "Status", chave: "status" },
-        { rotulo: "Cláusula Suspensiva", chave: "clausula_suspensiva" },
-        { rotulo: "Motivo da Cláusula Suspensiva", chave: "motivo_clausula_suspensiva" },
-      ]},
-      { titulo: "Prazos", campos: [
-        { rotulo: "Vigência", chave: "vigencia" },
-        { rotulo: "Previsão de Conclusão Atual", chave: "prazo_atual" },
-        { rotulo: "Prazo de Conclusão da Fase", chave: "prazo_fase" },
-        { rotulo: "Avanço da Obra", chave: "avanco" },
-      ]},
-      { titulo: "Licitação", campos: [
-        { rotulo: "Aviso de Licitação", chave: "aviso_licitacao" },
-        { rotulo: "Abertura de Licitação", chave: "abertura_licitacao" },
-        { rotulo: "Emissão de O.S.", chave: "emissao_os" },
       ]},
       { titulo: "Financeiro", campos: [
         { rotulo: "Valor Contratado", chave: "valor_contratado" },
@@ -13074,6 +12980,23 @@ def montar_html_painel(df_base):
         { rotulo: "Contrapartida", chave: "contrapartida" },
         { rotulo: "Complementar", chave: "complementar" },
         { rotulo: "Investimento Total", chave: "investimento_total" },
+      ]},
+      { titulo: "Situação", campos: [
+        { rotulo: "Fase", chave: "fase" },
+        { rotulo: "Status", chave: "status" },
+        { rotulo: "Cláusula Suspensiva", chave: "clausula_suspensiva" },
+        { rotulo: "Vigência", chave: "vigencia" },
+        { rotulo: "Motivo da Cláusula Suspensiva", chave: "motivo_clausula_suspensiva" },
+        { rotulo: "Avanço da Obra", chave: "avanco" },
+      ]},
+      { titulo: "Prazos", campos: [
+        { rotulo: "Aviso de Licitação", chave: "aviso_licitacao" },
+        { rotulo: "Abertura de Licitação", chave: "abertura_licitacao" },
+        { rotulo: "Previsão de Contratação", chave: "previsao_contratacao" },
+        { rotulo: "Emissão de O.S.", chave: "emissao_os" },
+        { rotulo: "Conclusão Original", chave: "conclusao_original" },
+        { rotulo: "Previsão de Conclusão Atual", chave: "prazo_atual" },
+        { rotulo: "Prazo de Conclusão da Fase", chave: "prazo_fase" },
       ]},
       { titulo: "Acompanhamento", largo: true, campos: [
         { rotulo: "Pendências / Tarefa", chave: "pendencia" },
@@ -13130,38 +13053,6 @@ def montar_html_painel(df_base):
     });
   }
 
-  function renderizarFichaA4(dados) {
-    var pagina = document.getElementById("ficha-pagina-a4");
-    var camposAlerta = dados._campos_alerta || [];
-    var html =
-      '<div class="ficha-a4-titulo">' + escaparHtmlFicha(dados.objeto || "Ficha Cadastral") + '</div>' +
-      '<div class="ficha-a4-subtitulo">PAC - Ficha Cadastral da Ação — Item ' + escaparHtmlFicha(dados.item) + '</div>';
-    definicaoSecoesFicha().forEach(function (secao) {
-      var gridClasse = "ficha-a4-grid" + (secao.largo ? " ficha-a4-grid-largo" : "");
-      var camposHtml = secao.campos.map(function (c) {
-        var classeAlerta = camposAlerta.indexOf(c.chave) !== -1 ? " ficha-a4-campo-alerta" : "";
-        return (
-          '<div>' +
-            '<div class="ficha-a4-campo-rotulo">' + c.rotulo + '</div>' +
-            '<div class="ficha-a4-campo-valor' + classeAlerta + '">' + valorFichaHtml(dados[c.chave], c.link) + '</div>' +
-          '</div>'
-        );
-      }).join("");
-      html +=
-        '<div class="ficha-a4-secao">' +
-          '<div class="ficha-a4-secao-titulo">' + secao.titulo + '</div>' +
-          '<div class="' + gridClasse + '">' + camposHtml + '</div>' +
-        '</div>';
-    });
-    pagina.innerHTML = html;
-  }
-
-  function sairModoImpressaoFicha() {
-    document.getElementById("ficha-painel").classList.remove("ficha-modo-impressao");
-    document.getElementById("ficha-acoes-tela").style.display = "flex";
-    document.getElementById("ficha-acoes-impressao").style.display = "none";
-  }
-
   var _fichaDadosAtuais = null;
   // Lembra se a ficha foi aberta a partir da janela de busca. Quem chega
   // pela busca costuma estar percorrendo vários itens da lista, então
@@ -13176,8 +13067,6 @@ def montar_html_painel(df_base):
     document.getElementById("ficha-topo-objeto").textContent = dados.objeto || "(sem objeto)";
     document.getElementById("ficha-topo-item").textContent = dados.item ? ("Item " + dados.item) : "";
     renderizarFichaTela(dados);
-    renderizarFichaA4(dados);
-    sairModoImpressaoFicha();
     document.getElementById("ficha-overlay").style.display = "flex";
   }
 
@@ -13319,31 +13208,21 @@ def montar_html_painel(df_base):
     document.getElementById("ficha-multiplos-overlay").style.display = "none";
     _fichaVeioDaBusca = false;
   };
-  document.getElementById("ficha-btn-preview-impressao").onclick = function () {
-    document.getElementById("ficha-painel").classList.add("ficha-modo-impressao");
-    document.getElementById("ficha-acoes-tela").style.display = "none";
-    document.getElementById("ficha-acoes-impressao").style.display = "flex";
-    document.getElementById("ficha-corpo").scrollTop = 0;
-  };
-  document.getElementById("ficha-btn-voltar-tela").onclick = sairModoImpressaoFicha;
-  document.getElementById("ficha-btn-fechar-impressao").onclick = fecharFicha;
-  async function salvarFichaComoPdf() {
+  async function gerarFichaPdf() {
     if (!_fichaDadosAtuais) return;
-    // No desktop, o Python salva o PDF direto no disco escolhido pelo
-    // diálogo nativo; num navegador comum, baixarPDF() já abre o PDF numa
-    // nova aba a partir dos bytes devolvidos pelo servidor — por isso a
-    // mensagem fala em "gerado", não "salvo em disco", e serve pros dois
-    // casos.
+    // No desktop, o botão já abre direto o diálogo nativo de salvar
+    // (pasta Downloads sugerida, nome do objeto como nome do arquivo — ver
+    // exportar_ficha_pdf) e abre o PDF assim que salvo, sem passo de
+    // pré-visualização no meio; num navegador comum, baixarPDF() já abre o
+    // PDF numa nova aba a partir dos bytes devolvidos pelo servidor.
     var resultado = await baixarPDF("exportar_ficha_pdf", _fichaDadosAtuais.item);
     if (!resultado || resultado.cancelado) return;
-    if (resultado.ok) {
-      alert("PDF gerado com sucesso: " + resultado.arquivo);
-    } else {
+    if (!resultado.ok) {
       alert(resultado.erro || "Não foi possível gerar o PDF.");
     }
   }
 
-  document.getElementById("ficha-btn-salvar-pdf").onclick = salvarFichaComoPdf;
+  document.getElementById("ficha-btn-gerar-pdf").onclick = gerarFichaPdf;
 
   async function executarGeracaoRelatorio() {
     var filtros = montarFiltrosAtuais();
@@ -13789,7 +13668,7 @@ def _api_exportar_ficha_pdf_bytes(item):
     if dados is None:
         return {"ok": False, "erro": "Ação não encontrada."}
 
-    nome_sugerido = f"Ficha_Item_{normalizar_item(item)}.pdf"
+    nome_sugerido = _nome_arquivo_ficha_pdf(dados)
     descritor, caminho_temp = tempfile.mkstemp(suffix=".pdf", prefix="pac_ficha_web_")
     os.close(descritor)
     try:
@@ -13889,13 +13768,16 @@ def abrir_interface_filtros(df_base):
             return _api_buscar_ficha_por_item(item)
 
         def exportar_ficha_pdf(self, item):
-            # Botão "Salvar em PDF" da Ficha Cadastral — gera um PDF de uma
-            # página A4 só com essa ação, e pede o local de salvamento pelo
-            # diálogo nativo do pywebview (mesmo padrão do relatório
-            # completo). Exclusivo do modo desktop: o equivalente web é
-            # _api_exportar_ficha_pdf_bytes, que devolve os bytes do PDF em
-            # vez de salvar direto no disco (não há diálogo nativo num
-            # navegador comum).
+            # Botão "Gerar PDF" (ícone) da Ficha Cadastral — gera direto um
+            # PDF de uma página A4 com essa ação, sem passo de
+            # pré-visualização no meio: abre o diálogo nativo do pywebview
+            # já na pasta Downloads, com o OBJETO da ação como nome sugerido
+            # (ver _nome_arquivo_ficha_pdf), e abre o PDF sozinho assim que
+            # salvo — mesmo padrão do relatório completo (ver
+            # gerar_pdf_bytes/os.startfile). Exclusivo do modo desktop: o
+            # equivalente web é _api_exportar_ficha_pdf_bytes, que devolve os
+            # bytes do PDF em vez de salvar direto no disco (não há diálogo
+            # nativo nem os.startfile num navegador comum).
             try:
                 dados = _localizar_acao_por_item(item)
                 if dados is None:
@@ -13904,7 +13786,7 @@ def abrir_interface_filtros(df_base):
                 pasta_inicial = (
                     PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
                 )
-                nome_sugerido = f"Ficha_Item_{normalizar_item(item)}.pdf"
+                nome_sugerido = _nome_arquivo_ficha_pdf(dados)
                 resultado_dialogo = janela.create_file_dialog(
                     webview.SAVE_DIALOG,
                     directory=pasta_inicial,
@@ -13923,6 +13805,8 @@ def abrir_interface_filtros(df_base):
                     caminho_escolhido += ".pdf"
 
                 gerar_pdf_ficha_acao(dados, caminho_escolhido)
+                if os.name == "nt":
+                    os.startfile(caminho_escolhido)
                 return {"ok": True, "arquivo": caminho_escolhido}
             except Exception as erro:
                 import traceback
