@@ -201,6 +201,12 @@ button{font-family:inherit;cursor:pointer;}
 #painel .campo{margin-bottom:12px;}
 #painel .campo b{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:var(--cor-texto-terciario); margin-bottom:3px;}
 #painel .campo span{font-size:13.5px; color:var(--cor-texto-primario);}
+/* .badge (campo "Fase") tem que continuar branco em cima do fundo colorido
+   -- sem isto, "#painel .campo span" acima (mais específico que .badge
+   sozinho) vence e pinta o texto com --cor-texto-primario. No escuro isso
+   não aparecia porque essa variável também era branca; no claro virou
+   escura e sumiu o contraste do badge. */
+#painel .campo .badge{color:#fff;}
 #painel .contagem-grande{font-size:22px; font-weight:700; font-variant-numeric:tabular-nums;}
 
 #painel .voltar-lista{

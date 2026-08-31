@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import unicodedata
 import webbrowser
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 import openpyxl
@@ -176,6 +176,20 @@ except Exception:
 ultima_atualizacao_txt = ultima_atualizacao.strftime(
     "Fonte: CASA CIVIL / CGAPE - Planilha Panorama - Atualizado em: %d/%m/%Y às %Hhs%Mmin"
 )
+
+
+def agora_bahia():
+    # "Agora", em horário de Bahia/Brasília (UTC-3 o ano todo, mesmo
+    # raciocínio do ajuste de ultima_atualizacao acima) — em vez de
+    # datetime.now() puro, que devolve o horário do RELÓGIO DA MÁQUINA. No
+    # desktop isso não dava problema (a máquina já está no fuso da Bahia),
+    # mas no modo web o servidor (Render) roda em UTC: um "gerado em" ou
+    # "atrasada desde" calculado com datetime.now() lá saía com ~3h de
+    # diferença do mesmo relatório rodando no .exe — a inconsistência de
+    # horário entre o link e o .exe que motivou esta função. Usada em
+    # qualquer lugar que precise do horário/data atual pra EXIBIR pro
+    # usuário ou COMPARAR com prazos (situação "atrasada"/"em dia").
+    return datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=3)
 MESES_PT = {
     1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
     5: "maio", 6: "junho", 7: "julho", 8: "agosto",
@@ -1634,7 +1648,7 @@ def calcular_trimestre(data, hoje=None):
     if pd.isna(data) or not isinstance(data, (pd.Timestamp, datetime)):
         return "A definir"
     if hoje is None:
-        hoje = datetime.now()
+        hoje = agora_bahia()
     # Trimestre a trimestre só no ano vigente e no seguinte — são os que
     # importam pra fiscalização de perto. Datas mais distantes (passadas ou
     # futuras) ficam agrupadas por ano inteiro, senão o eixo do gráfico
@@ -4956,7 +4970,7 @@ def _campos_alerta_qualidade(row, hoje=None):
     # pra destacar o campo (contorno vermelho) na Ficha Cadastral. Única
     # fonte de verdade: os dois lugares nunca ficam dessincronizados.
     if hoje is None:
-        hoje = datetime.now().date()
+        hoje = agora_bahia().date()
     status_atual = str(row.get("STATUS_TEXTO", "")).strip().upper()
     fase_atual = str(row.get("FASE_TEXTO", "")).strip().upper()
     data_fase = _extrair_data_alerta(row.get(col_prazo)) if col_prazo in row.index else None
@@ -5072,7 +5086,7 @@ def _montar_aviso_qualidade(df):
     #    verificação se aplica mesmo às ações CONCLUÍDA/INAUGURADA.
     # É apenas um aviso — não impede a geração do PDF, salvo se o usuário
     # optar por Cancelar no painel exibido.
-    hoje = datetime.now().date()
+    hoje = agora_bahia().date()
 
     # TODAS as ações da base passam pelo Controle de Qualidade. Não existe
     # mais lista de itens dispensados: a checagem é uniforme, e um item com
@@ -7259,7 +7273,7 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
                     # Referência única de "hoje" para toda a tabela: garante que
                     # todas as linhas sejam julgadas pela mesma data, mesmo se a
                     # geração do relatório atravessar a virada do dia.
-                    hoje_referencia = datetime.now().date()
+                    hoje_referencia = agora_bahia().date()
                     for _, row in df_eixo.iterrows():
                         obj = str(row[col_objeto])
                         fas = str(row["FASE_TEXTO"])
@@ -13552,7 +13566,7 @@ def _api_mapa_mental(filtros):
             "titulo_aba": "Mapa Mental — BALANÇO PAC",
             "subtitulo": "Secretarias/Órgãos, Executores e Objetos com ações do PAC",
             "total": int(len(df)),
-            "gerado_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "gerado_em": agora_bahia().strftime("%d/%m/%Y %H:%M"),
             # tema atual do painel (chave claro/escuro no topo) — o mapa
             # mental é um <iframe srcdoc> isolado, sem acesso ao
             # localStorage da página principal, então recebe pronto aqui
