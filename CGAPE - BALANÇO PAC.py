@@ -7819,6 +7819,18 @@ def montar_html_painel(df_base):
      realmente entrarem em vigor no celular, em vez de nunca disparar. -->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CGAPE - BALANÇO PAC</title>
+<script>
+  // Aplica o tema salvo ANTES do <style> ser lido, pra não piscar o tema
+  // escuro (padrão do :root) por uma fração de segundo antes de trocar pro
+  // claro salvo da sessão anterior.
+  (function () {
+    try {
+      if (localStorage.getItem("cgape-tema") === "claro") {
+        document.documentElement.setAttribute("data-tema", "claro");
+      }
+    } catch (e) {}
+  })();
+</script>
 <style>
   :root {
     --cor-fundo: #303030;
@@ -7835,6 +7847,14 @@ def montar_html_painel(df_base):
     /* Gold claro: mesma função que o mint tem em relação ao teal — o tom
        de texto/hover em cima do gold. Usado no bloco de colunas. */
     --cor-acento-gold-claro: #F2CE83;
+    /* teal/mint usados como COR DE TEXTO (número de destaque, título de
+       card marcado, hover de botão/link etc.) -- separados de
+       --cor-acento-teal/mint (que continuam servindo fundo/borda/badge)
+       porque no tema claro o texto precisa de um tom bem mais escuro pra
+       ter contraste em cima de branco, enquanto fundo/borda ficam iguais
+       nos dois temas. No escuro são idênticos aos originais. */
+    --cor-acento-teal-texto: var(--cor-acento-teal);
+    --cor-acento-mint-texto: var(--cor-acento-mint);
     --raio-sm: 4px;
     --raio-md: 8px;
     --raio-lg: 16px;
@@ -7843,6 +7863,28 @@ def montar_html_painel(df_base):
     --transicao-rapida: 0.15s ease;
     --transicao-padrao: 0.25s ease-in-out;
     --fonte: "Segoe UI", "Roboto", system-ui, -apple-system, sans-serif;
+  }
+
+  /* --- Tema claro: mesmo design system (AGF), só troca fundo/superfície/
+     texto -- acentos (teal, mint, peach, gold) e cores semânticas (fase,
+     atrasada, etc., definidas mais abaixo/no JS) continuam iguais nos dois
+     temas, é só a "casca" que muda. Ativado via data-tema="claro" na
+     <html>, alternado pela chave de tema no topo (ver .tema-switch) e
+     lembrado entre sessões (localStorage "cgape-tema"). Sem o atributo, o
+     :root de cima já é o tema escuro (o original/padrão do projeto). */
+  html[data-tema="claro"] {
+    --cor-fundo: #F4F6F8;
+    --cor-card: #FFFFFF;
+    --cor-card-elevado: #EBEFF2;
+    --cor-texto-primario: #1B2430;
+    --cor-texto-secundario: #56606E;
+    --cor-texto-terciario: #8A94A3;
+    --sombra-card: 0px 5px 30px 0px rgba(27, 36, 48, 0.10);
+    /* tons de teal/mint escurecidos SÓ pra uso como texto (ver comentário
+       em --cor-acento-teal-texto acima) -- o teal/mint "de fundo" (botões,
+       badges, bordas) continua igual ao escuro, só o texto muda. */
+    --cor-acento-teal-texto: #2E6B66;
+    --cor-acento-mint-texto: #1F7A73;
   }
 
   * { box-sizing: border-box; }
@@ -7958,7 +8000,7 @@ def montar_html_painel(df_base):
   }
   .btn-mini:hover {
     border-color: var(--cor-acento-teal);
-    color: var(--cor-acento-mint);
+    color: var(--cor-acento-mint-texto);
   }
 
   /* --- Grade de blocos --- */
@@ -8155,7 +8197,7 @@ def montar_html_painel(df_base):
     align-items: center;
     justify-content: center;
     background: transparent;
-    color: var(--cor-acento-teal);
+    color: var(--cor-acento-teal-texto);
     border: none;
     border-radius: var(--raio-sm);
     padding: 0;
@@ -8381,7 +8423,7 @@ def montar_html_painel(df_base):
   }
   .qc-grupo-titulo {
     font-weight: 700;
-    color: var(--cor-acento-teal);
+    color: var(--cor-acento-teal-texto);
     margin: 14px 0 6px 0;
   }
   .qc-linha {
@@ -8415,12 +8457,12 @@ def montar_html_painel(df_base):
     margin-top: 2px;
   }
   .qc-item-link {
-    color: var(--cor-acento-teal);
+    color: var(--cor-acento-teal-texto);
     text-decoration: underline;
     cursor: pointer;
   }
   .qc-item-link:hover {
-    color: var(--cor-acento-mint);
+    color: var(--cor-acento-mint-texto);
   }
   .qc-instrucao {
     margin-top: 14px;
@@ -8492,7 +8534,7 @@ def montar_html_painel(df_base):
     flex-shrink: 0;
     font-size: 12px;
     font-weight: 500;
-    color: var(--cor-acento-teal);
+    color: var(--cor-acento-teal-texto);
   }
   .ficha-topo-acoes {
     display: flex;
@@ -8535,7 +8577,7 @@ def montar_html_painel(df_base):
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--cor-acento-teal);
+    color: var(--cor-acento-teal-texto);
     margin-bottom: 10px;
     padding-bottom: 6px;
     border-bottom: 1px solid var(--cor-card-elevado);
@@ -8567,7 +8609,7 @@ def montar_html_painel(df_base):
     font-style: italic;
   }
   .ficha-campo-valor a {
-    color: var(--cor-acento-teal);
+    color: var(--cor-acento-teal-texto);
     text-decoration: underline;
     word-break: break-all;
   }
@@ -8732,7 +8774,7 @@ def montar_html_painel(df_base):
     border-color: var(--cor-acento-teal);
     background: rgba(114, 180, 174, 0.10);
   }
-  .pagina-card.marcada .pagina-card-titulo { color: var(--cor-acento-mint); }
+  .pagina-card.marcada .pagina-card-titulo { color: var(--cor-acento-mint-texto); }
   /* A miniatura fica opaca quando a página está fora da seleção — a
      diferença precisa ser visível de relance numa grade de onze cartões. */
   .pagina-card svg { opacity: 0.35; transition: opacity var(--transicao-rapida); }
@@ -8829,34 +8871,20 @@ def montar_html_painel(df_base):
      o botão que abre fica dentro do próprio painel de filtros. O conteúdo
      é uma página HTML autônoma (gerada em Python, ver mapa_mental_html.py)
      carregada num <iframe> — isolado do CSS/JS deste painel de propósito,
-     para os dois nunca conflitarem entre si (ids repetidos, temas etc.). */
+     para os dois nunca conflitarem entre si (ids repetidos, temas etc.).
+     Sem barra externa aqui: o botão de fechar mora dentro do próprio
+     cabeçalho da página do iframe (mesma linha do título "... Mapa
+     Mental") e avisa esta página por postMessage quando é clicado — ver
+     o listener "message" logo abaixo, e o botão #fechar-mapa em
+     mapa_mental_html.py. */
   #mapa-mental-overlay {
     display: none;
-    flex-direction: column;
     position: fixed;
     inset: 0;
     z-index: 95;
     background: var(--cor-fundo);
   }
-  #mapa-mental-topo {
-    flex: 0 0 auto;
-    /* padding-left igual ao padding lateral do #dashboard dentro do iframe
-       (ver mapa_mental_html.py) -- alinha o botão com os chips de fase do
-       lado esquerdo, já que aqui fora não dá pra enxergar o iframe */
-    padding: 10px 22px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    background: var(--cor-card-elevado);
-    border-bottom: 1px solid var(--cor-card);
-  }
-  #mapa-mental-fechar {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
   #mapa-mental-iframe {
-    flex: 1 1 auto;
     width: 100%;
     height: 100%;
     border: none;
@@ -8921,6 +8949,67 @@ def montar_html_painel(df_base):
     padding: 7px 14px;
     box-shadow: none;
   }
+  /* --- Chave de tema claro/escuro: mesmo padrão visual da chave de
+     alternância do Android (trilho em pílula, bolinha que desliza, sol de
+     um lado e lua do outro) — mesmo componente nas duas barras (painel de
+     filtros e dash), ao lado do Acesso Rápido. Estado atual = atributo
+     data-tema na <html> (ver aplicarTema() no JS); sem o atributo é
+     escuro, então a bolinha começa à direita (sobre a lua). */
+  .tema-switch {
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    background: none;
+    border: none;
+    flex-shrink: 0;
+  }
+  .tema-switch-trilho {
+    position: relative;
+    width: 50px;
+    height: 26px;
+    border-radius: 999px;
+    background: var(--cor-card-elevado);
+    border: 1px solid rgba(114, 180, 174, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 5px;
+    transition: background var(--transicao-padrao), border-color var(--transicao-padrao);
+  }
+  .tema-switch-icone {
+    display: flex;
+    /* sem z-index de propósito: a bolinha (definida depois no HTML) tem
+       que ficar por cima e encobrir por completo o ícone do lado em que
+       ela está parada -- só o ícone do lado "livre" (oposto) fica
+       visível na pista. */
+    opacity: 0.5;
+    transition: opacity var(--transicao-rapida);
+  }
+  .tema-switch-sol { color: var(--cor-acento-gold); }
+  .tema-switch-lua { color: var(--cor-texto-secundario); }
+  html:not([data-tema="claro"]) .tema-switch-lua { opacity: 1; }
+  html[data-tema="claro"] .tema-switch-sol { opacity: 1; }
+  .tema-switch-bolinha {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--cor-texto-secundario);
+    /* sombra própria, pequena e justa -- var(--sombra-card) é pensada pra
+       cards grandes (30px de blur) e numa bolinha de 20px vira um brilho
+       enorme que borra o trilho inteiro */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transform: translateX(24px);
+    transition: transform var(--transicao-padrao), background var(--transicao-padrao);
+  }
+  html[data-tema="claro"] .tema-switch-bolinha {
+    transform: translateX(0);
+    background: var(--cor-acento-gold);
+  }
+  .tema-switch:hover .tema-switch-trilho { border-color: var(--cor-acento-teal); }
+
   /* --- Acesso Rápido: botão de ícone (grade 2x2) que abre um menu com os
      atalhos MAPA MENTAL, FILTROS e PUBLICAR — mesmo componente nas duas
      barras (painel de filtros e dash), sempre no fim da fileira de
@@ -9089,7 +9178,7 @@ def montar_html_painel(df_base):
        da lupa em teal — do mesmo jeito que as pílulas de secretaria ficam
        apagadas até receberem o cursor. */
     background: var(--cor-card-elevado);
-    color: var(--cor-acento-teal);
+    color: var(--cor-acento-teal-texto);
     cursor: pointer;
     transition: background var(--transicao-rapida), color var(--transicao-rapida);
   }
@@ -9181,7 +9270,7 @@ def montar_html_painel(df_base):
     font-size: 12.5px;
     color: var(--cor-texto-primario);
   }
-  #preview-nota-secretaria b { color: var(--cor-acento-mint); }
+  #preview-nota-secretaria b { color: var(--cor-acento-mint-texto); }
 
   #preview-corpo {
     padding: 24px 32px 40px 32px;
@@ -9243,7 +9332,7 @@ def montar_html_painel(df_base):
   .preview-card-resumo .valor {
     font-size: 26px;
     font-weight: 700;
-    color: var(--cor-acento-mint);
+    color: var(--cor-acento-mint-texto);
     margin-top: 4px;
   }
 
@@ -9327,7 +9416,7 @@ def montar_html_painel(df_base):
   .grafico-legenda-valor {
     font-size: 14px;
     font-weight: 700;
-    color: var(--cor-acento-mint);
+    color: var(--cor-acento-mint-texto);
   }
   .grafico-legenda-pct {
     font-size: 10px;
@@ -9356,7 +9445,7 @@ def montar_html_painel(df_base):
   .tooltip-objetos-titulo {
     font-size: 10.5px;
     font-weight: 700;
-    color: var(--cor-acento-teal);
+    color: var(--cor-acento-teal-texto);
     text-transform: uppercase;
     margin-bottom: 6px;
     padding-bottom: 6px;
@@ -9389,7 +9478,7 @@ def montar_html_painel(df_base):
     font-weight: 700;
   }
   .tooltip-objetos-valor {
-    color: var(--cor-acento-mint);
+    color: var(--cor-acento-mint-texto);
     font-weight: 700;
     white-space: nowrap;
   }
@@ -9521,7 +9610,7 @@ def montar_html_painel(df_base):
   .preview-gestao-subtitulo {
     font-size: 11.5px;
     font-weight: 700;
-    color: var(--cor-acento-teal);
+    color: var(--cor-acento-teal-texto);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     margin: 16px 0 10px 0;
@@ -9558,7 +9647,7 @@ def montar_html_painel(df_base):
   .preview-mini-card .titulo-sec-exec {
     font-size: 12.5px;
     font-weight: 700;
-    color: var(--cor-acento-mint);
+    color: var(--cor-acento-mint-texto);
     margin-bottom: 8px;
     line-height: 1.3;
     padding-right: 20px;
@@ -9700,7 +9789,7 @@ def montar_html_painel(df_base):
   .grafico-secretaria-valor {
     font-size: 13px;
     font-weight: 700;
-    color: var(--cor-acento-mint);
+    color: var(--cor-acento-mint-texto);
     text-align: right;
     white-space: nowrap;
   }
@@ -9981,6 +10070,29 @@ def montar_html_painel(df_base):
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
       <button class="btn" id="btn-preview">DASHBOARD</button>
       <button class="btn-acento" id="btn-gerar">GERAR RELATÓRIO</button>
+      <button type="button" class="tema-switch" id="tema-switch-filtros" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
+        <span class="tema-switch-trilho">
+          <span class="tema-switch-icone tema-switch-sol">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="4"></circle>
+              <line x1="12" y1="2" x2="12" y2="4"></line>
+              <line x1="12" y1="20" x2="12" y2="22"></line>
+              <line x1="4.2" y1="4.2" x2="5.6" y2="5.6"></line>
+              <line x1="18.4" y1="18.4" x2="19.8" y2="19.8"></line>
+              <line x1="2" y1="12" x2="4" y2="12"></line>
+              <line x1="20" y1="12" x2="22" y2="12"></line>
+              <line x1="4.2" y1="19.8" x2="5.6" y2="18.4"></line>
+              <line x1="18.4" y1="5.6" x2="19.8" y2="4.2"></line>
+            </svg>
+          </span>
+          <span class="tema-switch-icone tema-switch-lua">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+              <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"></path>
+            </svg>
+          </span>
+          <span class="tema-switch-bolinha"></span>
+        </span>
+      </button>
       <div class="acesso-rapido-wrap" id="acesso-rapido-filtros-wrap">
         <button class="botao-icone-topo" id="acesso-rapido-filtros-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -10132,19 +10244,6 @@ def montar_html_painel(df_base):
 </div>
 
 <div id="mapa-mental-overlay">
-  <div id="mapa-mental-topo">
-    <!-- Sem título aqui de propósito: a página dentro do iframe (ver
-         mapa_mental_html.py) já tem o próprio cabeçalho completo
-         (título, subtítulo, contagem e data) — repetir o título nesta
-         barra externa só duplicava a informação. -->
-    <button class="btn" id="mapa-mental-fechar">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="19" y1="12" x2="5" y2="12"></line>
-        <polyline points="12 19 5 12 12 5"></polyline>
-      </svg>
-      Voltar aos filtros
-    </button>
-  </div>
   <iframe id="mapa-mental-iframe" title="Mapa Mental do BALANÇO PAC"></iframe>
 </div>
 
@@ -10159,6 +10258,29 @@ def montar_html_painel(df_base):
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
         <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
+        <button type="button" class="tema-switch" id="tema-switch-dash" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
+          <span class="tema-switch-trilho">
+            <span class="tema-switch-icone tema-switch-sol">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="4"></circle>
+                <line x1="12" y1="2" x2="12" y2="4"></line>
+                <line x1="12" y1="20" x2="12" y2="22"></line>
+                <line x1="4.2" y1="4.2" x2="5.6" y2="5.6"></line>
+                <line x1="18.4" y1="18.4" x2="19.8" y2="19.8"></line>
+                <line x1="2" y1="12" x2="4" y2="12"></line>
+                <line x1="20" y1="12" x2="22" y2="12"></line>
+                <line x1="4.2" y1="19.8" x2="5.6" y2="18.4"></line>
+                <line x1="18.4" y1="5.6" x2="19.8" y2="4.2"></line>
+              </svg>
+            </span>
+            <span class="tema-switch-icone tema-switch-lua">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"></path>
+              </svg>
+            </span>
+            <span class="tema-switch-bolinha"></span>
+          </span>
+        </button>
         <div class="acesso-rapido-wrap" id="acesso-rapido-dash-wrap">
           <button class="botao-icone-topo" id="acesso-rapido-dash-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -12322,6 +12444,10 @@ def montar_html_painel(df_base):
       }
 
       var filtros = montarFiltrosAtuais();
+      // o mapa mental é um documento à parte (iframe srcdoc) sem acesso ao
+      // localStorage desta página — manda o tema atual junto pra ele nascer
+      // já na cor certa (ver meta["tema"] em _api_mapa_mental)
+      filtros.tema = obterTemaAtual();
       botoesMapaMental.forEach(function (b) { b.disabled = true; });
       var resultado;
       try {
@@ -12347,10 +12473,16 @@ def montar_html_painel(df_base):
     };
   });
 
-  document.getElementById("mapa-mental-fechar").onclick = function () {
-    mapaMentalOverlay.style.display = "none";
-    mapaMentalIframe.srcdoc = "";
-  };
+  // Botão de fechar mora dentro do próprio iframe (mesma linha do título
+  // "... Mapa Mental", ver #fechar-mapa em mapa_mental_html.py) — como
+  // ele não pode chamar direto o overlay da página pai (documentos
+  // isolados), avisa por postMessage.
+  window.addEventListener("message", function (ev) {
+    if (ev.data && ev.data.tipo === "mapa-mental-fechar") {
+      mapaMentalOverlay.style.display = "none";
+      mapaMentalIframe.srcdoc = "";
+    }
+  });
 
   // Botão "FILTROS" (dentro do menu de Acesso Rápido, nas duas barras):
   // abre o painel de filtros maximizado, por cima do dashboard. No próprio
@@ -12404,6 +12536,34 @@ def montar_html_painel(df_base):
       }
     });
   });
+
+  // Chave de tema claro/escuro: alterna o atributo data-tema na <html>
+  // (é ele que troca as variáveis --cor-* do :root, ver <style> no topo
+  // deste HTML), lembra a escolha entre sessões (localStorage) e mantém as
+  // duas chaves (barra de filtros e barra do dash) sincronizadas entre si.
+  // O tema atual também vai junto quando o Mapa Mental é aberto (ver
+  // filtros.tema logo abaixo, no botão MAPA MENTAL), já que ele roda num
+  // <iframe> à parte e não teria como puxar isso do localStorage sozinho.
+  function obterTemaAtual() {
+    return document.documentElement.getAttribute("data-tema") === "claro" ? "claro" : "escuro";
+  }
+  function aplicarTema(tema) {
+    if (tema === "claro") {
+      document.documentElement.setAttribute("data-tema", "claro");
+    } else {
+      document.documentElement.removeAttribute("data-tema");
+    }
+    document.querySelectorAll(".tema-switch").forEach(function (chave) {
+      chave.setAttribute("aria-checked", tema === "claro" ? "true" : "false");
+    });
+    try { localStorage.setItem("cgape-tema", tema); } catch (e) {}
+  }
+  document.querySelectorAll(".tema-switch").forEach(function (chave) {
+    chave.onclick = function () {
+      aplicarTema(obterTemaAtual() === "claro" ? "escuro" : "claro");
+    };
+  });
+  aplicarTema(obterTemaAtual()); // sincroniza aria-checked das duas chaves com o que o <script> do <head> já aplicou
 
   // Botão "GERENCIAL" no topo do dashboard: mesma seleção rápida de STATUS
   // do botão "Gerencial" de dentro do painel de filtros, só que acionável
@@ -13393,6 +13553,11 @@ def _api_mapa_mental(filtros):
             "subtitulo": "Secretarias/Órgãos, Executores e Objetos com ações do PAC",
             "total": int(len(df)),
             "gerado_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            # tema atual do painel (chave claro/escuro no topo) — o mapa
+            # mental é um <iframe srcdoc> isolado, sem acesso ao
+            # localStorage da página principal, então recebe pronto aqui
+            # (ver filtros.tema no JS do botão MAPA MENTAL).
+            "tema": filtros.get("tema"),
         }
         return {"ok": True, "html": montar_html_mapa_mental(arvore, meta)}
     except Exception as erro:

@@ -39,6 +39,11 @@ CSS = """
   --cor-texto-primario:#FFFFFF; --cor-texto-secundario:#B3BAC9; --cor-texto-terciario:#858B97;
   --cor-acento-mint:#B8EAE1; --cor-acento-teal:#72B4AE; --cor-acento-teal-hover:#8AC4BF;
   --cor-acento-peach:#EEB489; --cor-acento-gold:#E0AB45; --cor-acento-gold-claro:#F2CE83;
+  /* teal usado como COR DE TEXTO (link "voltar") -- separado de
+     --cor-acento-teal (que continua servindo fundo/borda) porque no tema
+     claro o texto precisa de um tom bem mais escuro pra ter contraste em
+     cima de branco. Mesmo padrão de CGAPE - BALANÇO PAC.py. */
+  --cor-acento-teal-texto:var(--cor-acento-teal);
   --borda-card:rgba(114,180,174,.25);
   --fase-vermelho:#BB6060; --fase-amarelo:#BC9E2C; --fase-verde:#49925C; --fase-azul:#4E92BA;
   --atrasada:#E2574C;
@@ -46,6 +51,23 @@ CSS = """
   --sombra-card:0px 5px 40px 0px rgba(9,14,21,.16);
   --transicao-rapida:.15s ease; --transicao-padrao:.25s ease-in-out;
   --fonte:"Segoe UI","Roboto",system-ui,-apple-system,sans-serif;
+  /* pontinhos de fundo do viewport: precisam ser claros no tema escuro e
+     escuros no tema claro pra continuar visíveis nos dois */
+  --pontilhado-viewport:rgba(255,255,255,.06);
+}
+/* Tema claro: mesmo esquema do painel principal (ver :root em
+   montar_html_painel, "CGAPE - BALANÇO PAC.py") -- só troca fundo/
+   superfície/texto; acentos, fases e situação de prazo continuam iguais
+   nos dois temas. Ativado via <html data-tema="claro">, decidido no
+   servidor a partir do tema atual do painel (ver meta["tema"] em
+   montar_html_mapa_mental) -- este documento é um <iframe srcdoc> isolado,
+   sem acesso ao localStorage da página pai, por isso o tema chega pronto. */
+:root[data-tema="claro"]{
+  --cor-fundo:#F4F6F8; --cor-card:#FFFFFF; --cor-card-elevado:#EBEFF2;
+  --cor-texto-primario:#1B2430; --cor-texto-secundario:#56606E; --cor-texto-terciario:#8A94A3;
+  --sombra-card:0px 5px 30px 0px rgba(27,36,48,.10);
+  --pontilhado-viewport:rgba(27,36,48,.06);
+  --cor-acento-teal-texto:#2E6B66;
 }
 *{box-sizing:border-box;}
 html,body{margin:0;height:100%;overflow:hidden;}
@@ -133,7 +155,7 @@ button{font-family:inherit;cursor:pointer;}
 #btn-reset:hover{background:var(--cor-acento-teal-hover); color:#1A1A1A;}
 
 #viewport{flex:1 1 auto; position:relative; overflow:hidden; cursor:grab; touch-action:none; background:
-  radial-gradient(circle,rgba(255,255,255,.05) 1px,transparent 1px) 0 0/22px 22px, var(--cor-fundo);}
+  radial-gradient(circle,var(--pontilhado-viewport) 1px,transparent 1px) 0 0/22px 22px, var(--cor-fundo);}
 #viewport.arrastando{cursor:grabbing;}
 #canvas{position:absolute; top:0; left:0; transform-origin:0 0;}
 #svg-linhas{position:absolute; top:0; left:0; overflow:visible; pointer-events:none; transform-origin:0 0;}
@@ -183,7 +205,7 @@ button{font-family:inherit;cursor:pointer;}
 
 #painel .voltar-lista{
   display:inline-flex; align-items:center; gap:4px; background:none; border:none; padding:0; margin-bottom:12px;
-  color:var(--cor-acento-teal); font-size:12px; font-weight:700; cursor:pointer;
+  color:var(--cor-acento-teal-texto); font-size:12px; font-weight:700; cursor:pointer;
 }
 #painel .voltar-lista:hover{color:var(--cor-acento-teal-hover);}
 #painel .lista-rotulo{font-size:11.5px; color:var(--cor-texto-terciario); margin-bottom:10px;}
@@ -210,9 +232,14 @@ def montar_html_mapa_mental(arvore: dict, meta: dict) -> str:
     titulo = meta.get("titulo", "BALANÇO PAC - BAHIA")
     titulo_aba = meta.get("titulo_aba", titulo)
     subtitulo = meta.get("subtitulo", "")
+    # tema herdado do painel principal no momento em que o usuário clicou em
+    # MAPA MENTAL (ver filtros.tema no JS e meta["tema"] em _api_mapa_mental,
+    # "CGAPE - BALANÇO PAC.py") -- sem atributo = escuro (o :root já é
+    # escuro por padrão), só grava o atributo quando for claro mesmo.
+    atributo_tema = ' data-tema="claro"' if meta.get("tema") == "claro" else ""
 
     html = f"""<!doctype html>
-<html lang="pt-br">
+<html lang="pt-br"{atributo_tema}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -840,6 +867,14 @@ function montarLegenda(){
   document.getElementById('legenda-item').innerHTML =
     '<div style="font-weight:700;color:var(--cor-texto-primario);margin-bottom:2px;">Situação do prazo</div>' + linhasSituacao;
 }
+
+// ---------- fechar (voltar aos filtros) ----------
+// esta página vive dentro de um <iframe srcdoc> dentro do painel principal
+// (ver #mapa-mental-overlay em "CGAPE - BALANÇO PAC.py") — quem fecha o
+// overlay é a página pai, então só avisamos ela por postMessage
+document.getElementById('fechar-mapa').onclick = ()=>{
+  try{ window.parent.postMessage({tipo:'mapa-mental-fechar'}, '*'); }catch(e){}
+};
 
 // ---------- recolher/expandir o painel lateral ----------
 document.getElementById('lateral-toggle').onclick = ()=>{
