@@ -1331,8 +1331,8 @@ def _texto_vazio(valor):
 def _motivo_link_localizacao(valor):
     # Devolve o motivo do alerta, ou None quando o campo está vazio (campo
     # em branco não é erro de preenchimento aqui — quem cobra o preenchimento
-    # em obras ANDAMENTO é _campos_alerta_qualidade) ou já traz um link do
-    # Maps.
+    # em obras ANDAMENTO/CONCLUÍDA/INAUGURADA é _campos_alerta_qualidade) ou
+    # já traz um link do Maps.
     if _texto_vazio(valor):
         return None
     texto = str(valor).strip()
@@ -4972,6 +4972,11 @@ CAMPOS_ALERTA_STATUS_IGNORAR_VENCIMENTO = {"CONCLUÍDA", "INAUGURADA"}
 CAMPOS_ALERTA_FASE_IGNORAR_VENCIMENTO = {"CONCLUÍDA"}
 CAMPOS_ALERTA_FASE_SEM_PRAZO = "EXECUÇÃO DO OBJETO"
 CAMPOS_ALERTA_STATUS_SEM_PRAZO = {"ANDAMENTO", "CONCLUÍDA", "INAUGURADA"}
+# Status em que a OBRA precisa ter o Link Localização preenchido: enquanto
+# está em ANDAMENTO o link é o que permite fiscalizar em campo, e depois de
+# CONCLUÍDA/INAUGURADA ele é o registro de onde a entrega ficou — nos três
+# casos o campo em branco é uma pendência de cadastro.
+CAMPOS_ALERTA_STATUS_EXIGE_LINK_LOCALIZACAO = {"ANDAMENTO", "CONCLUÍDA", "INAUGURADA"}
 
 def _extrair_data_alerta(valor):
     if isinstance(valor, (pd.Timestamp, datetime)) and not pd.isna(valor):
@@ -5058,31 +5063,38 @@ def _campos_alerta_qualidade(row, hoje=None):
         if data_prazo_pendencia is not None and data_prazo_pendencia < hoje:
             alertas["prazo_pendencia"] = "Prazo da Pendência / Tarefa vencido"
 
-    # Link Localização preenchido com endereço em vez do link do Google
-    # Maps. Vale para qualquer fase/status, inclusive obra concluída: o
-    # link é o que permite localizar a obra depois, então um endereço
-    # digitado ali continua sendo um defeito de cadastro mesmo com a ação
-    # entregue. Campo em branco não entra aqui — o alerta é sobre o que está
-    # preenchido errado, não sobre o que falta preencher.
+    # Link Localização. Dois defeitos entram aqui:
+    #   1. Preenchido com endereço em vez do link do Google Maps — vale para
+    #      qualquer fase/status, inclusive obra concluída: o link é o que
+    #      permite localizar a obra depois, então um endereço digitado ali
+    #      continua sendo defeito de cadastro mesmo com a ação entregue.
+    #   2. Em branco numa OBRA com status ANDAMENTO, CONCLUÍDA ou INAUGURADA —
+    #      ver CAMPOS_ALERTA_STATUS_EXIGE_LINK_LOCALIZACAO.
     if col_link_localizacao in row.index:
         valor_link_localizacao = row.get(col_link_localizacao)
         motivo_link_localizacao = _motivo_link_localizacao(valor_link_localizacao)
-        # A cobrança do campo em branco em ANDAMENTO só faz sentido pra OBRA:
-        # é o único TIPO que tem execução em campo pra localizar. EQUIPAMENTOS
-        # e PROJETO ficam de fora da checagem — cobrar o link deles aqui geraria
-        # alerta sobre algo que não se aplica ao tipo de ação.
+        # A cobrança do campo em branco só faz sentido pra OBRA: é o único
+        # TIPO que tem execução em campo pra localizar. EQUIPAMENTOS e PROJETO
+        # ficam de fora da checagem — cobrar o link deles aqui geraria alerta
+        # sobre algo que não se aplica ao tipo de ação.
         tipo_atual = str(row.get(col_tipo, "")).strip().upper() if col_tipo in row.index else ""
         if motivo_link_localizacao:
             alertas["link_localizacao"] = motivo_link_localizacao
         elif (
-            status_atual == "ANDAMENTO"
+            status_atual in CAMPOS_ALERTA_STATUS_EXIGE_LINK_LOCALIZACAO
             and tipo_atual not in {"EQUIPAMENTOS", "PROJETO"}
             and _texto_vazio(valor_link_localizacao)
         ):
-            # Obra em ANDAMENTO é o único caso em que o campo em branco É o
-            # problema: enquanto a obra está sendo executada, o link é o que
-            # permite localizá-la em campo — sem ele, não dá pra fiscalizar.
-            alertas["link_localizacao"] = "Obra em Andamento sem Link Localização preenchido"
+            # Obra em ANDAMENTO, CONCLUÍDA ou INAUGURADA precisa do link: em
+            # andamento ele é o que permite fiscalizar em campo; concluída ou
+            # inaugurada, é o registro de onde a entrega ficou. Sem ele, em
+            # qualquer um dos três, não dá pra localizar a obra depois.
+            if status_atual == "ANDAMENTO":
+                alertas["link_localizacao"] = "Obra em Andamento sem Link Localização preenchido"
+            else:
+                alertas["link_localizacao"] = (
+                    f"Obra {status_atual.capitalize()} sem Link Localização preenchido"
+                )
 
     return alertas
 
@@ -5100,6 +5112,9 @@ def _montar_aviso_qualidade(df):
     # 2) Ação na FASE "Execução do Objeto" com STATUS ANDAMENTO, CONCLUÍDA ou
     #    INAUGURADA, mas SEM o PRAZO DE CONCLUSÃO DA FASE preenchido — essa
     #    verificação se aplica mesmo às ações CONCLUÍDA/INAUGURADA.
+    # 3) OBRA com STATUS ANDAMENTO, CONCLUÍDA ou INAUGURADA sem o LINK
+    #    LOCALIZAÇÃO preenchido (ou preenchido com endereço em vez do link).
+    # (a lista completa de checagens está em _campos_alerta_qualidade)
     # É apenas um aviso — não impede a geração do PDF, salvo se o usuário
     # optar por Cancelar no painel exibido.
     hoje = agora_bahia().date()
