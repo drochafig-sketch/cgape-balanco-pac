@@ -7674,6 +7674,29 @@ def _git_publicar_atualizacao(mensagem):
     return {"ok": True}
 
 
+def _relancar_processo():
+    # Sobe o app de novo — mesmo executável, mesmos argumentos — e deixa a
+    # instância atual terminar logo em seguida. Usado pelo botão "Atualizar
+    # base de dados": a planilha é carregada uma única vez, lá no topo deste
+    # arquivo (no import), então a única forma de refletir uma versão nova
+    # do arquivo já sincronizada na pasta é reiniciar o processo.
+    #
+    # SOMENTE DESKTOP — só chamado de dentro de abrir_interface_filtros. No
+    # modo web não há processo local pra reiniciar (e o botão nem aparece).
+    try:
+        if getattr(sys, "frozen", False):
+            # PyInstaller: sys.executable É o próprio .exe; sys.argv[0]
+            # também, então repassamos só os argumentos extras.
+            args = [sys.executable] + sys.argv[1:]
+        else:
+            # "python CGAPE - BALANÇO PAC.py [...]"
+            args = [sys.executable] + sys.argv
+        subprocess.Popen(args, cwd=PASTA_BASE, close_fds=True)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
 def montar_html_painel(df_base):
     # Monta a string HTML/CSS/JS completa do painel de filtros — só isso,
     # sem abrir janela nenhuma. Usada tanto pelo modo desktop
@@ -7987,6 +8010,9 @@ def montar_html_painel(df_base):
     font-size: 11px;
     font-weight: 400;
     color: var(--cor-texto-secundario);
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .topo-orientacao {
     margin: 0;
@@ -8904,6 +8930,39 @@ def montar_html_painel(df_base):
     font-size: 11px;
     font-weight: 400;
     color: var(--cor-texto-secundario);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Botão "Atualizar base de dados" — ícone de recarregar ao lado do
+     carimbo de data/hora. Só aparece no modo desktop (ver JS). */
+  .btn-atualizar-base {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px;
+    line-height: 0;
+    background: transparent;
+    color: var(--cor-texto-secundario);
+    border: 1px solid var(--cor-card-elevado);
+    border-radius: var(--raio-sm);
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .btn-atualizar-base:hover {
+    border-color: var(--cor-acento-teal);
+    color: var(--cor-acento-mint-texto);
+  }
+  .btn-atualizar-base:disabled {
+    opacity: .5;
+    cursor: default;
+  }
+  .btn-atualizar-base.girando svg {
+    animation: btn-atualizar-base-girar .8s linear infinite;
+  }
+  @keyframes btn-atualizar-base-girar {
+    to { transform: rotate(360deg); }
   }
   .modal-titulo-botoes {
     display: flex;
@@ -10012,7 +10071,15 @@ def montar_html_painel(df_base):
     <div class="topo-titulo-bloco">
       <div class="topo-titulo-textos">
         <span class="topo-titulo-principal">BALANÇO PAC - BAHIA</span>
-        <span class="topo-titulo-atualizacao">__ULTIMA_ATUALIZACAO__</span>
+        <span class="topo-titulo-atualizacao">
+          <span>__ULTIMA_ATUALIZACAO__</span>
+          <button type="button" class="btn-atualizar-base" id="btn-atualizar-base-filtros" title="Atualizar base de dados (recarrega a planilha e reabre o painel)" aria-label="Atualizar base de dados" style="display:none">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-3-6.7"></path>
+              <polyline points="21 3 21 9 15 9"></polyline>
+            </svg>
+          </button>
+        </span>
       </div>
       <p class="topo-orientacao">Selecione os filtros desejados. Caso nenhum item de um bloco seja selecionado, todos os itens desse bloco serão considerados automaticamente.</p>
     </div>
@@ -10204,7 +10271,15 @@ def montar_html_painel(df_base):
     <div class="modal-titulo">
       <span class="modal-titulo-textos">
         <span class="modal-titulo-principal">BALANÇO PAC - BAHIA</span>
-        <span class="modal-titulo-atualizacao">__ULTIMA_ATUALIZACAO__</span>
+        <span class="modal-titulo-atualizacao">
+          <span>__ULTIMA_ATUALIZACAO__</span>
+          <button type="button" class="btn-atualizar-base" id="btn-atualizar-base-dash" title="Atualizar base de dados (recarrega a planilha e reabre o painel)" aria-label="Atualizar base de dados" style="display:none">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-3-6.7"></path>
+              <polyline points="21 3 21 9 15 9"></polyline>
+            </svg>
+          </button>
+        </span>
       </span>
       <div class="modal-titulo-botoes">
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
@@ -12301,6 +12376,37 @@ def montar_html_painel(df_base):
     });
   }
 
+  // Botão "Atualizar base de dados" — fica ao lado do carimbo de data/hora
+  // (no topo dos filtros e no cabeçalho do dashboard). A planilha é lida
+  // uma única vez, lá no import do lado Python, então a única forma de
+  // refletir uma versão nova do arquivo (recém-sincronizada na pasta) é
+  // fechar e reabrir o app. Só desktop — no modo web não há processo local
+  // pra reiniciar.
+  var botoesAtualizarBase = [
+    document.getElementById("btn-atualizar-base-filtros"),
+    document.getElementById("btn-atualizar-base-dash"),
+  ].filter(Boolean);
+  if (!window.PAC_MODO_WEB) {
+    botoesAtualizarBase.forEach(function (btn) {
+      btn.style.display = "";
+      btn.onclick = async function () {
+        var confirmar = window.confirm(
+          "Isto vai FECHAR e REABRIR o painel para recarregar a planilha mais " +
+          "recente da pasta." + NL + NL +
+          "Salve o que precisar antes de continuar. Atualizar a base de dados agora?"
+        );
+        if (!confirmar) return;
+        botoesAtualizarBase.forEach(function (b) { b.disabled = true; b.classList.add("girando"); });
+        try {
+          await window.pywebview.api.reiniciar_para_atualizar_base();
+        } catch (erro) {
+          alert("Não foi possível reiniciar o painel:" + NL + NL + erro);
+          botoesAtualizarBase.forEach(function (b) { b.disabled = false; b.classList.remove("girando"); });
+        }
+      };
+    });
+  }
+
   var btnPreview = document.getElementById("btn-preview");
 
   // Busca os dados atualizados e (re)desenha o dashboard — chamada tanto no
@@ -13706,6 +13812,12 @@ def abrir_interface_filtros(df_base):
     # servidor_web.py).
     html_paginal = montar_html_painel(df_base)
 
+    # Marcado pelo botão "Atualizar base de dados" (API.reiniciar_para_atualizar_base):
+    # depois que a janela fecha, logo abaixo, o app se relança do zero pra
+    # reler a planilha. Holder mutável (não um bool solto) pra funcionar com
+    # o fechamento tardio da closure, igual ao 'janela'.
+    estado_reinicio = {"pedido": False}
+
     class APIFiltros:
         # Ponte entre o JS do painel e as funções Python já existentes.
         # NÃO usa mais nenhum diálogo do Tkinter (messagebox/filedialog/
@@ -13860,6 +13972,16 @@ def abrir_interface_filtros(df_base):
         def publicar_atualizacao_git(self, mensagem):
             return _git_publicar_atualizacao(mensagem)
 
+        def reiniciar_para_atualizar_base(self):
+            # Botão "Atualizar base de dados": fecha esta janela e deixa o
+            # app se relançar (ver estado_reinicio logo depois de
+            # webview.start()), forçando a releitura da planilha — que é
+            # carregada uma única vez no import lá em cima.
+            estado_reinicio["pedido"] = True
+            if janela is not None:
+                janela.destroy()
+            return {"ok": True}
+
     # Escreve o HTML num arquivo temporário e abre via caminho de arquivo
     # (url=) em vez de passar a string inteira direto (html=). Passar uma
     # string HTML muito grande para o WebView2 via html= tem limitações de
@@ -13894,6 +14016,11 @@ def abrir_interface_filtros(df_base):
         os.remove(arquivo_html_temp)
     except Exception:
         pass
+
+    # Botão "Atualizar base de dados": a janela já fechou aqui — sobe uma
+    # instância nova (que relê a planilha) e sai, deixando o app "reaberto".
+    if estado_reinicio["pedido"]:
+        _relancar_processo()
 
 
 if __name__ == "__main__":
