@@ -46,6 +46,12 @@ Já vêm definidas no `render.yaml`, não precisa mexer:
   o relatório hoje (ver `_EXPORTADO/AMBIENTE_PYTHON.txt`), pelo mesmo motivo
   que o `MIGRACAO.md` já explica: versão diferente de Python/biblioteca
   pode mudar o relatório visualmente.
+- `PAC_WEB_SENHA=pacpanorama` — senha única pedida antes de qualquer coisa
+  do painel (login HTTP Basic: deixe o usuário em branco no popup do
+  navegador, só a senha importa). Para trocar, edite o valor direto no
+  `render.yaml` e dê `git push` — como o Blueprint resincroniza esse
+  arquivo a cada deploy, uma troca feita só pelo painel do Render seria
+  sobrescrita de volta.
 
 ## Avisos conhecidos
 

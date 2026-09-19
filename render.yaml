@@ -22,3 +22,11 @@ services:
       # a constante MODO_WEB no topo de "CGAPE - BALANÇO PAC.py".
       - key: PAC_WEB_MODE
         value: "1"
+      # Senha única pedida (via login HTTP Basic) antes de qualquer coisa
+      # do painel — ver "exigir_senha" em servidor_web.py. Trocar o valor
+      # abaixo e dar push já muda a senha, sem tocar no código. (Como este
+      # arquivo é lido a cada sync do Blueprint, uma edição feita só pelo
+      # painel do Render em Environment seria sobrescrita de volta para
+      # este valor no próximo deploy — troque sempre por aqui.)
+      - key: PAC_WEB_SENHA
+        value: pacpanorama
