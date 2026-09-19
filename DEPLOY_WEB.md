@@ -37,7 +37,8 @@ Não precisa repetir os passos acima.
 
 ## Variáveis de ambiente
 
-Já vêm definidas no `render.yaml`, não precisa mexer:
+`PAC_WEB_MODE` e `PYTHON_VERSION` já vêm definidas no `render.yaml`, não
+precisa mexer:
 
 - `PAC_WEB_MODE=1` — liga os pontos do código que só fazem sentido no
   servidor (não chamar `os.startfile`, não abrir diálogo do tkinter em erro
@@ -46,12 +47,22 @@ Já vêm definidas no `render.yaml`, não precisa mexer:
   o relatório hoje (ver `_EXPORTADO/AMBIENTE_PYTHON.txt`), pelo mesmo motivo
   que o `MIGRACAO.md` já explica: versão diferente de Python/biblioteca
   pode mudar o relatório visualmente.
-- `PAC_WEB_SENHA=pacpanorama` — senha única pedida antes de qualquer coisa
-  do painel (login HTTP Basic: deixe o usuário em branco no popup do
-  navegador, só a senha importa). Para trocar, edite o valor direto no
-  `render.yaml` e dê `git push` — como o Blueprint resincroniza esse
-  arquivo a cada deploy, uma troca feita só pelo painel do Render seria
-  sobrescrita de volta.
+
+Já `PAC_WEB_SENHA` **não** vem definida no `render.yaml` (só a chave, com
+`sync: false`) — de propósito, porque este repositório é público: um valor
+fixo aqui ficaria visível pra qualquer um no GitHub. O servidor nem sobe
+sem ela (`RuntimeError` na inicialização). Precisa ser configurada à mão,
+uma vez, direto no painel do Render:
+
+1. No serviço `pac-balanco-painel`, vá em **Environment**.
+2. **Add Environment Variable** → chave `PAC_WEB_SENHA`, valor = a senha
+   escolhida.
+3. **Save Changes** — o Render redeploya sozinho já com o valor novo.
+
+É login HTTP Basic: ao abrir o painel, o navegador mostra a janelinha
+nativa de usuário/senha — deixe o usuário em branco, só a senha importa.
+Trocar a senha depois é só repetir o passo 2 com o novo valor (nunca via
+`render.yaml`/commit, senão ela para de ser secreta).
 
 ## Avisos conhecidos
 
@@ -80,13 +91,15 @@ Windows; no Render/Linux o padrão já é UTF-8):
 ```
 $env:PAC_WEB_MODE = "1"
 $env:PYTHONUTF8 = "1"
+$env:PAC_WEB_SENHA = "algumasenha"
 python servidor_web.py
 ```
 Bash/Git Bash:
 ```
-PAC_WEB_MODE=1 PYTHONUTF8=1 python servidor_web.py
+PAC_WEB_MODE=1 PYTHONUTF8=1 PAC_WEB_SENHA=algumasenha python servidor_web.py
 ```
-Depois abra `http://localhost:5000` num navegador comum. `http://localhost:5000/saude`
+Depois abra `http://localhost:5000` num navegador comum (login: usuário em
+branco, senha = o que você pôs em `PAC_WEB_SENHA`). `http://localhost:5000/saude`
 devolve um JSON simples confirmando que a planilha carregou (quantas linhas,
 quando foi atualizada) — útil para checar rápido se o servidor subiu certo
 sem precisar abrir o painel inteiro.

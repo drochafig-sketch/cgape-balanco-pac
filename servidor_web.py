@@ -49,9 +49,17 @@ app = Flask(__name__)
 # Senha única (sem usuário/cadastro) pedida antes de qualquer coisa do
 # painel, via autenticação HTTP Basic — o navegador mostra sozinho a
 # janelinha nativa de usuário/senha (deixe o usuário em branco, só a senha
-# importa). Valor padrão é o combinado; para trocar sem mexer no código,
-# defina a variável de ambiente PAC_WEB_SENHA no Render (Environment).
-SENHA_PAINEL = os.environ.get("PAC_WEB_SENHA", "pacpanorama")
+# importa). Sem valor padrão de propósito: este repositório é público, um
+# padrão fixo no código ficaria visível pra qualquer um. A senha real só
+# existe como variável de ambiente PAC_WEB_SENHA — no Render, definida em
+# Environment (nunca neste arquivo nem no render.yaml); local, ver
+# DEPLOY_WEB.md.
+SENHA_PAINEL = os.environ.get("PAC_WEB_SENHA")
+if not SENHA_PAINEL:
+    raise RuntimeError(
+        "Variável de ambiente PAC_WEB_SENHA não definida — o servidor não "
+        "sobe sem uma senha configurada (ver DEPLOY_WEB.md)."
+    )
 
 
 def _senha_confere(informada):
