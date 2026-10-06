@@ -8319,6 +8319,23 @@ def montar_html_painel(df_base):
   }
   .bloco:hover { border-color: var(--cor-acento-teal); }
 
+  /* --- Par de blocos empilhados numa única célula da grade ---
+     Hoje só TERMO DE COMPROMISSO + OBRA NÃO INICIADA: dois blocos
+     pequenos (SIM/NÃO, duas opções cada) que não justificam uma coluna
+     inteira cada um — iam abrir uma linha nova na grade só pra um bloco
+     sozinho (ver PARES_BLOCOS no JS, mais abaixo). Em vez disso, dividem
+     a altura da MESMA célula ao meio. */
+  .bloco-par {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 0;
+  }
+  .bloco-par > .bloco {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
   /* --- Seção COLUNAS DO DETALHAMENTO ---
      Não fica mais no painel de filtros: virou uma seção da janela
      "Selecione as páginas do relatório" (ela não filtra dados nem escolhe
@@ -10151,6 +10168,12 @@ def montar_html_painel(df_base):
     .bloco {
       flex: 0 0 auto;
     }
+    /* No acordeão do celular não existe "metade da altura" — o par vira
+       só mais dois itens empilhados na lista, cada um com sua altura
+       natural, como qualquer outro bloco. */
+    .bloco-par {
+      flex: 0 0 auto;
+    }
     .bloco-titulo {
       cursor: pointer;
       justify-content: flex-start;
@@ -11508,8 +11531,32 @@ def montar_html_painel(df_base):
     // voltaram a ocupar um slot inteiro cada — entram lado a lado na grade.
     // O slot que sobrou era do antigo bloco "Colunas do Detalhamento", que
     // se mudou para a janela "Selecione as páginas do relatório".
+    //
+    // PARES_BLOCOS: blocos pequenos (SIM/NÃO, poucas opções) que dividem a
+    // MESMA célula da grade com o bloco indicado, em vez de abrir uma
+    // linha nova sozinhos — ver .bloco-par no CSS. Chave = bloco de cima,
+    // valor = bloco de baixo; o de baixo é pulado quando aparecer sozinho
+    // no loop, porque já entrou junto do de cima.
+    const PARES_BLOCOS = { TERMO_COMPROMISSO: "OBRA_NAO_INICIADA" };
+    const CHAVES_PAREADAS_ABAIXO = new Set(Object.values(PARES_BLOCOS));
+    const blocosPorChave = {};
+    DADOS.blocos.forEach(b => { blocosPorChave[b.chave] = b; });
+
     DADOS.blocos.forEach(function (bloco) {
       if (bloco.chave === "GESTAO") return;
+      if (CHAVES_PAREADAS_ABAIXO.has(bloco.chave)) return;
+      const chaveParDebaixo = PARES_BLOCOS[bloco.chave];
+      const blocoDebaixo = chaveParDebaixo ? blocosPorChave[chaveParDebaixo] : null;
+      if (blocoDebaixo) {
+        const par = document.createElement("div");
+        par.className = "bloco-par";
+        par.appendChild(criarBloco(bloco));
+        par.appendChild(criarBloco(blocoDebaixo));
+        grade.appendChild(par);
+        renderizarBloco(bloco.chave);
+        renderizarBloco(blocoDebaixo.chave);
+        return;
+      }
       grade.appendChild(criarBloco(bloco));
       renderizarBloco(bloco.chave);
     });
