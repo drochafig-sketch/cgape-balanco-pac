@@ -738,9 +738,9 @@ def moeda_texto_puro(valor):
 
 def formatar_mi_bi(valor):
     if valor >= 1_000_000_000:
-        res = f"R$&nbsp;{valor/1_000_000_000:,.1f}&nbsp;Bi"
+        res = f"R$&nbsp;{valor/1_000_000_000:,.2f}&nbsp;Bi"
     elif valor >= 1_000_000:
-        res = f"R$&nbsp;{valor/1_000_000:,.1f}&nbsp;Mi"
+        res = f"R$&nbsp;{valor/1_000_000:,.2f}&nbsp;Mi"
     else:
         # moeda_sem_quebra já devolve o valor no formato brasileiro (ponto
         # milhar, vírgula decimal) — não pode passar pela troca de
@@ -2428,9 +2428,9 @@ def _formatar_mi_bi_texto_puro(valor):
     # reportlab.graphics.shapes), que não interpreta "&nbsp;" como o
     # Paragraph faz; usar formatar_mi_bi aqui mostraria o "&nbsp;" literal.
     if valor >= 1_000_000_000:
-        return f"R$ {valor/1_000_000_000:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".") + " Bi"
+        return f"R$ {valor/1_000_000_000:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " Bi"
     if valor >= 1_000_000:
-        return f"R$ {valor/1_000_000:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".") + " Mi"
+        return f"R$ {valor/1_000_000:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " Mi"
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def formas_barra_arredondada(x, y, largura, altura, cor, ponta_inicio=True, ponta_fim=True,
@@ -11689,9 +11689,9 @@ def montar_html_painel(df_base):
   function formatarMiBi(valor) {
     var texto;
     if (valor >= 1000000000) {
-      texto = "R$ " + (valor / 1000000000).toFixed(1) + " Bi";
+      texto = "R$ " + (valor / 1000000000).toFixed(2) + " Bi";
     } else if (valor >= 1000000) {
-      texto = "R$ " + (valor / 1000000).toFixed(1) + " Mi";
+      texto = "R$ " + (valor / 1000000).toFixed(2) + " Mi";
     } else {
       texto = "R$ " + valor.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
     }
