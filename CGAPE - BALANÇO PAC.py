@@ -5843,8 +5843,19 @@ COLUNAS_LINHA_FILTRO_UNICO = ["GESTAO", "SECRETARIA_LIMPA", "EXECUTOR", "FASE_TE
 COLUNAS_LINHA_FILTRO_RODAPE = [c for c in COLUNAS_LINHA_FILTRO_UNICO if c != "GESTAO"]
 
 def _linha_capa_filtro_unico(df):
-    # Monta "GESTÃO | SECRETARIA | EXECUTOR | FASE | STATUS" pra capa.
-    return _linha_filtro_unico(df, COLUNAS_LINHA_FILTRO_UNICO)
+    # Monta "GESTÃO | SECRETARIA | EXECUTOR | FASE | STATUS" pra capa, mais
+    # "AÇÕES NÃO INICIADAS" no final quando o filtro "OBRA NÃO INICIADA"
+    # (ver _obra_nao_iniciada) foi usado filtrando só pra SIM — ou seja,
+    # TODA linha do recorte tem OBRA_NAO_INICIADA == "SIM". Só entra nesse
+    # caso: filtrar só pra NÃO significa "todo o resto da base" e não
+    # precisa de rótulo nenhum na capa, e sem filtro nenhum o recorte tem
+    # os dois valores misturados.
+    linha = _linha_filtro_unico(df, COLUNAS_LINHA_FILTRO_UNICO)
+    if "OBRA_NAO_INICIADA" in df.columns:
+        valores_obra_nao_iniciada = df["OBRA_NAO_INICIADA"].dropna().unique()
+        if len(valores_obra_nao_iniciada) == 1 and valores_obra_nao_iniciada[0] == "SIM":
+            linha = f"{linha} | AÇÕES NÃO INICIADAS" if linha else "AÇÕES NÃO INICIADAS"
+    return linha
 
 
 def _miniatura_detalhamento_financeiro(df_secretaria, largura, altura_barra=11):
