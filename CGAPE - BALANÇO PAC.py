@@ -156,7 +156,14 @@ arquivo_excel = caminho_recurso("PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026
 # situações — por isso é a fonte confiável aqui, nos dois modos (desktop e
 # web).
 try:
-    _propriedades_excel = openpyxl.load_workbook(arquivo_excel, read_only=True).properties
+    # read_only=True mantém o arquivo aberto até close() — sem fechar, a
+    # planilha fica travada no Windows enquanto o app estiver aberto
+    # (impedindo a sincronização de gravar uma versão nova por cima).
+    _pasta_trabalho_excel = openpyxl.load_workbook(arquivo_excel, read_only=True)
+    try:
+        _propriedades_excel = _pasta_trabalho_excel.properties
+    finally:
+        _pasta_trabalho_excel.close()
     _modificado_utc = _propriedades_excel.modified or _propriedades_excel.created
     if _modificado_utc is None:
         raise ValueError("planilha sem data de modificação nas propriedades internas")
@@ -262,6 +269,7 @@ col_apoiado = "APOIADO"
 col_contrapartida = "CONTRAPARTIDA"
 col_complementar = "COMPLEMENTAR"
 col_valor_contratado = "VALOR CONTRATADO"
+col_empresa_contratada = "EMPRESA CONTRATADA"
 col_financiamento_ajustado = "FINANCIAMENTO AJUSTADO"
 col_apoiado_ajustado = "APOIADO AJUSTADO"
 col_contrapartida_ajustado = "CONTRAPARTIDA AJUSTADO"
@@ -708,7 +716,7 @@ def converter_valor(valor):
         valor = valor.replace(".", "").replace(",", ".")
     try:
         return float(valor)
-    except:
+    except ValueError:
         return 0.0
 
 def moeda_sem_quebra(valor):
@@ -1373,6 +1381,7 @@ def _montar_dados_ficha_acao(row):
         "fase": campo("FASE_TEXTO"),
         "status": campo("STATUS_TEXTO"),
         "fonte": campo(col_fonte),
+        "empresa_contratada": campo(col_empresa_contratada),
         "clausula_suspensiva": limpar_texto_status(campo(col_clausula_suspensiva)),
         "motivo_clausula_suspensiva": campo(col_motivo_clausula_suspensiva),
         "vigencia": campo(col_vigencia),
@@ -1384,7 +1393,21 @@ def _montar_dados_ficha_acao(row):
         "apoiado": valor_moeda(col_apoiado),
         "contrapartida": valor_moeda(col_contrapartida),
         "complementar": valor_moeda(col_complementar),
-        "investimento_total": valor_moeda(col_invest),
+        # NÃO usa a coluna bruta "INVESTIMENTO TOTAL" da planilha (col_invest)
+        # — ela pode não estar sincronizada linha a linha com os componentes
+        # acima. Usa a MESMA regra ajustada do resto do relatório gerencial
+        # (ver _serie_investimento_ajustado): Valor Contratado substitui
+        # Financiamento/Apoiado/Contrapartida/Complementar quando preenchido,
+        # pra não contar o mesmo dinheiro duas vezes. Sem isso, a Ficha
+        # Técnica mostrava um total diferente do card/tabela do dashboard
+        # para a mesma ação.
+        "investimento_total": moeda_texto_puro(
+            float(row[col_valor_contratado])
+            + float(row[col_apoiado_ajustado])
+            + float(row[col_financiamento_ajustado])
+            + float(row[col_contrapartida_ajustado])
+            + float(row[col_complementar_ajustado])
+        ),
         "pendencia": campo(col_pendencia),
         "providencias": campo(col_providencias),
         "prazo_pendencia": campo(col_prazo_pendencia),
@@ -1416,6 +1439,7 @@ def _definicao_secoes_ficha():
         {"titulo": "EXECUÇÃO", "campos": [
             ("gestao", "Gestão"), ("secretaria", "Secretaria/Órgão"), ("executor", "Órgão Executor"),
             ("eixo", "Eixo"), ("municipio", "Município"), ("fonte", "Fonte de Recurso"),
+            ("empresa_contratada", "Empresa Contratada"),
         ]},
         {"titulo": "FINANCEIRO", "campos": [
             ("valor_contratado", "Valor Contratado"), ("financiamento", "Financiamento"), ("apoiado", "Apoiado (OGU)"),
@@ -7649,11 +7673,17 @@ def _git_publicar_atualizacao(mensagem):
     if codigo != 0:
         return {"ok": False, "erro": erro_saida.strip() or "Falha ao preparar as mudanças (git add)."}
 
+    # Nada preparado pro commit não é um erro de verdade pro usuário — só
+    # significa que não havia nada pra publicar (pode acontecer se alguém
+    # clicar de novo logo depois de já ter publicado). Checado pelo código
+    # de saída do "diff --cached --quiet" (0 = nada preparado), e não pelo
+    # texto "nothing to commit", que muda com o idioma do git instalado.
+    codigo, _, _ = _git_rodar("diff", "--cached", "--quiet")
+    if codigo == 0:
+        return {"ok": True, "nada_a_publicar": True}
+
     codigo, saida_commit, erro_commit = _git_rodar("commit", "-m", mensagem)
     if codigo != 0:
-        # "nothing to commit" não é um erro de verdade pro usuário — só
-        # significa que não havia nada pra publicar (pode acontecer se
-        # alguém clicar de novo logo depois de já ter publicado).
         texto_combinado = (saida_commit or "") + (erro_commit or "")
         if "nothing to commit" in texto_combinado.lower():
             return {"ok": True, "nada_a_publicar": True}
@@ -7684,14 +7714,22 @@ def _relancar_processo():
     # SOMENTE DESKTOP — só chamado de dentro de abrir_interface_filtros. No
     # modo web não há processo local pra reiniciar (e o botão nem aparece).
     try:
+        env = None
         if getattr(sys, "frozen", False):
             # PyInstaller: sys.executable É o próprio .exe; sys.argv[0]
             # também, então repassamos só os argumentos extras.
             args = [sys.executable] + sys.argv[1:]
+            # .exe "onefile": sem isso, a instância nova herda as variáveis
+            # internas do PyInstaller e reaproveita a pasta temporária _MEI
+            # desta instância — que é apagada assim que esta aqui sai,
+            # derrubando a nova. Com o reset, ela se extrai do zero.
+            env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")
         else:
-            # "python CGAPE - BALANÇO PAC.py [...]"
-            args = [sys.executable] + sys.argv
-        subprocess.Popen(args, cwd=PASTA_BASE, close_fds=True)
+            # "python CGAPE - BALANÇO PAC.py [...]" — caminho absoluto do
+            # script, porque o cwd abaixo pode não ser a pasta de onde o
+            # app foi iniciado (sys.argv[0] pode ser relativo).
+            args = [sys.executable, os.path.abspath(sys.argv[0])] + sys.argv[1:]
+        subprocess.Popen(args, cwd=PASTA_BASE, close_fds=True, env=env)
     except Exception:
         import traceback
         traceback.print_exc()
@@ -13093,6 +13131,7 @@ def montar_html_painel(df_base):
         { rotulo: "Eixo", chave: "eixo" },
         { rotulo: "Município", chave: "municipio" },
         { rotulo: "Fonte de Recurso", chave: "fonte" },
+        { rotulo: "Empresa Contratada", chave: "empresa_contratada" },
       ]},
       { titulo: "Financeiro", campos: [
         { rotulo: "Valor Contratado", chave: "valor_contratado" },
