@@ -5833,6 +5833,20 @@ def _linha_filtro_unico(df, colunas):
         if partes and remover_acentos(valor).upper() == remover_acentos(partes[-1]).upper():
             continue
         partes.append(valor)
+
+    # "AÇÕES NÃO INICIADAS" no final quando o filtro "OBRA NÃO INICIADA"
+    # (ver _obra_nao_iniciada) foi usado filtrando só pra SIM — ou seja,
+    # TODA linha do recorte tem OBRA_NAO_INICIADA == "SIM". Fora da lista
+    # de "colunas" de propósito: não é uma categoria com nome próprio pra
+    # mostrar, é um rótulo fixo — e vale tanto pra capa quanto pro rodapé
+    # (as duas chamam esta função). Só entra filtrando pra SIM: filtrar só
+    # pra NÃO significa "todo o resto da base" e não precisa de rótulo
+    # nenhum, e sem filtro nenhum o recorte tem os dois valores misturados.
+    if "OBRA_NAO_INICIADA" in df.columns:
+        valores_obra_nao_iniciada = df["OBRA_NAO_INICIADA"].dropna().unique()
+        if len(valores_obra_nao_iniciada) == 1 and valores_obra_nao_iniciada[0] == "SIM":
+            partes.append("AÇÕES NÃO INICIADAS")
+
     return " | ".join(partes)
 
 # Ordem fixa das categorias na linha de filtros. A capa mostra a lista
@@ -5843,19 +5857,10 @@ COLUNAS_LINHA_FILTRO_UNICO = ["GESTAO", "SECRETARIA_LIMPA", "EXECUTOR", "FASE_TE
 COLUNAS_LINHA_FILTRO_RODAPE = [c for c in COLUNAS_LINHA_FILTRO_UNICO if c != "GESTAO"]
 
 def _linha_capa_filtro_unico(df):
-    # Monta "GESTÃO | SECRETARIA | EXECUTOR | FASE | STATUS" pra capa, mais
-    # "AÇÕES NÃO INICIADAS" no final quando o filtro "OBRA NÃO INICIADA"
-    # (ver _obra_nao_iniciada) foi usado filtrando só pra SIM — ou seja,
-    # TODA linha do recorte tem OBRA_NAO_INICIADA == "SIM". Só entra nesse
-    # caso: filtrar só pra NÃO significa "todo o resto da base" e não
-    # precisa de rótulo nenhum na capa, e sem filtro nenhum o recorte tem
-    # os dois valores misturados.
-    linha = _linha_filtro_unico(df, COLUNAS_LINHA_FILTRO_UNICO)
-    if "OBRA_NAO_INICIADA" in df.columns:
-        valores_obra_nao_iniciada = df["OBRA_NAO_INICIADA"].dropna().unique()
-        if len(valores_obra_nao_iniciada) == 1 and valores_obra_nao_iniciada[0] == "SIM":
-            linha = f"{linha} | AÇÕES NÃO INICIADAS" if linha else "AÇÕES NÃO INICIADAS"
-    return linha
+    # Monta "GESTÃO | SECRETARIA | EXECUTOR | FASE | STATUS" pra capa (o
+    # rótulo extra de "AÇÕES NÃO INICIADAS" já vem de dentro de
+    # _linha_filtro_unico, compartilhado com o rodapé).
+    return _linha_filtro_unico(df, COLUNAS_LINHA_FILTRO_UNICO)
 
 
 def _miniatura_detalhamento_financeiro(df_secretaria, largura, altura_barra=11):
