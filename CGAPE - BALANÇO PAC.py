@@ -2340,6 +2340,89 @@ def desenhar_legenda_detalhamento_secretaria(largura=LARGURA_UTIL):
         x += 19 + len(rotulo) * 9.0 + 30
     return d
 
+def gerar_cards_resumo_detalhamento_financeiro(qtd, investimento, df_base):
+    # Mesma linha dos dois cards de sempre (QTD TOTAL / INVESTIMENTO), só
+    # que nesta página eles vêm acompanhados — na MESMA linha horizontal,
+    # encostados na margem direita — de um card por componente do
+    # INVESTIMENTO AJUSTADO: Valor Contratado / Valor Apoiado OGU / Recurso
+    # Estadual / Financiamento. Mesma soma que alimenta a barra empilhada
+    # logo abaixo (ver gerar_grafico_detalhamento_secretaria) e mesma cor de
+    # cada componente ali e na legenda, pra ligar visualmente os cards aos
+    # segmentos da barra.
+    #
+    # 7 colunas de LARGURA_UTIL * CARDS_FATOR_LARGURA (= 1/7) cada: os 2
+    # cards de sempre, 1 coluna vazia de respiro (sem fundo/borda) e os 4
+    # novos — ocupando a largura útil inteira, com os novos encostados à
+    # direita.
+    componentes = [
+        ("VALOR CONTRATADO", float(df_base[col_valor_contratado].sum()), "Valor Contratado"),
+        ("VALOR APOIADO OGU*", float(df_base[col_apoiado_ajustado].sum()), "Valor Apoiado OGU"),
+        (
+            "RECURSO ESTADUAL*",
+            float(
+                df_base[col_contrapartida_ajustado].sum() + df_base[col_complementar_ajustado].sum()
+            ),
+            "Recurso Estadual",
+        ),
+        ("FINANCIAMENTO*", float(df_base[col_financiamento_ajustado].sum()), "Financiamento"),
+    ]
+
+    def cabecalho(texto):
+        return Paragraph(
+            texto,
+            ParagraphStyle(
+                f"card_header_{texto}",
+                fontName=RESUMO_FONTE_NEGRITO,
+                fontSize=CARDS_FONTE_TAM_CABECALHO,
+                alignment=TA_CENTER,
+                textColor=colors.white,
+            ),
+        )
+
+    def valor_celula(texto):
+        return Paragraph(
+            texto,
+            ParagraphStyle(
+                "card_value",
+                fontName=FONTE_BAHNSCHRIFT,
+                fontSize=CARDS_FONTE_TAM_VALOR,
+                leading=CARDS_FONTE_TAM_VALOR,
+                alignment=TA_CENTER,
+                textColor=colors.black,
+            ),
+        )
+
+    linha_cabecalho = [cabecalho("QTD TOTAL"), cabecalho("INVESTIMENTO"), ""]
+    linha_valor = [valor_celula(str(qtd)), valor_celula(formatar_mi_bi(investimento)), ""]
+    for titulo, valor, _chave_cor in componentes:
+        linha_cabecalho.append(cabecalho(titulo))
+        linha_valor.append(valor_celula(formatar_mi_bi(valor)))
+
+    tabela = Table(
+        [linha_cabecalho, linha_valor],
+        colWidths=[LARGURA_UTIL * CARDS_FATOR_LARGURA] * 7,
+        rowHeights=[CARDS_ALTURA_CABECALHO, CARDS_ALTURA_VALOR],
+    )
+    estilo = [
+        # Coluna 2 (índice 2) é só o respiro entre os dois grupos — sem
+        # nenhum comando de fundo/borda, fica em branco.
+        ("BACKGROUND", (0, 0), (1, 0), COR_MARCA_TEAL_ESCURO),
+        ("BACKGROUND", (0, 1), (1, 1), colors.whitesmoke),
+        ("BOX", (0, 0), (1, -1), 1.0, colors.grey),
+        ("INNERGRID", (0, 0), (1, -1), 0.5, colors.lightgrey),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]
+    for i, (_, _, chave_cor) in enumerate(componentes):
+        col = 3 + i
+        cor = CORES_DETALHAMENTO_SECRETARIA[chave_cor]
+        estilo.append(("BACKGROUND", (col, 0), (col, 0), cor))
+        estilo.append(("BACKGROUND", (col, 1), (col, 1), colors.whitesmoke))
+        estilo.append(("BOX", (col, 0), (col, -1), 1.0, colors.grey))
+        estilo.append(("INNERGRID", (col, 0), (col, -1), 0.5, colors.lightgrey))
+    tabela.setStyle(TableStyle(estilo))
+    return tabela
+
 def _formatar_mi_bi_texto_puro(valor):
     # Versão em TEXTO PURO de formatar_mi_bi — usada dentro de String (do
     # reportlab.graphics.shapes), que não interpreta "&nbsp;" como o
@@ -6951,7 +7034,9 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
                 # não contratada. Nesta página usa-se um único "*" em vez de "**".
                 elements.append(Paragraph("* Previsão Orçamentária", cabecalho_grafico_painel_style_direita))
                 elements.append(Spacer(1, 10))
-                elements.append(gerar_cards_resumo(len(df), _investimento_ajustado(df)))
+                elements.append(
+                    gerar_cards_resumo_detalhamento_financeiro(len(df), _investimento_ajustado(df), df)
+                )
                 elements.append(Spacer(1, 14))
                 elements.append(
                     Paragraph(
