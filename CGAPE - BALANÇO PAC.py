@@ -1272,6 +1272,67 @@ def formatar_percentual(valor):
         return ""
     return texto if texto.endswith("%") else f"{texto}%"
 
+# --- Constantes/ajudantes do Controle de Qualidade ---
+# Vivem aqui (antes do ETL mais abaixo) e não perto de _campos_alerta_
+# qualidade (que as usa) porque a coluna OBRA_NAO_INICIADA, calculada
+# durante o ETL pra virar filtro, também precisa delas — e o ETL roda
+# antes do ponto onde essas funções estavam definidas originalmente.
+CAMPOS_ALERTA_STATUS_IGNORAR_VENCIMENTO = {"CONCLUÍDA", "INAUGURADA"}
+# Fase em que a ação também já está entregue — usada junto com o conjunto
+# de status acima para não acusar prazo vencido em obra que acabou.
+CAMPOS_ALERTA_FASE_IGNORAR_VENCIMENTO = {"CONCLUÍDA"}
+CAMPOS_ALERTA_FASE_SEM_PRAZO = "EXECUÇÃO DO OBJETO"
+CAMPOS_ALERTA_STATUS_SEM_PRAZO = {"ANDAMENTO", "CONCLUÍDA", "INAUGURADA"}
+# Status em que a OBRA precisa ter o Link Localização preenchido: enquanto
+# está em ANDAMENTO o link é o que permite fiscalizar em campo, e depois de
+# CONCLUÍDA/INAUGURADA ele é o registro de onde a entrega ficou — nos três
+# casos o campo em branco é uma pendência de cadastro.
+CAMPOS_ALERTA_STATUS_EXIGE_LINK_LOCALIZACAO = {"ANDAMENTO", "CONCLUÍDA", "INAUGURADA"}
+
+def _extrair_data_alerta(valor):
+    if isinstance(valor, (pd.Timestamp, datetime)) and not pd.isna(valor):
+        return valor.date()
+    return None
+
+# Dias de tolerância entre a Emissão de O.S. e o Avanço da Obra ainda
+# zerado/em branco — depois disso, a obra já deveria ter saído do papel.
+DIAS_TOLERANCIA_OBRA_NAO_INICIADA = 40
+
+def _avanco_zero_ou_vazio(valor):
+    # True quando o AVANÇO DA OBRA (%) está em branco OU é explicitamente
+    # zero (0, 0.0, "0%", "0,0%", "0,00%" etc.) — usado pela regra de OBRA
+    # NÃO INICIADA abaixo. Não reaproveita converter_valor: ele não entende
+    # o "%" no final do texto e devolveria 0.0 (zero) até para um avanço
+    # real como "45,5%", o que seria um falso positivo grave aqui.
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return True
+    if isinstance(valor, (int, float, np.integer, np.floating)):
+        return not pd.isna(valor) and float(valor) == 0.0
+    texto = str(valor).strip().replace("%", "").replace(",", ".")
+    if texto == "" or texto.upper() == "NAN":
+        return True
+    try:
+        return float(texto) == 0.0
+    except ValueError:
+        # Texto que não é número nenhum (ex: "N/A") — não é zero
+        # comprovado, então não arrisca falso positivo.
+        return False
+
+def _obra_nao_iniciada(status_atual, valor_emissao_os, valor_avanco, hoje):
+    # Regra de Qualidade "OBRA NÃO INICIADA": Avanço da Obra (%) zerado ou
+    # em branco, mais de DIAS_TOLERANCIA_OBRA_NAO_INICIADA dias depois da
+    # Emissão de O.S. — a essa altura a obra já deveria ter algum avanço
+    # registrado. status_atual já deve vir tratado (maiúsculo/strip, ver
+    # STATUS_TEXTO). Não se aplica a ações já entregues (CONCLUÍDA/
+    # INAUGURADA): se chegaram lá com avanço zerado, o problema é outro
+    # (cadastro desatualizado), não obra parada no papel.
+    if status_atual in CAMPOS_ALERTA_STATUS_IGNORAR_VENCIMENTO:
+        return False
+    data_os = _extrair_data_alerta(valor_emissao_os)
+    if data_os is None or (hoje - data_os).days <= DIAS_TOLERANCIA_OBRA_NAO_INICIADA:
+        return False
+    return _avanco_zero_ou_vazio(valor_avanco)
+
 def _texto_campo_ficha(row, coluna):
     # Extrai um campo de texto de forma defensiva pra Ficha Cadastral: se a
     # coluna não existir na planilha (nome ainda não 100% confirmado) ou
@@ -4873,6 +4934,23 @@ df["CLAUSULA_SUSPENSIVA_ORDEM"] = df[col_clausula_suspensiva].apply(extrair_orde
 df["SITUACAO_CLAUSULA_SUSPENSIVA"] = df[col_clausula_suspensiva].apply(tratar_clausula_suspensiva)
 df["AVANCO_OBRA_TEXTO"] = df[col_avanco].apply(formatar_percentual)
 
+# Coluna derivada SIM/NÃO pra virar filtro no painel (ver blocos_config em
+# montar_html_painel) — mesma regra "Obra Não Iniciada" do Controle de
+# Qualidade (_obra_nao_iniciada), calculada aqui uma vez pra toda a base
+# em vez de recalculada por linha a cada abertura da Ficha Cadastral.
+if col_emissao_os in df.columns and col_avanco in df.columns:
+    _hoje_obra_nao_iniciada = agora_bahia().date()
+    df["OBRA_NAO_INICIADA"] = [
+        "SIM"
+        if _obra_nao_iniciada(status, emissao_os, avanco, _hoje_obra_nao_iniciada)
+        else "NÃO"
+        for status, emissao_os, avanco in zip(
+            df["STATUS_TEXTO"], df[col_emissao_os], df[col_avanco]
+        )
+    ]
+else:
+    df["OBRA_NAO_INICIADA"] = "NÃO"
+
 df[col_objeto] = df[col_objeto].astype(str).str.strip()
 df[col_eixo] = df[col_eixo].astype(str).str.strip()
 df[col_fonte] = (
@@ -5020,6 +5098,8 @@ def _filtrar_dataframe(filtros_selecionados):
         df = df[df["SITUACAO_CLAUSULA_SUSPENSIVA"].isin(filtros_selecionados["CLAUSULA_SUSPENSIVA"])]
     if filtros_selecionados["TERMO_COMPROMISSO"]:
         df = df[df["SINALIZACAO_TC"].isin(filtros_selecionados["TERMO_COMPROMISSO"])]
+    if filtros_selecionados["OBRA_NAO_INICIADA"]:
+        df = df[df["OBRA_NAO_INICIADA"].isin(filtros_selecionados["OBRA_NAO_INICIADA"])]
 
     df = _aplicar_filtro_arvore_data(df, col_prazo, filtros_selecionados.get("DATAS_CONCLUSAO_FASE"))
     df = _aplicar_filtro_arvore_data(df, col_vigencia, filtros_selecionados.get("DATAS_VIGENCIA"))
@@ -5072,23 +5152,6 @@ def _construir_arvore_datas(df, coluna):
 # numa lista só deixaria a janela lenta e impossível de ler — a tela
 # avisa quantas ficaram de fora.
 LIMITE_LISTA_BUSCA_FICHA = 50
-
-CAMPOS_ALERTA_STATUS_IGNORAR_VENCIMENTO = {"CONCLUÍDA", "INAUGURADA"}
-# Fase em que a ação também já está entregue — usada junto com o conjunto
-# de status acima para não acusar prazo vencido em obra que acabou.
-CAMPOS_ALERTA_FASE_IGNORAR_VENCIMENTO = {"CONCLUÍDA"}
-CAMPOS_ALERTA_FASE_SEM_PRAZO = "EXECUÇÃO DO OBJETO"
-CAMPOS_ALERTA_STATUS_SEM_PRAZO = {"ANDAMENTO", "CONCLUÍDA", "INAUGURADA"}
-# Status em que a OBRA precisa ter o Link Localização preenchido: enquanto
-# está em ANDAMENTO o link é o que permite fiscalizar em campo, e depois de
-# CONCLUÍDA/INAUGURADA ele é o registro de onde a entrega ficou — nos três
-# casos o campo em branco é uma pendência de cadastro.
-CAMPOS_ALERTA_STATUS_EXIGE_LINK_LOCALIZACAO = {"ANDAMENTO", "CONCLUÍDA", "INAUGURADA"}
-
-def _extrair_data_alerta(valor):
-    if isinstance(valor, (pd.Timestamp, datetime)) and not pd.isna(valor):
-        return valor.date()
-    return None
 
 def _campos_alerta_qualidade(row, hoje=None):
     # Mesma lógica de detecção usada no painel de Controle de Qualidade
@@ -5202,6 +5265,19 @@ def _campos_alerta_qualidade(row, hoje=None):
                 alertas["link_localizacao"] = (
                     f"Obra {status_atual.capitalize()} sem Link Localização preenchido"
                 )
+
+    # Obra Não Iniciada — ver _obra_nao_iniciada (critério completo e
+    # motivo de cada guarda comentados lá).
+    if _obra_nao_iniciada(
+        status_atual,
+        row.get(col_emissao_os) if col_emissao_os in row.index else None,
+        row.get(col_avanco) if col_avanco in row.index else None,
+        hoje,
+    ):
+        alertas["avanco"] = (
+            f"Obra Não Iniciada — mais de {DIAS_TOLERANCIA_OBRA_NAO_INICIADA} dias "
+            "desde a Emissão de O.S. sem Avanço da Obra registrado"
+        )
 
     return alertas
 
@@ -7891,6 +7967,11 @@ def montar_html_painel(df_base):
         ("FONTE", "FONTE DE RECURSO", opcoes_fonte),
         ("CLAUSULA_SUSPENSIVA", "CLÁUSULA SUSPENSIVA", opcoes_clausula_suspensiva),
         ("TERMO_COMPROMISSO", "TERMO DE COMPROMISSO", ["SIM", "NÃO"]),
+        # Regra de Controle de Qualidade "OBRA NÃO INICIADA" (ver
+        # _obra_nao_iniciada): Avanço da Obra zerado/em branco há mais de
+        # DIAS_TOLERANCIA_OBRA_NAO_INICIADA dias desde a Emissão de O.S. —
+        # vira filtro pra gerar um relatório só com essas ações.
+        ("OBRA_NAO_INICIADA", "OBRA NÃO INICIADA", ["SIM", "NÃO"]),
     ]
 
     # Coluna do DataFrame correspondente a cada bloco de filtro — usada tanto
@@ -7909,6 +7990,7 @@ def montar_html_painel(df_base):
         "FONTE": col_fonte,
         "CLAUSULA_SUSPENSIVA": "SITUACAO_CLAUSULA_SUSPENSIVA",
         "TERMO_COMPROMISSO": "SINALIZACAO_TC",
+        "OBRA_NAO_INICIADA": "OBRA_NAO_INICIADA",
     }
 
     # Dataset enxuto (só as colunas usadas nos filtros, já como string, já
