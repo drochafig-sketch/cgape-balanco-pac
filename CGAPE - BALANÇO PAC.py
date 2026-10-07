@@ -1836,6 +1836,19 @@ CATALOGO_COLUNAS_DETALHAMENTO = [
     # coluna fica no tamanho de que precisa e devolve o excedente às
     # colunas de texto.
     {"chave": "INVESTIMENTO", "titulo": "INVESTIMENTO", "min_pt": 136, "peso": 0.0, "padrao": True},
+    # As quatro colunas abaixo são os mesmos quatro componentes do
+    # INVESTIMENTO AJUSTADO mostrados nos cards do Detalhamento Financeiro
+    # (ver gerar_cards_resumo_detalhamento_financeiro) — aqui, por ação, em
+    # vez de somados no total da secretaria. Mesmo min_pt/peso/estilo de
+    # INVESTIMENTO (valor monetário, não quebra linha) e MESMA regra de
+    # junção na agregação por grupo: entram em "sum" junto com
+    # col_valor_contratado/col_apoiado_ajustado/etc. em agregacoes_analiticas,
+    # então "sabem se juntar sozinhas" exatamente como INVESTIMENTO — não
+    # precisam de chave de agrupamento própria nem de "mescla_repetido".
+    {"chave": "VALOR_CONTRATADO", "titulo": "VALOR CONTRATADO", "min_pt": 136, "peso": 0.0, "padrao": False},
+    {"chave": "OGU", "titulo": "VALOR APOIADO OGU", "min_pt": 136, "peso": 0.0, "padrao": False},
+    {"chave": "RECURSO_ESTADUAL", "titulo": "RECURSO ESTADUAL", "min_pt": 136, "peso": 0.0, "padrao": False},
+    {"chave": "FINANCIAMENTO", "titulo": "FINANCIAMENTO", "min_pt": 136, "peso": 0.0, "padrao": False},
     {"chave": "FONTE", "titulo": "FONTE DE RECURSO", "min_pt": 110, "peso": 1.0,
      "padrao": True, "mescla_repetido": True},
     {"chave": "TERMO", "titulo": "TERMO DE COMPROMISSO/ FINANCIAMENTO", "min_pt": 85, "peso": 0.2,
@@ -7521,6 +7534,10 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
                         "AVANCO": cell_center,
                         "MUNICIPIOS": cell_municipio,
                         "INVESTIMENTO": valor_style,
+                        "VALOR_CONTRATADO": valor_style,
+                        "OGU": valor_style,
+                        "RECURSO_ESTADUAL": valor_style,
+                        "FINANCIAMENTO": valor_style,
                         "FONTE": cell_center,
                         "TERMO": cell_center,
                         "PRAZO_FASE": cell_center,
@@ -7574,6 +7591,16 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
                             "AVANCO": _texto_opcional(row, "AVANCO_OBRA_TEXTO"),
                             "MUNICIPIOS": str(row[col_municipio]),
                             "INVESTIMENTO": moeda_sem_quebra(valor_linha_ajustado),
+                            # Mesmos quatro componentes que somam o
+                            # INVESTIMENTO acima, cada um na sua própria
+                            # coluna — já chegam somados por grupo em
+                            # agregacoes_analiticas, então é só formatar.
+                            "VALOR_CONTRATADO": moeda_sem_quebra(float(row[col_valor_contratado])),
+                            "OGU": moeda_sem_quebra(float(row[col_apoiado_ajustado])),
+                            "RECURSO_ESTADUAL": moeda_sem_quebra(
+                                float(row[col_contrapartida_ajustado]) + float(row[col_complementar_ajustado])
+                            ),
+                            "FINANCIAMENTO": moeda_sem_quebra(float(row[col_financiamento_ajustado])),
                             "FONTE": _combinar_fonte_recurso(_texto_opcional(row, col_fonte), fonte_financ),
                             "TERMO": tc_status,
                             "PRAZO_FASE": prazo_fase_texto,
@@ -7755,9 +7782,10 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
                         ("BACKGROUND", (0, 0), (-1, 0), COR_MARCA_TEAL_CLARA),
                         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ]
-                    if "INVESTIMENTO" in indice_coluna:
-                        coluna_valor = indice_coluna["INVESTIMENTO"]
-                        estilo_tab.append(("ALIGN", (coluna_valor, 1), (coluna_valor, -1), "RIGHT"))
+                    for _chave_valor in ("INVESTIMENTO", "VALOR_CONTRATADO", "OGU", "RECURSO_ESTADUAL", "FINANCIAMENTO"):
+                        if _chave_valor in indice_coluna:
+                            coluna_valor = indice_coluna[_chave_valor]
+                            estilo_tab.append(("ALIGN", (coluna_valor, 1), (coluna_valor, -1), "RIGHT"))
 
                     t_obj = Table(data_tab, colWidths=LARGURAS_DETALHE, repeatRows=1)
                     t_obj.setStyle(TableStyle(estilo_tab + spans))
