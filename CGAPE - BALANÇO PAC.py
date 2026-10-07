@@ -2127,6 +2127,79 @@ def limitar_texto_para_altura(texto, estilo, largura, altura_max=ALTURA_MAX_LINH
             alto = meio - 1
     return melhor or "…"
 
+# Altura máxima segura (em pontos) para uma célula mesclada (SPAN): acima
+# disso ela pode ficar mais alta que uma página inteira e travar o ReportLab
+# com LayoutError, já que uma célula mesclada não pode ser quebrada entre
+# páginas. A tabela continua sendo UMA só (sem cortes artificiais); o rótulo
+# de cada nível (OBJETO/FASE/STATUS) só se repete quando o bloco realmente
+# se aproxima do limite de altura de uma página.
+#
+# Nível módulo (não mais aninhada dentro de _gerar_pdf) porque a mesma
+# hierarquia de mesclas (OBJETO > FASE > STATUS) passou a alimentar duas
+# tabelas: o Detalhamento Analítico e o Detalhamento Financeiro por Objeto
+# (ver gerar_tabela_objeto_financeiro).
+ALTURA_MAX_BLOCO = 480
+
+def gerar_ids_subgrupo_altura(seq, alturas, limite_altura):
+    ids, contador, valor_anterior, altura_no_grupo = [], 0, object(), 0
+    for val, altura in zip(seq, alturas):
+        if val != valor_anterior or altura_no_grupo + altura > limite_altura:
+            contador += 1
+            valor_anterior = val
+            altura_no_grupo = 0
+        altura_no_grupo += altura
+        ids.append(contador)
+    return ids
+
+def gerar_id_nivel_alinhado_altura(seq_nivel, id_filho, alturas, limite_altura):
+    # Nível intermediário/externo da hierarquia de mesclas (ex: FASE
+    # dentro de OBJETO, ou OBJETO por cima de FASE): só quebra quando
+    # o valor deste nível mudar de verdade, ou em um limite de grupo
+    # do nível filho (nunca no meio de uma célula mesclada do nível
+    # abaixo dele).
+    #
+    # A decisão de quebrar olha a altura do PRÓXIMO bloco filho
+    # INTEIRO, e não só a da linha atual. Como o corte só pode
+    # acontecer na fronteira entre blocos filhos, decidir linha a
+    # linha deixava o bloco pai passar do limite e só quebrar
+    # depois — com colunas de texto longo (Pendências, Próximos
+    # Passos), isso produzia células mescladas mais altas que a
+    # página, que o ReportLab não consegue nem desenhar nem
+    # dividir.
+    altura_por_bloco_filho = {}
+    for filho, altura in zip(id_filho, alturas):
+        altura_por_bloco_filho[filho] = altura_por_bloco_filho.get(filho, 0) + altura
+
+    ids, contador, valor_anterior, altura_no_grupo = [], 0, object(), 0
+    for pos, valor in enumerate(seq_nivel):
+        novo_bloco_filho = pos == 0 or id_filho[pos] != id_filho[pos - 1]
+        estoura = (
+            novo_bloco_filho
+            and altura_no_grupo > 0
+            and altura_no_grupo + altura_por_bloco_filho[id_filho[pos]] > limite_altura
+        )
+        if valor != valor_anterior or estoura:
+            contador += 1
+            altura_no_grupo = 0
+        altura_no_grupo += alturas[pos]
+        valor_anterior = valor
+        ids.append(contador)
+    return ids
+
+def gerar_ids_subgrupo_aninhado(seq_valor, seq_grupo_pai):
+    # Cria um novo id sempre que o VALOR mudar OU o grupo pai mudar —
+    # ou seja, só mescla dentro de um mesmo bloco hierárquico já
+    # comprovadamente seguro (mesmo objeto, mesma fase, mesmo status,
+    # mesma página).
+    ids, contador, valor_ant, grupo_ant = [], 0, object(), object()
+    for val, grupo in zip(seq_valor, seq_grupo_pai):
+        if val != valor_ant or grupo != grupo_ant:
+            contador += 1
+            valor_ant = val
+            grupo_ant = grupo
+        ids.append(contador)
+    return ids
+
 # =====================================================
 # 4. ELEMENTOS VISUAIS E CALLBACKS DE PÁGINA
 # =====================================================
@@ -2506,6 +2579,267 @@ def gerar_cards_resumo_detalhamento_financeiro(qtd, investimento, df_base):
         estilo.append(("INNERGRID", (col, 0), (col, -1), 0.5, colors.lightgrey))
     tabela.setStyle(TableStyle(estilo))
     return tabela
+
+def gerar_tabela_objeto_financeiro(df_gestao):
+    # Tabela do DETALHAMENTO FINANCEIRO POR OBJETO: mesma hierarquia de
+    # mesclas OBJETO > FASE > STATUS do Detalhamento Analítico — mesmas
+    # funções gerar_ids_subgrupo_*/gerar_id_nivel_alinhado_altura e
+    # ALTURA_MAX_BLOCO (ver comentário logo após limitar_texto_para_altura),
+    # mesmo estilo de cabeçalho/bordas/fontes (header_center, cell_nowrap,
+    # valor_style, COR_MARCA_TEAL_CLARA/ESCURO) — mas com colunas FIXAS (não
+    # vêm da customização do painel) e sem dividir por secretaria: quem
+    # chama já filtrou df_gestao para uma única GESTÃO. Devolve (tabela,
+    # nota_divergencia) — a segunda é None quando nenhuma linha diverge.
+    #
+    # Usa os MESMOS componentes "ajustados" que alimentam o INVESTIMENTO em
+    # todo o resto do relatório: quando VALOR CONTRATADO está preenchido,
+    # OGU/Financiamento/Recurso Estadual são ZERADOS DE VERDADE (não "sem
+    # informação" — é a mesma regra np.where(.. > 0, 0, ..) de sempre). Por
+    # isso a conferência de divergência soma Valor Contratado também, e não
+    # só os três componentes orçamentários.
+    colunas_tab = [
+        "OBJETO", "FASE", "STATUS", "INVESTIMENTO",
+        "VALOR_CONTRATADO", "OGU", "FINANCIAMENTO", "RECURSO_ESTADUAL",
+    ]
+    larguras = calcular_larguras(LARGURA_UTIL, colunas_tab)
+
+    # --- Agregação por OBJETO > FASE > STATUS (sem secretaria/eixo/
+    # município — esta tabela é só o recorte financeiro). ---
+    chaves_grupo = [col_objeto, "FASE_ORDEM", "FASE_TEXTO", "STATUS_ORDEM", "STATUS_TEXTO"]
+    df_grp = (
+        df_gestao.groupby(chaves_grupo, dropna=False)
+        .agg({
+            col_valor_contratado: "sum",
+            col_apoiado_ajustado: "sum",
+            col_financiamento_ajustado: "sum",
+            col_contrapartida_ajustado: "sum",
+            col_complementar_ajustado: "sum",
+        })
+        .reset_index()
+    )
+    df_grp = df_grp.assign(_OBJETO_SORT=df_grp[col_objeto].apply(remover_acentos))
+    df_grp = df_grp.sort_values(["_OBJETO_SORT", "FASE_ORDEM", "STATUS_ORDEM"], kind="stable")
+
+    # Quantidade de ações por bloco, pro sufixo "(N)" do rótulo mesclado —
+    # mesmo efeito visual do Detalhamento Analítico.
+    contagem_objeto = df_gestao.groupby(col_objeto).size().to_dict()
+    contagem_fase = df_gestao.groupby([col_objeto, "FASE_TEXTO"]).size().to_dict()
+    contagem_status = df_gestao.groupby([col_objeto, "FASE_TEXTO", "STATUS_TEXTO"]).size().to_dict()
+
+    # Financiamento por ORIGEM dentro de cada bloco Objeto+Fase+Status — só
+    # entre as linhas com financiamento ajustado != 0 (senão toda ação SEM
+    # financiamento ganharia uma origem "A DEFINIR" vazia). Mesmo fallback
+    # "A DEFINIR" já usado em _combinar_fonte_recurso, pra não inventar um
+    # texto novo pra a mesma situação (origem em branco).
+    FALLBACK_ORIGEM_FINANCIAMENTO = "A DEFINIR"
+    df_fin = df_gestao[df_gestao[col_financiamento_ajustado] != 0].copy()
+    origem_por_bloco = {}
+    subtotal_origem_gestao = {}
+    if not df_fin.empty:
+        df_fin["_ORIGEM"] = df_fin[col_fonte_financiamento].apply(
+            lambda v: str(v).strip()
+            if (v is not None and str(v).strip() and str(v).strip().upper() != "NAN")
+            else FALLBACK_ORIGEM_FINANCIAMENTO
+        )
+        agrupado_fin = (
+            df_fin.groupby([col_objeto, "FASE_TEXTO", "STATUS_TEXTO", "_ORIGEM"])[col_financiamento_ajustado]
+            .sum()
+            .reset_index()
+        )
+        for _, linha_fin in agrupado_fin.iterrows():
+            chave_bloco = (str(linha_fin[col_objeto]), str(linha_fin["FASE_TEXTO"]), str(linha_fin["STATUS_TEXTO"]))
+            origem = str(linha_fin["_ORIGEM"])
+            valor_origem = float(linha_fin[col_financiamento_ajustado])
+            origem_por_bloco.setdefault(chave_bloco, []).append((origem, valor_origem))
+            subtotal_origem_gestao[origem] = subtotal_origem_gestao.get(origem, 0.0) + valor_origem
+
+    def _texto_financiamento(objeto, fase, status, valor_total):
+        if valor_total == 0:
+            return moeda_sem_quebra(0)
+        origens = sorted(
+            origem_por_bloco.get((objeto, fase, status), []),
+            key=lambda par: remover_acentos(par[0]),
+        )
+        if not origens:
+            return moeda_sem_quebra(valor_total)
+        return "; ".join(f"{moeda_sem_quebra(valor)} ({origem})" for origem, valor in origens)
+
+    # --- Textos + checagem de divergência, linha a linha ---
+    TOLERANCIA_DIVERGENCIA = 0.01
+    registros, divergencias = [], []
+    for _, row in df_grp.iterrows():
+        obj = str(row[col_objeto]).strip() or "—"
+        fas = str(row["FASE_TEXTO"]).strip() or "—"
+        sta = str(row["STATUS_TEXTO"]).strip() or "—"
+
+        valor_contratado = float(row[col_valor_contratado])
+        ogu = float(row[col_apoiado_ajustado])
+        financiamento = float(row[col_financiamento_ajustado])
+        recurso_estadual = float(row[col_contrapartida_ajustado]) + float(row[col_complementar_ajustado])
+        investimento = valor_contratado + ogu + financiamento + recurso_estadual
+
+        if abs(investimento - (valor_contratado + ogu + financiamento + recurso_estadual)) > TOLERANCIA_DIVERGENCIA:
+            divergencias.append(f"{obj} / {fas} / {sta}")
+
+        registros.append({
+            "obj": obj, "fas": fas, "sta": sta,
+            "textos": {
+                "OBJETO": obj,
+                "FASE": fas,
+                "STATUS": sta,
+                "INVESTIMENTO": moeda_sem_quebra(investimento),
+                "VALOR_CONTRATADO": moeda_sem_quebra(valor_contratado),
+                "OGU": moeda_sem_quebra(ogu),
+                "FINANCIAMENTO": _texto_financiamento(obj, fas, sta, financiamento),
+                "RECURSO_ESTADUAL": moeda_sem_quebra(recurso_estadual),
+            },
+        })
+
+    ESTILO_COLUNA = {
+        "OBJETO": cell_nowrap, "FASE": cell_nowrap, "STATUS": cell_nowrap,
+        "INVESTIMENTO": valor_style, "VALOR_CONTRATADO": valor_style,
+        "OGU": valor_style, "FINANCIAMENTO": valor_style, "RECURSO_ESTADUAL": valor_style,
+    }
+
+    data_tab = [
+        [
+            Paragraph(f"<b>{COLUNAS_DETALHAMENTO_POR_CHAVE[chave]['titulo']}</b>", header_center)
+            for chave in colunas_tab
+        ]
+    ]
+
+    alturas_linhas = [
+        estimar_altura_linha(
+            [(reg["textos"][chave], ESTILO_COLUNA[chave], larguras[i]) for i, chave in enumerate(colunas_tab)]
+        )
+        for reg in registros
+    ]
+
+    seq_obj = [reg["obj"] for reg in registros]
+    seq_obj_fase = [(reg["obj"], reg["fas"]) for reg in registros]
+    seq_sta = [(reg["obj"], reg["fas"], reg["sta"]) for reg in registros]
+
+    id_sta = gerar_ids_subgrupo_altura(seq_sta, alturas_linhas, ALTURA_MAX_BLOCO)
+    id_fase_nivel = gerar_id_nivel_alinhado_altura(seq_obj_fase, id_sta, alturas_linhas, ALTURA_MAX_BLOCO)
+    id_obj = gerar_id_nivel_alinhado_altura(seq_obj, id_fase_nivel, alturas_linhas, ALTURA_MAX_BLOCO)
+
+    spans = []
+    linhas_por_bloco = {"OBJETO": {}, "FASE": {}, "STATUS": {}}
+    id_obj_ant, id_fase_nivel_ant, id_sta_ant = None, None, None
+    obj_real_ant, fase_real_ant, sta_real_ant = None, None, None
+    l_idx = 1
+
+    for pos, reg in enumerate(registros):
+        obj, fas, sta = reg["obj"], reg["fas"], reg["sta"]
+        textos = dict(reg["textos"])
+
+        qtd_obj = contagem_objeto.get(obj, 1)
+        qtd_fase = contagem_fase.get((obj, fas), 1)
+        qtd_sta = contagem_status.get((obj, fas, sta), 1)
+
+        novo_bloco_obj = id_obj[pos] != id_obj_ant
+        novo_bloco_fase = id_fase_nivel[pos] != id_fase_nivel_ant
+        novo_bloco_sta = id_sta[pos] != id_sta_ant
+
+        mudou_valor_obj = obj != obj_real_ant
+        mudou_valor_fase = (obj, fas) != fase_real_ant
+        mudou_valor_sta = (obj, fas, sta) != sta_real_ant
+
+        if novo_bloco_obj:
+            textos["OBJETO"] = (
+                f"{obj}{formatar_contagem_opcional(qtd_obj)}" if mudou_valor_obj else f"{obj} (cont.)"
+            )
+        else:
+            textos["OBJETO"] = ""
+
+        if novo_bloco_fase:
+            textos["FASE"] = (
+                f"{fas}{formatar_contagem_opcional(qtd_fase)}" if mudou_valor_fase else f"{fas} (cont.)"
+            )
+        else:
+            textos["FASE"] = ""
+
+        if novo_bloco_sta:
+            textos["STATUS"] = (
+                f"{sta}{formatar_contagem_opcional(qtd_sta)}" if mudou_valor_sta else f"{sta} (cont.)"
+            )
+        else:
+            textos["STATUS"] = ""
+
+        data_tab.append([Paragraph(textos[chave], ESTILO_COLUNA[chave]) for chave in colunas_tab])
+
+        linhas_por_bloco["OBJETO"].setdefault(id_obj[pos], []).append(l_idx)
+        linhas_por_bloco["FASE"].setdefault(id_fase_nivel[pos], []).append(l_idx)
+        linhas_por_bloco["STATUS"].setdefault(id_sta[pos], []).append(l_idx)
+
+        id_obj_ant, id_fase_nivel_ant, id_sta_ant = id_obj[pos], id_fase_nivel[pos], id_sta[pos]
+        obj_real_ant, fase_real_ant, sta_real_ant = obj, (obj, fas), (obj, fas, sta)
+        l_idx += 1
+
+    for chave, blocos in linhas_por_bloco.items():
+        coluna = colunas_tab.index(chave)
+        for linhas in blocos.values():
+            if len(linhas) > 1:
+                spans.append(("SPAN", (coluna, linhas[0]), (coluna, linhas[-1])))
+
+    # --- Linha de TOTAL: mesma cor/negrito já usados na linha TOTAL de
+    # gerar_tabela_secretaria_fase (fundo COR_MARCA_TEAL_CLARA, texto
+    # COR_MARCA_TEAL_ESCURO em negrito) — único "molde" de totais que já
+    # existe no relatório. ---
+    total_valor_contratado = float(df_grp[col_valor_contratado].sum())
+    total_ogu = float(df_grp[col_apoiado_ajustado].sum())
+    total_financiamento = float(df_grp[col_financiamento_ajustado].sum())
+    total_recurso_estadual = float(
+        (df_grp[col_contrapartida_ajustado] + df_grp[col_complementar_ajustado]).sum()
+    )
+    total_investimento = total_valor_contratado + total_ogu + total_financiamento + total_recurso_estadual
+
+    total_label_style = ParagraphStyle("total_label_obj_fin", parent=header_center, alignment=TA_LEFT)
+    total_valor_estilo = ParagraphStyle(
+        "total_valor_obj_fin", parent=valor_style,
+        fontName=FONTE_PADRAO_NEGRITO, textColor=COR_MARCA_TEAL_ESCURO,
+    )
+
+    texto_financiamento_total = moeda_sem_quebra(total_financiamento)
+    if subtotal_origem_gestao:
+        partes_origem = sorted(subtotal_origem_gestao.items(), key=lambda par: remover_acentos(par[0]))
+        texto_financiamento_total += "<br/>" + "; ".join(
+            f"{origem}: {moeda_sem_quebra(valor)}" for origem, valor in partes_origem
+        )
+
+    data_tab.append([
+        Paragraph("<b>TOTAL</b>", total_label_style),
+        Paragraph("", cell_nowrap),
+        Paragraph("", cell_nowrap),
+        Paragraph(f"<b>{moeda_sem_quebra(total_investimento)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{moeda_sem_quebra(total_valor_contratado)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{moeda_sem_quebra(total_ogu)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{texto_financiamento_total}</b>", total_valor_estilo),
+        Paragraph(f"<b>{moeda_sem_quebra(total_recurso_estadual)}</b>", total_valor_estilo),
+    ])
+
+    estilo_tab = [
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+        ("BACKGROUND", (0, 0), (-1, 0), COR_MARCA_TEAL_CLARA),
+        ("BACKGROUND", (0, -1), (-1, -1), COR_MARCA_TEAL_CLARA),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]
+    for chave in ("INVESTIMENTO", "VALOR_CONTRATADO", "OGU", "FINANCIAMENTO", "RECURSO_ESTADUAL"):
+        coluna = colunas_tab.index(chave)
+        estilo_tab.append(("ALIGN", (coluna, 1), (coluna, -1), "RIGHT"))
+
+    tabela = Table(data_tab, colWidths=larguras, repeatRows=1)
+    tabela.setStyle(TableStyle(estilo_tab + spans))
+
+    nota_divergencia = None
+    if divergencias:
+        amostra = "; ".join(divergencias[:10])
+        sufixo = " (...)" if len(divergencias) > 10 else ""
+        nota_divergencia = (
+            f"⚠ Divergência: Investimento não bate com Valor Contratado + OGU + Financiamento "
+            f"+ Recurso Estadual em {len(divergencias)} linha(s) — {amostra}{sufixo}"
+        )
+    return tabela, nota_divergencia
 
 def _formatar_mi_bi_texto_puro(valor):
     # Versão em TEXTO PURO de formatar_mi_bi — usada dentro de String (do
@@ -6054,6 +6388,7 @@ SECOES_RELATORIO = [
     {"chave": "METODOLOGIA", "titulo": "Metodologia do Índice", "layout": "texto_tabelas"},
     {"chave": "INDICE_DESEMPENHO", "titulo": "Índice de Desempenho", "layout": "medidores"},
     {"chave": "DETALHAMENTO_FINANCEIRO", "titulo": "Detalhamento Financeiro", "layout": "barras"},
+    {"chave": "DETALHAMENTO_FINANCEIRO_OBJETO", "titulo": "Detalhamento Financeiro por Objeto", "layout": "detalhamento"},
     {"chave": "MAPA", "titulo": "Mapa dos Municípios", "layout": "mapa"},
     {"chave": "RESUMO_GERAL", "titulo": "Resumo Executivo Geral", "layout": "cards_tabelas"},
     {"chave": "POR_STATUS", "titulo": "Visão por Status", "layout": "cards_tabelas"},
@@ -6137,16 +6472,19 @@ def _secoes_disponiveis_relatorio(df):
             paginas = paginas_indice
         if chave in ("POR_STATUS", "POR_FASE"):
             paginas = n_gestoes
-        if chave == "DETALHAMENTO":
+        if chave in ("DETALHAMENTO", "DETALHAMENTO_FINANCEIRO_OBJETO"):
             # Muitas páginas, quantidade imprevisível: a janela mostra uma
             # miniatura só, como representação da seção inteira.
             paginas = None
 
-        # Detalhamento Financeiro num recorte só de ANDAMENTO: a página
-        # continua disponível, mas chega desmarcada, porque a decomposição
-        # do investimento acrescenta pouco nesse corte. Antes ela era
-        # suprimida à força e não havia como pedi-la.
-        marcada = not (chave == "DETALHAMENTO_FINANCEIRO" and so_andamento)
+        # Detalhamento Financeiro (por secretaria ou por objeto) num recorte
+        # só de ANDAMENTO: a página continua disponível, mas chega
+        # desmarcada, porque a decomposição do investimento acrescenta
+        # pouco nesse corte. Antes ela era suprimida à força e não havia
+        # como pedi-la.
+        marcada = not (
+            chave in ("DETALHAMENTO_FINANCEIRO", "DETALHAMENTO_FINANCEIRO_OBJETO") and so_andamento
+        )
 
         disponiveis.append(
             {
@@ -7185,6 +7523,56 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
                 elements.append(grafico_detalhamento_financeiro)
                 elements.append(PageBreak())
 
+        if secao_ativa("DETALHAMENTO_FINANCEIRO_OBJETO"):
+            # --- ETAPA B3.6: DETALHAMENTO FINANCEIRO POR OBJETO ---
+            # Mesma estrutura de tabela do Detalhamento Analítico (hierarquia
+            # OBJETO > FASE > STATUS com mesclas verticais, mesmo cabeçalho/
+            # bordas/fontes/cores — ver gerar_tabela_objeto_financeiro), só
+            # que com as colunas financeiras fixas (Investimento, Valor
+            # Contratado, OGU, Financiamento, Recurso Estadual) e sem
+            # dividir por secretaria: uma tabela por GESTÃO, com linha de
+            # TOTAL ao final de cada uma.
+            ordem_gestao_of = ["GESTÃO ESTADUAL", "GESTÃO FEDERAL"]
+            gestoes_of = sorted(
+                {str(g).strip() for g in df["GESTAO"].dropna().unique() if str(g).strip()},
+                key=lambda g: ordem_gestao_of.index(g) if g in ordem_gestao_of else 99,
+            )
+            blocos_objeto_financeiro = []
+            for gestao_of in gestoes_of:
+                df_gestao_of = df[df["GESTAO"] == gestao_of]
+                if df_gestao_of.empty:
+                    continue
+                tabela_of, nota_divergencia_of = gerar_tabela_objeto_financeiro(df_gestao_of)
+                bloco = [
+                    Paragraph(
+                        f"{gestao_of} - {len(df_gestao_of)} ações - "
+                        f"{moeda_sem_quebra(_investimento_ajustado(df_gestao_of))}",
+                        gestao_style,
+                    ),
+                    tabela_of,
+                ]
+                if nota_divergencia_of:
+                    bloco.append(Spacer(1, 6))
+                    bloco.append(
+                        Paragraph(
+                            f"<font color='{COR_PRAZO_VENCIDO}'>{nota_divergencia_of}</font>",
+                            detalhamento_texto_style,
+                        )
+                    )
+                blocos_objeto_financeiro.append(bloco)
+
+            if blocos_objeto_financeiro:
+                titulo_objeto_financeiro = (
+                    f"PAC - DETALHAMENTO FINANCEIRO POR OBJETO - {sufixo_titulo_painel}"
+                )
+                elements.append(Paragraph(titulo_objeto_financeiro, titulo_style))
+                elements.append(Spacer(1, 10))
+                for i_bloco, bloco in enumerate(blocos_objeto_financeiro):
+                    elements.extend(bloco)
+                    if i_bloco < len(blocos_objeto_financeiro) - 1:
+                        elements.append(PageBreak())
+                elements.append(PageBreak())
+
         if secao_ativa("MAPA"):
             # --- ETAPA B4: MAPA COROPLÉTICO DOS MUNICÍPIOS ---
             # Precisa do arquivo "municipios_bahia.geojson" na mesma pasta do
@@ -7424,74 +7812,11 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
                         ["_OBJETO_SORT", "FASE_ORDEM", "STATUS_ORDEM"], kind="stable"
                     )
 
-                    # Altura máxima segura (em pontos) para uma célula mesclada (SPAN): acima
-                    # disso ela pode ficar mais alta que uma página inteira e travar o
-                    # ReportLab com LayoutError, já que uma célula mesclada não pode ser
-                    # quebrada entre páginas. A tabela continua sendo UMA só (sem cortes
-                    # artificiais); o rótulo de cada nível (OBJETO/FASE/STATUS) só se
-                    # repete quando o bloco realmente se aproxima do limite de altura de
-                    # uma página.
-                    ALTURA_MAX_BLOCO = 480
-
-                    def gerar_ids_subgrupo_altura(seq, alturas, limite_altura):
-                        ids, contador, valor_anterior, altura_no_grupo = [], 0, object(), 0
-                        for val, altura in zip(seq, alturas):
-                            if val != valor_anterior or altura_no_grupo + altura > limite_altura:
-                                contador += 1
-                                valor_anterior = val
-                                altura_no_grupo = 0
-                            altura_no_grupo += altura
-                            ids.append(contador)
-                        return ids
-
-                    def gerar_id_nivel_alinhado_altura(seq_nivel, id_filho, alturas, limite_altura):
-                        # Nível intermediário/externo da hierarquia de mesclas (ex: FASE
-                        # dentro de OBJETO, ou OBJETO por cima de FASE): só quebra quando
-                        # o valor deste nível mudar de verdade, ou em um limite de grupo
-                        # do nível filho (nunca no meio de uma célula mesclada do nível
-                        # abaixo dele).
-                        #
-                        # A decisão de quebrar olha a altura do PRÓXIMO bloco filho
-                        # INTEIRO, e não só a da linha atual. Como o corte só pode
-                        # acontecer na fronteira entre blocos filhos, decidir linha a
-                        # linha deixava o bloco pai passar do limite e só quebrar
-                        # depois — com colunas de texto longo (Pendências, Próximos
-                        # Passos), isso produzia células mescladas mais altas que a
-                        # página, que o ReportLab não consegue nem desenhar nem
-                        # dividir.
-                        altura_por_bloco_filho = {}
-                        for filho, altura in zip(id_filho, alturas):
-                            altura_por_bloco_filho[filho] = altura_por_bloco_filho.get(filho, 0) + altura
-
-                        ids, contador, valor_anterior, altura_no_grupo = [], 0, object(), 0
-                        for pos, valor in enumerate(seq_nivel):
-                            novo_bloco_filho = pos == 0 or id_filho[pos] != id_filho[pos - 1]
-                            estoura = (
-                                novo_bloco_filho
-                                and altura_no_grupo > 0
-                                and altura_no_grupo + altura_por_bloco_filho[id_filho[pos]] > limite_altura
-                            )
-                            if valor != valor_anterior or estoura:
-                                contador += 1
-                                altura_no_grupo = 0
-                            altura_no_grupo += alturas[pos]
-                            valor_anterior = valor
-                            ids.append(contador)
-                        return ids
-
-                    def gerar_ids_subgrupo_aninhado(seq_valor, seq_grupo_pai):
-                        # Cria um novo id sempre que o VALOR mudar OU o grupo pai mudar —
-                        # ou seja, só mescla dentro de um mesmo bloco hierárquico já
-                        # comprovadamente seguro (mesmo objeto, mesma fase, mesmo status,
-                        # mesma página).
-                        ids, contador, valor_ant, grupo_ant = [], 0, object(), object()
-                        for val, grupo in zip(seq_valor, seq_grupo_pai):
-                            if val != valor_ant or grupo != grupo_ant:
-                                contador += 1
-                                valor_ant = val
-                                grupo_ant = grupo
-                            ids.append(contador)
-                        return ids
+                    # ALTURA_MAX_BLOCO e as três funções gerar_ids_* (altura/nível/
+                    # aninhado) agora vivem no nível do módulo — ver comentário lá,
+                    # logo após limitar_texto_para_altura. Passaram a alimentar duas
+                    # tabelas (Detalhamento Analítico e Detalhamento Financeiro por
+                    # Objeto), então saíram daqui de dentro.
 
                     def _combinar_fonte_recurso(fonte_recurso, fonte_financ):
                         # FONTE DE RECURSO leva, entre parênteses, a origem do
