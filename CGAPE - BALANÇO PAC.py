@@ -269,6 +269,15 @@ col_apoiado = "APOIADO"
 col_contrapartida = "CONTRAPARTIDA"
 col_complementar = "COMPLEMENTAR"
 col_valor_contratado = "VALOR CONTRATADO"
+# Colunas novas da planilha (detalham VALOR CONTRATADO por origem, mesma
+# ideia das colunas "AJUSTADO" abaixo, só que com o valor já contratado em
+# vez do valor previsto/solicitado). Só trazidas pro tratamento da base por
+# enquanto — NENHUM lugar do relatório/painel usa ainda; são OPCIONAIS
+# (planilhas antigas sem elas continuam funcionando normalmente).
+col_apoiado_contratado = "APOIADO CONTRATADO"
+col_contrapartida_contratado = "CONTRAPARTIDA CONTRATADA"
+col_complementar_contratado = "COMPLEMENTAR CONTRATADO"
+col_financiamento_contratado = "FINANCIAMENTO CONTRATADO"
 col_empresa_contratada = "EMPRESA CONTRATADA"
 col_financiamento_ajustado = "FINANCIAMENTO AJUSTADO"
 col_apoiado_ajustado = "APOIADO AJUSTADO"
@@ -5349,6 +5358,20 @@ df[col_apoiado] = df[col_apoiado].apply(converter_valor)
 df[col_contrapartida] = df[col_contrapartida].apply(converter_valor)
 df[col_complementar] = df[col_complementar].apply(converter_valor)
 df[col_valor_contratado] = df[col_valor_contratado].apply(converter_valor)
+
+# Colunas novas que detalham VALOR CONTRATADO por origem (ver comentário
+# junto das constantes, lá no topo) — OPCIONAIS: só convertidas se a
+# planilha realmente as tiver, pra uma versão mais antiga sem elas
+# continuar funcionando sem erro. Só limpeza/conversão por enquanto; ainda
+# não alimentam nenhum cálculo, filtro ou exibição.
+for _col_contratado_detalhe in (
+    col_apoiado_contratado,
+    col_contrapartida_contratado,
+    col_complementar_contratado,
+    col_financiamento_contratado,
+):
+    if _col_contratado_detalhe in df.columns:
+        df[_col_contratado_detalhe] = df[_col_contratado_detalhe].apply(converter_valor)
 
 # Colunas auxiliares condicionais: se VALOR CONTRATADO > 0, o valor ajustado é zero;
 # caso contrário, mantém o valor original da coluna.
