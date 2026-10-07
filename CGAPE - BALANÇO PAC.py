@@ -1397,6 +1397,16 @@ def _texto_vazio(valor):
     texto = str(valor).strip()
     return not texto or texto.upper() in ("NAN", "NAT", "NONE")
 
+def _valor_contratado_vazio(valor):
+    # Verdadeiro quando o VALOR CONTRATADO está em branco ou zerado — campo
+    # numérico (moeda), não usa _texto_vazio (que é pra campos de texto).
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return True
+    try:
+        return float(valor) <= 0
+    except (TypeError, ValueError):
+        return True
+
 def _motivo_link_localizacao(valor):
     # Devolve o motivo do alerta, ou None quando o campo está vazio (campo
     # em branco não é erro de preenchimento aqui — quem cobra o preenchimento
@@ -5278,6 +5288,24 @@ def _campos_alerta_qualidade(row, hoje=None):
             f"Obra Não Iniciada — mais de {DIAS_TOLERANCIA_OBRA_NAO_INICIADA} dias "
             "desde a Emissão de O.S. sem Avanço da Obra registrado"
         )
+
+    # Valor Contratado / Empresa Contratada — a execução já começou (status
+    # ANDAMENTO) ou já existe Emissão de O.S. (documento que formaliza a
+    # contratação), então os dois campos já deveriam estar preenchidos.
+    data_emissao_os = (
+        _extrair_data_alerta(row.get(col_emissao_os)) if col_emissao_os in row.index else None
+    )
+    if status_atual == "ANDAMENTO" or data_emissao_os is not None:
+        if col_valor_contratado in row.index and _valor_contratado_vazio(row.get(col_valor_contratado)):
+            alertas["valor_contratado"] = (
+                "Status Em Andamento ou com Emissão de O.S., mas sem Valor "
+                "Contratado preenchido"
+            )
+        if col_empresa_contratada in row.index and _texto_vazio(row.get(col_empresa_contratada)):
+            alertas["empresa_contratada"] = (
+                "Status Em Andamento ou com Emissão de O.S., mas sem Empresa "
+                "Contratada preenchida"
+            )
 
     return alertas
 
