@@ -1534,11 +1534,22 @@ def _definicao_secoes_ficha():
             ("empresa_contratada", "Empresa Contratada"),
         ]},
         {"titulo": "FINANCEIRO", "campos": [
-            ("valor_contratado", "Valor Contratado"),
+            ("valor_contratado", "Valor Contratado"), ("investimento_total", "Investimento Total"),
+        ]},
+        # Dois detalhamentos diferentes do mesmo investimento, que NÃO podem
+        # ficar misturados num bloco só: um é o que já foi efetivamente
+        # contratado (colunas novas, ver col_*_contratado), o outro é a
+        # previsão orçamentária original (Financiamento/Apoiado/Contrapartida/
+        # Complementar — o mesmo "*Previsão Orçamentária" do Detalhamento
+        # Financeiro do relatório gerencial). Juntos numa seção só, os dois
+        # pareciam a mesma coisa (ver captura de tela que motivou a separação).
+        {"titulo": "DETALHAMENTO CONTRATADO", "campos": [
             ("apoiado_contratado", "Apoiado Contratado"), ("contrapartida_contratado", "Contrapartida Contratada"),
             ("complementar_contratado", "Complementar Contratado"), ("financiamento_contratado", "Financiamento Contratado"),
+        ]},
+        {"titulo": "DETALHAMENTO DA PREVISÃO ORÇAMENTÁRIA", "campos": [
             ("financiamento", "Financiamento"), ("apoiado", "Apoiado (OGU)"),
-            ("contrapartida", "Contrapartida"), ("complementar", "Complementar"), ("investimento_total", "Investimento Total"),
+            ("contrapartida", "Contrapartida"), ("complementar", "Complementar"),
         ]},
         {"titulo": "SITUAÇÃO", "campos": [
             ("fase", "Fase"), ("status", "Status"),
@@ -13930,15 +13941,24 @@ def montar_html_painel(df_base):
       ]},
       { titulo: "Financeiro", campos: [
         { rotulo: "Valor Contratado", chave: "valor_contratado" },
+        { rotulo: "Investimento Total", chave: "investimento_total" },
+      ]},
+      // Dois detalhamentos diferentes do mesmo investimento, em seções
+      // separadas de propósito (ver comentário igual em
+      // _definicao_secoes_ficha, no Python): um é o que já foi efetivamente
+      // contratado, o outro é a previsão orçamentária original — misturados
+      // numa seção só, os dois pareciam a mesma coisa.
+      { titulo: "Detalhamento Contratado", campos: [
         { rotulo: "Apoiado Contratado", chave: "apoiado_contratado" },
         { rotulo: "Contrapartida Contratada", chave: "contrapartida_contratado" },
         { rotulo: "Complementar Contratado", chave: "complementar_contratado" },
         { rotulo: "Financiamento Contratado", chave: "financiamento_contratado" },
+      ]},
+      { titulo: "Detalhamento da Previsão Orçamentária", campos: [
         { rotulo: "Financiamento", chave: "financiamento" },
         { rotulo: "Apoiado (OGU)", chave: "apoiado" },
         { rotulo: "Contrapartida", chave: "contrapartida" },
         { rotulo: "Complementar", chave: "complementar" },
-        { rotulo: "Investimento Total", chave: "investimento_total" },
       ]},
       { titulo: "Situação", campos: [
         { rotulo: "Fase", chave: "fase" },
