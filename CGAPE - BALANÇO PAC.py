@@ -2866,14 +2866,22 @@ def gerar_linha_titulo_gestao_com_cards_totais(texto_titulo, totais):
             ),
         )
 
+    # Fonte do valor menor que CARDS_FONTE_TAM_VALOR (26pt, usada nos cards
+    # do Detalhamento Financeiro): lá os cards têm 1/7 da largura útil, aqui
+    # são 5 cards mais estreitos (1/9) dividindo a linha com o título da
+    # Gestão — no tamanho padrão, um valor de 12 caracteres como "R$ 946,46
+    # Mi" não cabia numa linha só e quebrava no meio da palavra "Mi". 22pt
+    # cabe com folga até no pior caso (3 dígitos antes da vírgula).
+    FONTE_TAM_VALOR_CARD = 22
+
     def valor_celula(texto):
         return Paragraph(
             texto,
             ParagraphStyle(
                 "card_titulo_gestao_valor",
                 fontName=FONTE_BAHNSCHRIFT,
-                fontSize=CARDS_FONTE_TAM_VALOR,
-                leading=CARDS_FONTE_TAM_VALOR,
+                fontSize=FONTE_TAM_VALOR_CARD,
+                leading=FONTE_TAM_VALOR_CARD,
                 alignment=TA_CENTER,
                 textColor=colors.black,
             ),
