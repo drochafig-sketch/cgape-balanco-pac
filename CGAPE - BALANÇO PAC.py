@@ -2708,6 +2708,44 @@ def gerar_tabela_objeto_financeiro(df_gestao):
         ]
     ]
 
+    # --- Linha de TOTAL, logo abaixo do cabeçalho (não no fim da tabela) —
+    # mesma cor/negrito já usados na linha TOTAL de gerar_tabela_secretaria_
+    # fase (fundo COR_MARCA_TEAL_CLARA, texto COR_MARCA_TEAL_ESCURO em
+    # negrito), único "molde" de totais que já existe no relatório. Fica no
+    # topo pra ficar visível mesmo quando a tabela ocupa várias páginas
+    # (repeatRows repete cabeçalho + TOTAL em todas elas). ---
+    total_valor_contratado = float(df_grp[col_valor_contratado].sum())
+    total_ogu = float(df_grp[col_apoiado_ajustado].sum())
+    total_financiamento = float(df_grp[col_financiamento_ajustado].sum())
+    total_recurso_estadual = float(
+        (df_grp[col_contrapartida_ajustado] + df_grp[col_complementar_ajustado]).sum()
+    )
+    total_investimento = total_valor_contratado + total_ogu + total_financiamento + total_recurso_estadual
+
+    total_label_style = ParagraphStyle("total_label_obj_fin", parent=header_center, alignment=TA_LEFT)
+    total_valor_estilo = ParagraphStyle(
+        "total_valor_obj_fin", parent=valor_style,
+        fontName=FONTE_PADRAO_NEGRITO, textColor=COR_MARCA_TEAL_ESCURO,
+    )
+
+    texto_financiamento_total = moeda_sem_quebra(total_financiamento)
+    if subtotal_origem_gestao:
+        partes_origem = sorted(subtotal_origem_gestao.items(), key=lambda par: remover_acentos(par[0]))
+        texto_financiamento_total += "<br/>" + "; ".join(
+            f"{origem}: {moeda_sem_quebra(valor)}" for origem, valor in partes_origem
+        )
+
+    data_tab.append([
+        Paragraph("<b>TOTAL</b>", total_label_style),
+        Paragraph("", cell_nowrap),
+        Paragraph("", cell_nowrap),
+        Paragraph(f"<b>{moeda_sem_quebra(total_investimento)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{moeda_sem_quebra(total_valor_contratado)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{moeda_sem_quebra(total_ogu)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{texto_financiamento_total}</b>", total_valor_estilo),
+        Paragraph(f"<b>{moeda_sem_quebra(total_recurso_estadual)}</b>", total_valor_estilo),
+    ])
+
     alturas_linhas = [
         estimar_altura_linha(
             [(reg["textos"][chave], ESTILO_COLUNA[chave], larguras[i]) for i, chave in enumerate(colunas_tab)]
@@ -2727,7 +2765,7 @@ def gerar_tabela_objeto_financeiro(df_gestao):
     linhas_por_bloco = {"OBJETO": {}, "FASE": {}, "STATUS": {}}
     id_obj_ant, id_fase_nivel_ant, id_sta_ant = None, None, None
     obj_real_ant, fase_real_ant, sta_real_ant = None, None, None
-    l_idx = 1
+    l_idx = 2  # linha 0 = cabeçalho, linha 1 = TOTAL — as linhas de dado começam na 2
 
     for pos, reg in enumerate(registros):
         obj, fas, sta = reg["obj"], reg["fas"], reg["sta"]
@@ -2782,53 +2820,19 @@ def gerar_tabela_objeto_financeiro(df_gestao):
             if len(linhas) > 1:
                 spans.append(("SPAN", (coluna, linhas[0]), (coluna, linhas[-1])))
 
-    # --- Linha de TOTAL: mesma cor/negrito já usados na linha TOTAL de
-    # gerar_tabela_secretaria_fase (fundo COR_MARCA_TEAL_CLARA, texto
-    # COR_MARCA_TEAL_ESCURO em negrito) — único "molde" de totais que já
-    # existe no relatório. ---
-    total_valor_contratado = float(df_grp[col_valor_contratado].sum())
-    total_ogu = float(df_grp[col_apoiado_ajustado].sum())
-    total_financiamento = float(df_grp[col_financiamento_ajustado].sum())
-    total_recurso_estadual = float(
-        (df_grp[col_contrapartida_ajustado] + df_grp[col_complementar_ajustado]).sum()
-    )
-    total_investimento = total_valor_contratado + total_ogu + total_financiamento + total_recurso_estadual
-
-    total_label_style = ParagraphStyle("total_label_obj_fin", parent=header_center, alignment=TA_LEFT)
-    total_valor_estilo = ParagraphStyle(
-        "total_valor_obj_fin", parent=valor_style,
-        fontName=FONTE_PADRAO_NEGRITO, textColor=COR_MARCA_TEAL_ESCURO,
-    )
-
-    texto_financiamento_total = moeda_sem_quebra(total_financiamento)
-    if subtotal_origem_gestao:
-        partes_origem = sorted(subtotal_origem_gestao.items(), key=lambda par: remover_acentos(par[0]))
-        texto_financiamento_total += "<br/>" + "; ".join(
-            f"{origem}: {moeda_sem_quebra(valor)}" for origem, valor in partes_origem
-        )
-
-    data_tab.append([
-        Paragraph("<b>TOTAL</b>", total_label_style),
-        Paragraph("", cell_nowrap),
-        Paragraph("", cell_nowrap),
-        Paragraph(f"<b>{moeda_sem_quebra(total_investimento)}</b>", total_valor_estilo),
-        Paragraph(f"<b>{moeda_sem_quebra(total_valor_contratado)}</b>", total_valor_estilo),
-        Paragraph(f"<b>{moeda_sem_quebra(total_ogu)}</b>", total_valor_estilo),
-        Paragraph(f"<b>{texto_financiamento_total}</b>", total_valor_estilo),
-        Paragraph(f"<b>{moeda_sem_quebra(total_recurso_estadual)}</b>", total_valor_estilo),
-    ])
-
     estilo_tab = [
         ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
         ("BACKGROUND", (0, 0), (-1, 0), COR_MARCA_TEAL_CLARA),
-        ("BACKGROUND", (0, -1), (-1, -1), COR_MARCA_TEAL_CLARA),
+        ("BACKGROUND", (0, 1), (-1, 1), COR_MARCA_TEAL_CLARA),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]
     for chave in ("INVESTIMENTO", "VALOR_CONTRATADO", "OGU", "FINANCIAMENTO", "RECURSO_ESTADUAL"):
         coluna = colunas_tab.index(chave)
         estilo_tab.append(("ALIGN", (coluna, 1), (coluna, -1), "RIGHT"))
 
-    tabela = Table(data_tab, colWidths=larguras, repeatRows=1)
+    # repeatRows=2: cabeçalho E a linha TOTAL se repetem no topo de cada
+    # página, caso a tabela não caiba inteira numa só.
+    tabela = Table(data_tab, colWidths=larguras, repeatRows=2)
     tabela.setStyle(TableStyle(estilo_tab + spans))
 
     nota_divergencia = None
