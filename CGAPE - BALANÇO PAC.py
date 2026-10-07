@@ -2715,12 +2715,11 @@ def gerar_tabela_objeto_financeiro(df_gestao):
         ]
     ]
 
-    # --- Linha de TOTAL, logo abaixo do cabeçalho (não no fim da tabela) —
-    # mesma cor/negrito já usados na linha TOTAL de gerar_tabela_secretaria_
-    # fase (fundo COR_MARCA_TEAL_CLARA, texto COR_MARCA_TEAL_ESCURO em
-    # negrito), único "molde" de totais que já existe no relatório. Fica no
-    # topo pra ficar visível mesmo quando a tabela ocupa várias páginas
-    # (repeatRows repete cabeçalho + TOTAL em todas elas). ---
+    # --- Totais: não entram mais como linha dentro da tabela (ver
+    # gerar_linha_titulo_gestao_com_cards_totais) — só calculados aqui e
+    # devolvidos pra quem chama montar os cards, junto do subtotal de
+    # Financiamento por origem (subtotal_origem_gestao, calculado mais
+    # acima). ---
     total_valor_contratado = float(df_grp[col_valor_contratado].sum())
     total_ogu = float(df_grp[col_apoiado_ajustado].sum())
     total_financiamento = float(df_grp[col_financiamento_ajustado].sum())
@@ -2728,30 +2727,14 @@ def gerar_tabela_objeto_financeiro(df_gestao):
         (df_grp[col_contrapartida_ajustado] + df_grp[col_complementar_ajustado]).sum()
     )
     total_investimento = total_valor_contratado + total_ogu + total_financiamento + total_recurso_estadual
-
-    total_label_style = ParagraphStyle("total_label_obj_fin", parent=header_center, alignment=TA_LEFT)
-    total_valor_estilo = ParagraphStyle(
-        "total_valor_obj_fin", parent=valor_style,
-        fontName=FONTE_PADRAO_NEGRITO, textColor=COR_MARCA_TEAL_ESCURO,
-    )
-
-    texto_financiamento_total = _moeda_ou_traco(total_financiamento)
-    if subtotal_origem_gestao:
-        partes_origem = sorted(subtotal_origem_gestao.items(), key=lambda par: remover_acentos(par[0]))
-        texto_financiamento_total += "<br/>" + "; ".join(
-            f"{origem}: {moeda_sem_quebra(valor)}" for origem, valor in partes_origem
-        )
-
-    data_tab.append([
-        Paragraph("<b>TOTAL</b>", total_label_style),
-        Paragraph("", cell_nowrap),
-        Paragraph("", cell_nowrap),
-        Paragraph(f"<b>{_moeda_ou_traco(total_investimento)}</b>", total_valor_estilo),
-        Paragraph(f"<b>{_moeda_ou_traco(total_valor_contratado)}</b>", total_valor_estilo),
-        Paragraph(f"<b>{_moeda_ou_traco(total_ogu)}</b>", total_valor_estilo),
-        Paragraph(f"<b>{texto_financiamento_total}</b>", total_valor_estilo),
-        Paragraph(f"<b>{_moeda_ou_traco(total_recurso_estadual)}</b>", total_valor_estilo),
-    ])
+    totais = {
+        "investimento": total_investimento,
+        "valor_contratado": total_valor_contratado,
+        "ogu": total_ogu,
+        "financiamento": total_financiamento,
+        "recurso_estadual": total_recurso_estadual,
+        "subtotal_origem_financiamento": subtotal_origem_gestao,
+    }
 
     alturas_linhas = [
         estimar_altura_linha(
@@ -2772,7 +2755,7 @@ def gerar_tabela_objeto_financeiro(df_gestao):
     linhas_por_bloco = {"OBJETO": {}, "FASE": {}, "STATUS": {}}
     id_obj_ant, id_fase_nivel_ant, id_sta_ant = None, None, None
     obj_real_ant, fase_real_ant, sta_real_ant = None, None, None
-    l_idx = 2  # linha 0 = cabeçalho, linha 1 = TOTAL — as linhas de dado começam na 2
+    l_idx = 1  # linha 0 = cabeçalho — as linhas de dado começam na 1
 
     for pos, reg in enumerate(registros):
         obj, fas, sta = reg["obj"], reg["fas"], reg["sta"]
@@ -2830,16 +2813,13 @@ def gerar_tabela_objeto_financeiro(df_gestao):
     estilo_tab = [
         ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
         ("BACKGROUND", (0, 0), (-1, 0), COR_MARCA_TEAL_CLARA),
-        ("BACKGROUND", (0, 1), (-1, 1), COR_MARCA_TEAL_CLARA),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]
     for chave in ("INVESTIMENTO", "VALOR_CONTRATADO", "OGU", "FINANCIAMENTO", "RECURSO_ESTADUAL"):
         coluna = colunas_tab.index(chave)
         estilo_tab.append(("ALIGN", (coluna, 1), (coluna, -1), "RIGHT"))
 
-    # repeatRows=2: cabeçalho E a linha TOTAL se repetem no topo de cada
-    # página, caso a tabela não caiba inteira numa só.
-    tabela = Table(data_tab, colWidths=larguras, repeatRows=2)
+    tabela = Table(data_tab, colWidths=larguras, repeatRows=1)
     tabela.setStyle(TableStyle(estilo_tab + spans))
 
     nota_divergencia = None
@@ -2850,7 +2830,95 @@ def gerar_tabela_objeto_financeiro(df_gestao):
             f"⚠ Divergência: Investimento não bate com Valor Contratado + OGU + Financiamento "
             f"+ Recurso Estadual em {len(divergencias)} linha(s) — {amostra}{sufixo}"
         )
-    return tabela, nota_divergencia
+    return tabela, nota_divergencia, totais
+
+def gerar_linha_titulo_gestao_com_cards_totais(texto_titulo, totais):
+    # Substitui a linha de TOTAL que ficava dentro da tabela (ver
+    # gerar_tabela_objeto_financeiro) por cards com valores ABREVIADOS
+    # (formatar_mi_bi — mesmo usado em todo o resto do relatório), na MESMA
+    # linha do título da Gestão: o título ocupa a coluna 0 (mesclada nas
+    # duas linhas do card, pra ficar centralizado na altura deles) e os 5
+    # cards ficam encostados na margem direita — mesma ideia de "cards
+    # alinhados à direita" já usada no cabeçalho do Detalhamento Financeiro
+    # (ver gerar_cards_resumo_detalhamento_financeiro), com as MESMAS cores
+    # por componente (CORES_DETALHAMENTO_SECRETARIA) e o teal de sempre
+    # pra INVESTIMENTO.
+    def _valor_abreviado(valor):
+        return "-" if valor == 0 else formatar_mi_bi(valor)
+
+    componentes = [
+        ("INVESTIMENTO", totais["investimento"], None),
+        ("VALOR CONTRATADO", totais["valor_contratado"], "Valor Contratado"),
+        ("VALOR APOIADO OGU*", totais["ogu"], "Valor Apoiado OGU"),
+        ("FINANCIAMENTO*", totais["financiamento"], "Financiamento"),
+        ("RECURSO ESTADUAL*", totais["recurso_estadual"], "Recurso Estadual"),
+    ]
+
+    def cabecalho(texto):
+        return Paragraph(
+            texto,
+            ParagraphStyle(
+                f"card_titulo_gestao_header_{texto}",
+                fontName=RESUMO_FONTE_NEGRITO,
+                fontSize=CARDS_FONTE_TAM_CABECALHO,
+                alignment=TA_CENTER,
+                textColor=colors.white,
+            ),
+        )
+
+    def valor_celula(texto):
+        return Paragraph(
+            texto,
+            ParagraphStyle(
+                "card_titulo_gestao_valor",
+                fontName=FONTE_BAHNSCHRIFT,
+                fontSize=CARDS_FONTE_TAM_VALOR,
+                leading=CARDS_FONTE_TAM_VALOR,
+                alignment=TA_CENTER,
+                textColor=colors.black,
+            ),
+        )
+
+    # 5 cards mais estreitos que os do Detalhamento Financeiro (1/7 da
+    # largura útil cada): lá são só cards, aqui dividem a linha com o
+    # título da Gestão, que precisa de espaço.
+    LARGURA_CARD = LARGURA_UTIL * (1 / 9)
+    largura_titulo = LARGURA_UTIL - LARGURA_CARD * len(componentes)
+
+    linha_cabecalho = [Paragraph(texto_titulo, gestao_style)] + [
+        cabecalho(titulo) for titulo, _, _ in componentes
+    ]
+    linha_valor = [""] + [valor_celula(_valor_abreviado(valor)) for _, valor, _ in componentes]
+
+    tabela = Table(
+        [linha_cabecalho, linha_valor],
+        colWidths=[largura_titulo] + [LARGURA_CARD] * len(componentes),
+    )
+    estilo = [
+        ("SPAN", (0, 0), (0, 1)),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (0, -1), 0),
+        ("TOPPADDING", (0, 0), (0, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (0, -1), 0),
+    ]
+    for i, (_, _, chave_cor) in enumerate(componentes):
+        col = 1 + i
+        cor = COR_MARCA_TEAL_ESCURO if chave_cor is None else CORES_DETALHAMENTO_SECRETARIA[chave_cor]
+        estilo.append(("BACKGROUND", (col, 0), (col, 0), cor))
+        estilo.append(("BACKGROUND", (col, 1), (col, 1), colors.whitesmoke))
+        estilo.append(("BOX", (col, 0), (col, -1), 1.0, colors.grey))
+        estilo.append(("INNERGRID", (col, 0), (col, -1), 0.5, colors.lightgrey))
+    tabela.setStyle(TableStyle(estilo))
+
+    nota_origem = None
+    subtotal_origem = totais.get("subtotal_origem_financiamento")
+    if subtotal_origem:
+        partes_origem = sorted(subtotal_origem.items(), key=lambda par: remover_acentos(par[0]))
+        nota_origem = "Financiamento por origem — " + "; ".join(
+            f"{origem}: {moeda_sem_quebra(valor)}" for origem, valor in partes_origem
+        )
+    return tabela, nota_origem
 
 def _formatar_mi_bi_texto_puro(valor):
     # Versão em TEXTO PURO de formatar_mi_bi — usada dentro de String (do
@@ -7541,8 +7609,10 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
             # bordas/fontes/cores — ver gerar_tabela_objeto_financeiro), só
             # que com as colunas financeiras fixas (Investimento, Valor
             # Contratado, OGU, Financiamento, Recurso Estadual) e sem
-            # dividir por secretaria: uma tabela por GESTÃO, com linha de
-            # TOTAL ao final de cada uma.
+            # dividir por secretaria: uma tabela por GESTÃO. Os totais não
+            # ficam mais dentro da tabela — viram cards com valores
+            # abreviados na MESMA linha do título da Gestão, alinhados à
+            # direita (ver gerar_linha_titulo_gestao_com_cards_totais).
             ordem_gestao_of = ["GESTÃO ESTADUAL", "GESTÃO FEDERAL"]
             gestoes_of = sorted(
                 {str(g).strip() for g in df["GESTAO"].dropna().unique() if str(g).strip()},
@@ -7553,15 +7623,18 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
                 df_gestao_of = df[df["GESTAO"] == gestao_of]
                 if df_gestao_of.empty:
                     continue
-                tabela_of, nota_divergencia_of = gerar_tabela_objeto_financeiro(df_gestao_of)
-                bloco = [
-                    Paragraph(
-                        f"{gestao_of} - {len(df_gestao_of)} ações - "
-                        f"{moeda_sem_quebra(_investimento_ajustado(df_gestao_of))}",
-                        gestao_style,
-                    ),
-                    tabela_of,
-                ]
+                tabela_of, nota_divergencia_of, totais_of = gerar_tabela_objeto_financeiro(df_gestao_of)
+                # Sem o valor de investimento no texto: ele já aparece,
+                # abreviado, no card "INVESTIMENTO" logo ao lado — repetir
+                # aqui seria redundante.
+                texto_gestao_of = f"{gestao_of} - {len(df_gestao_of)} ações"
+                linha_titulo_cards_of, nota_origem_of = gerar_linha_titulo_gestao_com_cards_totais(
+                    texto_gestao_of, totais_of
+                )
+                bloco = [linha_titulo_cards_of, Spacer(1, 10), tabela_of]
+                if nota_origem_of:
+                    bloco.append(Spacer(1, 4))
+                    bloco.append(Paragraph(nota_origem_of, cabecalho_grafico_painel_style_direita))
                 if nota_divergencia_of:
                     bloco.append(Spacer(1, 6))
                     bloco.append(
