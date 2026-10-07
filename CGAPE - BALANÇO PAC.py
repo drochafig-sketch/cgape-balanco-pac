@@ -5787,10 +5787,13 @@ def _campos_alerta_qualidade(row, hoje=None):
         _valor_contratado_linha = float(row.get(col_valor_contratado) or 0)
         _diferenca = _valor_contratado_linha - _soma_detalhamento
         if abs(_diferenca) > TOLERANCIA_VALOR_CONTRATADO_DETALHAMENTO:
+            # moeda_texto_puro (não moeda_sem_quebra): este motivo é exibido
+            # no modal web (escaparHtmlFicha escaparia o "&" do "&nbsp;" e
+            # mostraria texto literal em vez de espaço).
             alertas["valor_contratado_detalhamento"] = (
                 "Valor Contratado não bate com o detalhamento contratado (Apoiado + "
                 "Contrapartida + Complementar + Financiamento Contratados) — "
-                f"diferença de {moeda_sem_quebra(abs(_diferenca))}"
+                f"diferença de {moeda_texto_puro(abs(_diferenca))}"
             )
 
     return alertas
@@ -5928,10 +5931,15 @@ def _montar_aviso_qualidade(df):
         if all(c in df.columns for c in _colunas_detalhamento_contratado):
             _total_valor_contratado = float(df[col_valor_contratado].sum())
             _total_detalhamento = float(sum(df[c].sum() for c in _colunas_detalhamento_contratado))
+            # moeda_texto_puro, não moeda_sem_quebra: este texto passa pelo
+            # escaparHtmlFicha do JS (pensado pra texto cru da planilha), que
+            # escapa o "&" do "&nbsp;" e o exibe como texto literal em vez de
+            # espaço — mesmo motivo pelo qual a Ficha Cadastral já usa
+            # moeda_texto_puro em vez de moeda_sem_quebra.
             _linha_totais_detalhamento = (
-                f"\nTotal VALOR CONTRATADO (referência): {moeda_sem_quebra(_total_valor_contratado)}\n"
+                f"\nTotal VALOR CONTRATADO (referência): {moeda_texto_puro(_total_valor_contratado)}\n"
                 "Total do Detalhamento Contratado (Apoiado + Contrapartida + "
-                f"Complementar + Financiamento): {moeda_sem_quebra(_total_detalhamento)}\n"
+                f"Complementar + Financiamento): {moeda_texto_puro(_total_detalhamento)}\n"
             )
 
         return {
