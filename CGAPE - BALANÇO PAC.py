@@ -5787,13 +5787,13 @@ def _campos_alerta_qualidade(row, hoje=None):
         _valor_contratado_linha = float(row.get(col_valor_contratado) or 0)
         _diferenca = _valor_contratado_linha - _soma_detalhamento
         if abs(_diferenca) > TOLERANCIA_VALOR_CONTRATADO_DETALHAMENTO:
-            # moeda_texto_puro (não moeda_sem_quebra): este motivo é exibido
-            # no modal web (escaparHtmlFicha escaparia o "&" do "&nbsp;" e
-            # mostraria texto literal em vez de espaço).
+            # Texto FIXO (sem o valor da diferença, que varia por ação): o
+            # agrupamento do aviso é por texto igual de motivo — com a
+            # diferença embutida, cada ação virava um grupo de 1 item só,
+            # em vez de todas caírem juntas numa pendência só.
             alertas["valor_contratado_detalhamento"] = (
                 "Valor Contratado não bate com o detalhamento contratado (Apoiado + "
-                "Contrapartida + Complementar + Financiamento Contratados) — "
-                f"diferença de {moeda_texto_puro(abs(_diferenca))}"
+                "Contrapartida + Complementar + Financiamento Contratados)"
             )
 
     return alertas
