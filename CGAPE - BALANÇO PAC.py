@@ -1474,6 +1474,13 @@ def _montar_dados_ficha_acao(row):
         "prazo_atual": campo(col_prazo_atual),
         "avanco": formatar_percentual(row.get(col_avanco)) if col_avanco in row.index else "",
         "valor_contratado": valor_moeda(col_valor_contratado),
+        # Detalhamento de VALOR CONTRATADO por origem (colunas novas e
+        # opcionais — ver comentário das constantes col_*_contratado;
+        # valor_moeda já devolve "" sozinha se a coluna não existir).
+        "apoiado_contratado": valor_moeda(col_apoiado_contratado),
+        "contrapartida_contratado": valor_moeda(col_contrapartida_contratado),
+        "complementar_contratado": valor_moeda(col_complementar_contratado),
+        "financiamento_contratado": valor_moeda(col_financiamento_contratado),
         "financiamento": valor_moeda(col_financiamento),
         "apoiado": valor_moeda(col_apoiado),
         "contrapartida": valor_moeda(col_contrapartida),
@@ -1527,7 +1534,10 @@ def _definicao_secoes_ficha():
             ("empresa_contratada", "Empresa Contratada"),
         ]},
         {"titulo": "FINANCEIRO", "campos": [
-            ("valor_contratado", "Valor Contratado"), ("financiamento", "Financiamento"), ("apoiado", "Apoiado (OGU)"),
+            ("valor_contratado", "Valor Contratado"),
+            ("apoiado_contratado", "Apoiado Contratado"), ("contrapartida_contratado", "Contrapartida Contratada"),
+            ("complementar_contratado", "Complementar Contratado"), ("financiamento_contratado", "Financiamento Contratado"),
+            ("financiamento", "Financiamento"), ("apoiado", "Apoiado (OGU)"),
             ("contrapartida", "Contrapartida"), ("complementar", "Complementar"), ("investimento_total", "Investimento Total"),
         ]},
         {"titulo": "SITUAÇÃO", "campos": [
@@ -13920,6 +13930,10 @@ def montar_html_painel(df_base):
       ]},
       { titulo: "Financeiro", campos: [
         { rotulo: "Valor Contratado", chave: "valor_contratado" },
+        { rotulo: "Apoiado Contratado", chave: "apoiado_contratado" },
+        { rotulo: "Contrapartida Contratada", chave: "contrapartida_contratado" },
+        { rotulo: "Complementar Contratado", chave: "complementar_contratado" },
+        { rotulo: "Financiamento Contratado", chave: "financiamento_contratado" },
         { rotulo: "Financiamento", chave: "financiamento" },
         { rotulo: "Apoiado (OGU)", chave: "apoiado" },
         { rotulo: "Contrapartida", chave: "contrapartida" },
