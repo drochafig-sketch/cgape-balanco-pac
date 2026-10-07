@@ -1307,6 +1307,11 @@ def _extrair_data_alerta(valor):
 # zerado/em branco — depois disso, a obra já deveria ter saído do papel.
 DIAS_TOLERANCIA_OBRA_NAO_INICIADA = 40
 
+# Diferença (em R$) tolerada entre VALOR CONTRATADO e a soma das quatro
+# colunas de detalhamento contratado — só pra absorver arredondamento de
+# centavos, não uma divergência real de cadastro.
+TOLERANCIA_VALOR_CONTRATADO_DETALHAMENTO = 0.01
+
 def _avanco_zero_ou_vazio(valor):
     # True quando o AVANÇO DA OBRA (%) está em branco OU é explicitamente
     # zero (0, 0.0, "0%", "0,0%", "0,00%" etc.) — usado pela regra de OBRA
@@ -5764,6 +5769,30 @@ def _campos_alerta_qualidade(row, hoje=None):
                 "Contratada preenchida"
             )
 
+    # Valor Contratado x Detalhamento Contratado — VALOR CONTRATADO é a
+    # referência correta; Apoiado/Contrapartida/Complementar/Financiamento
+    # CONTRATADOS devem somar o mesmo valor, ação por ação. Só roda se a
+    # planilha tiver as quatro colunas de detalhamento (são opcionais — ver
+    # comentário junto das constantes col_*_contratado). Chave própria
+    # (não reaproveita "valor_contratado" da checagem acima): são duas
+    # pendências diferentes — uma é campo vazio, a outra é valor
+    # preenchido mas não compatibilizado com o detalhamento — e cada ação
+    # pode ter só uma, a outra, ou nenhuma.
+    _colunas_detalhamento_contratado = (
+        col_apoiado_contratado, col_contrapartida_contratado,
+        col_complementar_contratado, col_financiamento_contratado,
+    )
+    if all(c in row.index for c in _colunas_detalhamento_contratado):
+        _soma_detalhamento = sum(float(row.get(c) or 0) for c in _colunas_detalhamento_contratado)
+        _valor_contratado_linha = float(row.get(col_valor_contratado) or 0)
+        _diferenca = _valor_contratado_linha - _soma_detalhamento
+        if abs(_diferenca) > TOLERANCIA_VALOR_CONTRATADO_DETALHAMENTO:
+            alertas["valor_contratado_detalhamento"] = (
+                "Valor Contratado não bate com o detalhamento contratado (Apoiado + "
+                "Contrapartida + Complementar + Financiamento Contratados) — "
+                f"diferença de {moeda_sem_quebra(abs(_diferenca))}"
+            )
+
     return alertas
 
 def _montar_aviso_qualidade(df):
@@ -5884,10 +5913,32 @@ def _montar_aviso_qualidade(df):
         )
         texto_item_total = "item" if qtd_total_itens == 1 else "itens"
         texto_verbo_total = "Foi encontrado" if qtd_total_itens == 1 else "Foram encontrados"
+
+        # Totais de VALOR CONTRATADO x Detalhamento Contratado, no mesmo
+        # recorte do restante do aviso — só quando a planilha tem as quatro
+        # colunas de detalhamento (opcionais, ver comentário das constantes
+        # col_*_contratado). Os objetos com ações ainda não compatibilizadas
+        # já aparecem logo abaixo, dentro de "grupos" (motivo
+        # "valor_contratado_detalhamento" em _campos_alerta_qualidade).
+        _linha_totais_detalhamento = ""
+        _colunas_detalhamento_contratado = (
+            col_apoiado_contratado, col_contrapartida_contratado,
+            col_complementar_contratado, col_financiamento_contratado,
+        )
+        if all(c in df.columns for c in _colunas_detalhamento_contratado):
+            _total_valor_contratado = float(df[col_valor_contratado].sum())
+            _total_detalhamento = float(sum(df[c].sum() for c in _colunas_detalhamento_contratado))
+            _linha_totais_detalhamento = (
+                f"\nTotal VALOR CONTRATADO (referência): {moeda_sem_quebra(_total_valor_contratado)}\n"
+                "Total do Detalhamento Contratado (Apoiado + Contrapartida + "
+                f"Complementar + Financiamento): {moeda_sem_quebra(_total_detalhamento)}\n"
+            )
+
         return {
             "cabecalho": (
                 f"Hoje: {hoje.strftime('%d/%m/%Y')}\n"
-                f"Base de dados atualizada em: {ultima_atualizacao.strftime('%d/%m/%Y às %Hh%Mmin')}\n\n"
+                f"Base de dados atualizada em: {ultima_atualizacao.strftime('%d/%m/%Y às %Hh%Mmin')}\n"
+                f"{_linha_totais_detalhamento}\n"
                 f"{texto_verbo_total} {qtd_total_itens} {texto_item_total} com pendência(s) de qualidade na base:"
             ),
             "grupos": grupos,
