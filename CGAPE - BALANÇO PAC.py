@@ -2653,9 +2653,16 @@ def gerar_tabela_objeto_financeiro(df_gestao):
             origem_por_bloco.setdefault(chave_bloco, []).append((origem, valor_origem))
             subtotal_origem_gestao[origem] = subtotal_origem_gestao.get(origem, 0.0) + valor_origem
 
+    # "-" em vez de "R$ 0,00": nesta tabela zero é o normal (cada ação só
+    # preenche UM dos quatro componentes — ver nota da regra "ajustado" no
+    # topo da função), então "R$ 0,00" repetido linha após linha nos outros
+    # três só poluía a leitura sem dizer nada que "-" não diga melhor.
+    def _moeda_ou_traco(valor):
+        return "-" if valor == 0 else moeda_sem_quebra(valor)
+
     def _texto_financiamento(objeto, fase, status, valor_total):
         if valor_total == 0:
-            return moeda_sem_quebra(0)
+            return "-"
         origens = sorted(
             origem_por_bloco.get((objeto, fase, status), []),
             key=lambda par: remover_acentos(par[0]),
@@ -2687,11 +2694,11 @@ def gerar_tabela_objeto_financeiro(df_gestao):
                 "OBJETO": obj,
                 "FASE": fas,
                 "STATUS": sta,
-                "INVESTIMENTO": moeda_sem_quebra(investimento),
-                "VALOR_CONTRATADO": moeda_sem_quebra(valor_contratado),
-                "OGU": moeda_sem_quebra(ogu),
+                "INVESTIMENTO": _moeda_ou_traco(investimento),
+                "VALOR_CONTRATADO": _moeda_ou_traco(valor_contratado),
+                "OGU": _moeda_ou_traco(ogu),
                 "FINANCIAMENTO": _texto_financiamento(obj, fas, sta, financiamento),
-                "RECURSO_ESTADUAL": moeda_sem_quebra(recurso_estadual),
+                "RECURSO_ESTADUAL": _moeda_ou_traco(recurso_estadual),
             },
         })
 
@@ -2728,7 +2735,7 @@ def gerar_tabela_objeto_financeiro(df_gestao):
         fontName=FONTE_PADRAO_NEGRITO, textColor=COR_MARCA_TEAL_ESCURO,
     )
 
-    texto_financiamento_total = moeda_sem_quebra(total_financiamento)
+    texto_financiamento_total = _moeda_ou_traco(total_financiamento)
     if subtotal_origem_gestao:
         partes_origem = sorted(subtotal_origem_gestao.items(), key=lambda par: remover_acentos(par[0]))
         texto_financiamento_total += "<br/>" + "; ".join(
@@ -2739,11 +2746,11 @@ def gerar_tabela_objeto_financeiro(df_gestao):
         Paragraph("<b>TOTAL</b>", total_label_style),
         Paragraph("", cell_nowrap),
         Paragraph("", cell_nowrap),
-        Paragraph(f"<b>{moeda_sem_quebra(total_investimento)}</b>", total_valor_estilo),
-        Paragraph(f"<b>{moeda_sem_quebra(total_valor_contratado)}</b>", total_valor_estilo),
-        Paragraph(f"<b>{moeda_sem_quebra(total_ogu)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{_moeda_ou_traco(total_investimento)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{_moeda_ou_traco(total_valor_contratado)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{_moeda_ou_traco(total_ogu)}</b>", total_valor_estilo),
         Paragraph(f"<b>{texto_financiamento_total}</b>", total_valor_estilo),
-        Paragraph(f"<b>{moeda_sem_quebra(total_recurso_estadual)}</b>", total_valor_estilo),
+        Paragraph(f"<b>{_moeda_ou_traco(total_recurso_estadual)}</b>", total_valor_estilo),
     ])
 
     alturas_linhas = [
