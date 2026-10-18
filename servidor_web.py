@@ -15,7 +15,6 @@ Rodar localmente:
 Em produção (Render, ver render.yaml): gunicorn servidor_web:app
 """
 
-import hmac
 import importlib.util
 import os
 import sys
@@ -45,46 +44,6 @@ sys.modules[_spec.name] = pac
 _spec.loader.exec_module(pac)
 
 app = Flask(__name__)
-
-# Senha única (sem usuário/cadastro) pedida antes de qualquer coisa do
-# painel, via autenticação HTTP Basic — o navegador mostra sozinho a
-# janelinha nativa de usuário/senha (deixe o usuário em branco, só a senha
-# importa). Sem valor padrão de propósito: este repositório é público, um
-# padrão fixo no código ficaria visível pra qualquer um. A senha real só
-# existe como variável de ambiente PAC_WEB_SENHA — no Render, definida em
-# Environment (nunca neste arquivo nem no render.yaml); local, ver
-# DEPLOY_WEB.md.
-SENHA_PAINEL = os.environ.get("PAC_WEB_SENHA")
-if not SENHA_PAINEL:
-    raise RuntimeError(
-        "Variável de ambiente PAC_WEB_SENHA não definida — o servidor não "
-        "sobe sem uma senha configurada (ver DEPLOY_WEB.md)."
-    )
-
-
-def _senha_confere(informada):
-    # Comparação em tempo constante — evita vazar por timing quantos
-    # caracteres do começo bateram (não é crítico aqui, mas não custa nada).
-    return hmac.compare_digest(informada or "", SENHA_PAINEL)
-
-
-@app.before_request
-def exigir_senha():
-    # Roda antes de TODA rota (menos /saude, que segue público de propósito
-    # — é só um healthcheck sem dado sensível, ver rota mais abaixo).
-    # Sem Authorization ou senha errada -> 401 com WWW-Authenticate, que é o
-    # gatilho padrão pro navegador abrir a janela nativa de login.
-    if request.path == "/saude":
-        return None
-    auth = request.authorization
-    if not auth or not _senha_confere(auth.password):
-        return Response(
-            "Senha necessária para acessar o painel.",
-            401,
-            {"WWW-Authenticate": 'Basic realm="Painel PAC"'},
-        )
-    return None
-
 
 @app.route("/")
 def painel():

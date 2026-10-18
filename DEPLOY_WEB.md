@@ -48,21 +48,7 @@ precisa mexer:
   que o `MIGRACAO.md` já explica: versão diferente de Python/biblioteca
   pode mudar o relatório visualmente.
 
-Já `PAC_WEB_SENHA` **não** vem definida no `render.yaml` (só a chave, com
-`sync: false`) — de propósito, porque este repositório é público: um valor
-fixo aqui ficaria visível pra qualquer um no GitHub. O servidor nem sobe
-sem ela (`RuntimeError` na inicialização). Precisa ser configurada à mão,
-uma vez, direto no painel do Render:
-
-1. No serviço `pac-balanco-painel`, vá em **Environment**.
-2. **Add Environment Variable** → chave `PAC_WEB_SENHA`, valor = a senha
-   escolhida.
-3. **Save Changes** — o Render redeploya sozinho já com o valor novo.
-
-É login HTTP Basic: ao abrir o painel, o navegador mostra a janelinha
-nativa de usuário/senha — deixe o usuário em branco, só a senha importa.
-Trocar a senha depois é só repetir o passo 2 com o novo valor (nunca via
-`render.yaml`/commit, senão ela para de ser secreta).
+O painel não pede login — o link abre direto para qualquer um que o tiver.
 
 ## Avisos conhecidos
 
@@ -91,15 +77,13 @@ Windows; no Render/Linux o padrão já é UTF-8):
 ```
 $env:PAC_WEB_MODE = "1"
 $env:PYTHONUTF8 = "1"
-$env:PAC_WEB_SENHA = "algumasenha"
 python servidor_web.py
 ```
 Bash/Git Bash:
 ```
-PAC_WEB_MODE=1 PYTHONUTF8=1 PAC_WEB_SENHA=algumasenha python servidor_web.py
+PAC_WEB_MODE=1 PYTHONUTF8=1 python servidor_web.py
 ```
-Depois abra `http://localhost:5000` num navegador comum (login: usuário em
-branco, senha = o que você pôs em `PAC_WEB_SENHA`). `http://localhost:5000/saude`
+Depois abra `http://localhost:5000` num navegador comum. `http://localhost:5000/saude`
 devolve um JSON simples confirmando que a planilha carregou (quantas linhas,
 quando foi atualizada) — útil para checar rápido se o servidor subiu certo
 sem precisar abrir o painel inteiro.
