@@ -271,8 +271,8 @@ col_complementar = "COMPLEMENTAR"
 col_valor_contratado = "VALOR CONTRATADO"
 # Colunas novas da planilha (detalham VALOR CONTRATADO por origem, mesma
 # ideia das colunas "AJUSTADO" abaixo, só que com o valor já contratado em
-# vez do valor previsto/solicitado). Só trazidas pro tratamento da base por
-# enquanto — NENHUM lugar do relatório/painel usa ainda; são OPCIONAIS
+# vez do valor previsto/solicitado). Usadas no Controle de Qualidade
+# (_campos_alerta_qualidade) e na Ficha Cadastral — são OPCIONAIS
 # (planilhas antigas sem elas continuam funcionando normalmente).
 col_apoiado_contratado = "APOIADO CONTRATADO"
 col_contrapartida_contratado = "CONTRAPARTIDA CONTRATADA"
@@ -1312,6 +1312,21 @@ DIAS_TOLERANCIA_OBRA_NAO_INICIADA = 40
 # centavos, não uma divergência real de cadastro.
 TOLERANCIA_VALOR_CONTRATADO_DETALHAMENTO = 0.01
 
+# Mapeia cada coluna de origem do recurso (Orçamento + Detalhamento
+# Contratado) pra sua chave correspondente na Ficha Cadastral — usado pela
+# regra "Categoria da Origem do Recurso" (_campos_alerta_qualidade) pra
+# contornar em vermelho exatamente os campos que precisam ser preenchidos.
+_NOMES_CAMPOS_FICHA_POR_COLUNA_ORIGEM = {
+    col_apoiado: "apoiado",
+    col_financiamento: "financiamento",
+    col_contrapartida: "contrapartida",
+    col_complementar: "complementar",
+    col_apoiado_contratado: "apoiado_contratado",
+    col_contrapartida_contratado: "contrapartida_contratado",
+    col_complementar_contratado: "complementar_contratado",
+    col_financiamento_contratado: "financiamento_contratado",
+}
+
 def _avanco_zero_ou_vazio(valor):
     # True quando o AVANÇO DA OBRA (%) está em branco OU é explicitamente
     # zero (0, 0.0, "0%", "0,0%", "0,00%" etc.) — usado pela regra de OBRA
@@ -1922,7 +1937,14 @@ COLUNAS_DETALHAMENTO_PADRAO = [c["chave"] for c in CATALOGO_COLUNAS_DETALHAMENTO
 # padrão ocupando 10 vagas, o teto anterior deixava as colunas de
 # acompanhamento (Pendências, Providências, Próximos Passos) bloqueadas
 # até desmarcar alguma outra.
-LIMITE_COLUNAS_DETALHAMENTO = 11
+#
+# Foi de 11 para 12 depois que as colunas financeiras por ação (VALOR
+# CONTRATADO, OGU, RECURSO ESTADUAL, FINANCIAMENTO) entraram no catálogo.
+# Com elas, as 12 colunas mais largas somam 1500 pt de mínimos, acima dos
+# 1395 pt disponíveis — nesse pior caso calcular_larguras encolhe todas na
+# mesma proporção (~7%), e as colunas de valor (136 → ~126 pt) continuam
+# acomodando "R$ 495.000.000,00" (114 pt com padding) em uma linha só.
+LIMITE_COLUNAS_DETALHAMENTO = 12
 
 # A soma dos pesos das 9 colunas originais dava 0.971 da largura útil —
 # mantido para que a seleção padrão saia exatamente com as larguras de
@@ -4057,18 +4079,63 @@ def gerar_grafico_prazo(df_base):
     desenho.add(grafico)
     return desenho
 
-def gerar_grafico_financeiro(df_base):
-    categorias_valores = [
-        ("VALOR CONTRATADO", df_base[col_valor_contratado].sum(), COR_VERDE),
-        ("OGU", df_base[col_apoiado_ajustado].sum(), COR_AZUL),
-        ("FINANCIAMENTO", df_base[col_financiamento_ajustado].sum(), COR_VERMELHO),
+# Rótulo da fatia do detalhamento do contratado para as ações com VALOR
+# CONTRATADO mas sem nenhum valor planejado (Financiamento/Apoiado/
+# Contrapartida/Complementar) que permita ratear o contrato entre as fontes.
+ROTULO_CONTRATADO_NAO_DISCRIMINADO = "NÃO DISCRIMINADO"
+COR_CONTRATADO_NAO_DISCRIMINADO = "#8C8C8C"
+
+
+def financeiro_contratado_por_fonte(df_base):
+    # Detalhamento do VALOR CONTRATADO por fonte (chave "Detalhar contratado"
+    # do Resumo Financeiro, no painel e no PDF). A planilha guarda o valor
+    # contratado numa coluna única, sem dizer quanto dele é OGU, financiamento
+    # ou recurso estadual — então o contrato de CADA ação é rateado na mesma
+    # proporção dos valores planejados dela (colunas brutas, não as
+    # "AJUSTADO", que zeram justamente quando há contrato). A soma das fatias
+    # é sempre igual ao VALOR CONTRATADO total.
+    contratado = df_base[col_valor_contratado]
+    ogu = df_base[col_apoiado]
+    financiamento = df_base[col_financiamento]
+    estadual = df_base[col_contrapartida] + df_base[col_complementar]
+    planejado = ogu + financiamento + estadual
+    tem_rateio = (contratado > 0) & (planejado > 0)
+    fator = (contratado / planejado.where(planejado > 0)).where(tem_rateio, 0.0)
+    return [
+        ("OGU", float((ogu * fator).sum())),
+        ("FINANCIAMENTO", float((financiamento * fator).sum())),
+        ("RECURSO ESTADUAL", float((estadual * fator).sum())),
         (
-            "RECURSO ESTADUAL",
-            df_base[col_contrapartida_ajustado].sum()
-            + df_base[col_complementar_ajustado].sum(),
-            COR_AMARELO,
+            ROTULO_CONTRATADO_NAO_DISCRIMINADO,
+            float(contratado.where((contratado > 0) & ~tem_rateio, 0.0).sum()),
         ),
     ]
+
+
+def gerar_grafico_financeiro(df_base, detalhar_contratado=False):
+    if detalhar_contratado:
+        cores_contratado = {
+            "OGU": COR_AZUL,
+            "FINANCIAMENTO": COR_VERMELHO,
+            "RECURSO ESTADUAL": COR_AMARELO,
+            ROTULO_CONTRATADO_NAO_DISCRIMINADO: colors.HexColor(COR_CONTRATADO_NAO_DISCRIMINADO),
+        }
+        categorias_valores = [
+            (nome, valor, cores_contratado[nome])
+            for nome, valor in financeiro_contratado_por_fonte(df_base)
+        ]
+    else:
+        categorias_valores = [
+            ("VALOR CONTRATADO", df_base[col_valor_contratado].sum(), COR_VERDE),
+            ("OGU", df_base[col_apoiado_ajustado].sum(), COR_AZUL),
+            ("FINANCIAMENTO", df_base[col_financiamento_ajustado].sum(), COR_VERMELHO),
+            (
+                "RECURSO ESTADUAL",
+                df_base[col_contrapartida_ajustado].sum()
+                + df_base[col_complementar_ajustado].sum(),
+                COR_AMARELO,
+            ),
+        ]
     categorias_valores = [
         (nome, valor, cor) for nome, valor, cor in categorias_valores if valor > 0
     ]
@@ -4128,7 +4195,9 @@ def gerar_grafico_financeiro(df_base):
     # ORÇAMENTÁRIA (ainda não contratados), diferente de VALOR CONTRATADO,
     # que é firme. A explicação por extenso da marcação ("** Previsão
     # Orçamentária") fica no título do gráfico, não aqui no desenho.
-    NOMES_PREVISAO_ORCAMENTARIA = {"OGU", "FINANCIAMENTO", "RECURSO ESTADUAL"}
+    # No detalhamento do contratado todas as fatias SÃO valor contratado
+    # (firme), então nenhuma leva a marcação.
+    NOMES_PREVISAO_ORCAMENTARIA = set() if detalhar_contratado else {"OGU", "FINANCIAMENTO", "RECURSO ESTADUAL"}
     itens_legenda = [
         (f"{nome}**" if nome in NOMES_PREVISAO_ORCAMENTARIA else nome, cor)
         for nome, _, cor in categorias_valores
@@ -5817,6 +5886,40 @@ def _campos_alerta_qualidade(row, hoje=None):
                 "Contrapartida + Complementar + Financiamento Contratados)"
             )
 
+    # Categoria da Origem do Recurso — toda ação com VALOR CONTRATADO
+    # preenchido precisa ter a origem desse valor identificada em pelo
+    # menos um dos dois grupos de colunas: o do Orçamento (Apoiado/
+    # Financiamento/Contrapartida/Complementar) ou o do Detalhamento
+    # Contratado (os mesmos, sufixo "CONTRATADO"). Sem nenhum dos dois
+    # preenchido, financeiro_contratado_por_fonte() não tem base de
+    # proporção para ratear o contrato entre OGU/Financiamento/Recurso
+    # Estadual, e o valor cai no grupo "NÃO DISCRIMINADO" do gráfico —
+    # esta regra pega o problema na origem (cadastro), antes de chegar
+    # no gráfico.
+    _valor_contratado_linha = float(row.get(col_valor_contratado) or 0)
+    if _valor_contratado_linha > 0:
+        _colunas_origem_orcamento = (col_apoiado, col_financiamento, col_contrapartida, col_complementar)
+        _tem_origem_orcamento = any(
+            c in row.index and float(row.get(c) or 0) > 0 for c in _colunas_origem_orcamento
+        )
+        _tem_origem_contratado = any(
+            c in row.index and float(row.get(c) or 0) > 0 for c in _colunas_detalhamento_contratado
+        )
+        if not _tem_origem_orcamento and not _tem_origem_contratado:
+            # Texto FIXO (mesmo motivo pra qualquer ação nessa situação) —
+            # mesma razão da regra acima: agrupamento no aviso é por texto
+            # igual. As chaves cobrem os OITO campos candidatos (orçamento +
+            # contratado) pra contornar em vermelho, na Ficha Cadastral,
+            # exatamente onde a origem precisa ser preenchida.
+            _motivo_origem_recurso = (
+                "Valor Contratado sem a categoria da origem do recurso preenchida "
+                "— nem no Orçamento (Apoiado/Financiamento/Contrapartida/"
+                "Complementar) nem no Detalhamento Contratado"
+            )
+            for _c in _colunas_origem_orcamento + _colunas_detalhamento_contratado:
+                if _c in row.index:
+                    alertas[_NOMES_CAMPOS_FICHA_POR_COLUNA_ORIGEM[_c]] = _motivo_origem_recurso
+
     return alertas
 
 def _montar_aviso_qualidade(df):
@@ -6038,6 +6141,13 @@ def _dados_pre_visualizacao(df):
         ),
     ]
     financeiro = [{"rotulo": nome, "valor": valor} for nome, valor in financeiro_bruto if valor > 0]
+    # Mesmo gráfico com a chave "Detalhar contratado" ligada: o VALOR
+    # CONTRATADO rateado por fonte (ver financeiro_contratado_por_fonte).
+    financeiro_contratado = [
+        {"rotulo": nome, "valor": valor}
+        for nome, valor in financeiro_contratado_por_fonte(df)
+        if valor > 0
+    ]
 
     # --- Panorama geral das fases ---
     resumo_fase = (
@@ -6167,6 +6277,7 @@ def _dados_pre_visualizacao(df):
         "investimento": investimento_total,
         "prazo": prazo,
         "financeiro": financeiro,
+        "financeiroContratado": financeiro_contratado,
         "panorama": panorama,
         "termo": termo,
         "secretaria": _dados_panorama_secretaria(df),
@@ -6687,7 +6798,11 @@ def _secoes_disponiveis_relatorio(df):
         )
     return disponiveis
 
-def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
+def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financeiro_detalhado=False):
+    # financeiro_detalhado: chave "Detalhar contratado" do Resumo Financeiro
+    # no painel — o gráfico do Painel Geral sai com o VALOR CONTRATADO
+    # rateado por fonte (ver financeiro_contratado_por_fonte).
+    financeiro_detalhado = bool(financeiro_detalhado)
     # Gera o PDF em si (agrupamento + montagem via ReportLab) para o
     # dataframe já filtrado, salvando no caminho informado. Levanta exceção
     # em caso de erro — quem chama decide como reportar ao usuário (o painel
@@ -7049,9 +7164,16 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None):
                 [
                     [
                         _titulo_grafico_painel("PREVISÃO DE CONCLUSÃO DA FASE"),
-                        _titulo_grafico_painel("RESUMO FINANCEIRO", marcador_direita="** Previsão Orçamentária"),
+                        (
+                            _titulo_grafico_painel(
+                                "RESUMO FINANCEIRO - CONTRATADO POR FONTE",
+                                marcador_direita="Rateio proporcional",
+                            )
+                            if financeiro_detalhado
+                            else _titulo_grafico_painel("RESUMO FINANCEIRO", marcador_direita="** Previsão Orçamentária")
+                        ),
                     ],
-                    [gerar_grafico_prazo(df), gerar_grafico_financeiro(df)],
+                    [gerar_grafico_prazo(df), gerar_grafico_financeiro(df, detalhar_contratado=financeiro_detalhado)],
                     [
                         _titulo_grafico_painel("PANORAMA GERAL DAS FASES*"),
                         _titulo_grafico_painel("SITUAÇÃO DO TERMO DE COMPROMISSO*"),
@@ -10195,6 +10317,69 @@ def montar_html_painel(df_base):
     letter-spacing: 0.03em;
   }
 
+  /* Cabeçalho do card Resumo Financeiro: título à esquerda e a chave
+     "Detalhar contratado" à direita, na mesma linha. */
+  .preview-grafico-card-cabecalho {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 14px 0;
+  }
+  .preview-grafico-card-cabecalho h4 { margin: 0; }
+  .chave-financeiro {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--cor-texto-secundario);
+    user-select: none;
+  }
+  .chave-financeiro input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .chave-financeiro-trilho {
+    position: relative;
+    width: 34px;
+    height: 18px;
+    border-radius: 999px;
+    background: var(--cor-card-elevado);
+    border: 1px solid rgba(114, 180, 174, 0.25);
+    transition: background var(--transicao-padrao), border-color var(--transicao-padrao);
+  }
+  .chave-financeiro-bolinha {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--cor-texto-secundario);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transition: transform var(--transicao-padrao), background var(--transicao-padrao);
+  }
+  .chave-financeiro input:checked + .chave-financeiro-trilho {
+    background: var(--cor-acento-teal);
+    border-color: var(--cor-acento-teal);
+  }
+  .chave-financeiro input:checked + .chave-financeiro-trilho .chave-financeiro-bolinha {
+    transform: translateX(16px);
+    background: #FFFFFF;
+  }
+  .chave-financeiro:hover .chave-financeiro-trilho { border-color: var(--cor-acento-teal); }
+  .chave-financeiro input:focus-visible + .chave-financeiro-trilho {
+    outline: 2px solid var(--cor-acento-teal);
+    outline-offset: 2px;
+  }
+  .chave-financeiro:has(input:checked) .chave-financeiro-texto {
+    color: var(--cor-texto-primario);
+  }
+
   /* Gráfico de pizza via conic-gradient — sem nenhuma lib externa */
   .grafico-pizza-wrap {
     display: flex;
@@ -11222,7 +11407,14 @@ def montar_html_painel(df_base):
           <div id="preview-grafico-prazo"></div>
         </div>
         <div class="preview-grafico-card">
-          <h4>Resumo Financeiro</h4>
+          <div class="preview-grafico-card-cabecalho">
+            <h4 id="preview-titulo-financeiro">Resumo Financeiro</h4>
+            <label class="chave-financeiro" title="Mostra o Valor Contratado dividido entre OGU, Financiamento e Recurso Estadual (rateio proporcional aos valores planejados de cada ação). Vale também para o PDF.">
+              <span class="chave-financeiro-texto">Detalhar contratado</span>
+              <input type="checkbox" id="chave-financeiro-detalhado" role="switch">
+              <span class="chave-financeiro-trilho"><span class="chave-financeiro-bolinha"></span></span>
+            </label>
+          </div>
           <div id="preview-grafico-financeiro"></div>
         </div>
         <div class="preview-grafico-card">
@@ -11768,6 +11960,9 @@ def montar_html_painel(df_base):
     // porque é a mesma chamada que gera o relatório. Não filtra linha
     // nenhuma: só diz quais colunas a tabela mostra.
     filtros.COLUNAS_DETALHAMENTO = Array.from(estadoColunas);
+    // Chave "Detalhar contratado" do Resumo Financeiro — também não filtra
+    // nada: só define como o gráfico financeiro sai no PDF.
+    filtros.FINANCEIRO_DETALHADO = financeiroDetalhadoLigado();
     return filtros;
   }
 
@@ -12405,7 +12600,35 @@ def montar_html_painel(df_base):
     "OGU": COR_AZUL,
     "FINANCIAMENTO": COR_VERMELHO,
     "RECURSO ESTADUAL": COR_AMARELO,
+    // Mesmo cinza de COR_CONTRATADO_NAO_DISCRIMINADO, no lado Python (PDF).
+    "NÃO DISCRIMINADO": "#8C8C8C",
   };
+
+  // Chave "Detalhar contratado" do Resumo Financeiro: alterna o gráfico
+  // entre a visão geral (Contratado x previsões) e o Valor Contratado
+  // rateado por fonte. Também vai junto com os filtros pro PDF
+  // (FINANCEIRO_DETALHADO), pra o relatório sair igual ao que está na tela.
+  var _dadosFinanceiroAtuais = null;
+  function chaveFinanceiroDetalhado() { return document.getElementById("chave-financeiro-detalhado"); }
+  function financeiroDetalhadoLigado() {
+    var chave = chaveFinanceiroDetalhado();
+    return !!(chave && chave.checked);
+  }
+  function desenharGraficoFinanceiro() {
+    if (!_dadosFinanceiroAtuais) return;
+    var detalhado = financeiroDetalhadoLigado();
+    document.getElementById("preview-titulo-financeiro").textContent =
+      detalhado ? "Contratado por Fonte" : "Resumo Financeiro";
+    criarGraficoPizza(
+      "preview-grafico-financeiro",
+      detalhado ? _dadosFinanceiroAtuais.financeiroContratado : _dadosFinanceiroAtuais.financeiro,
+      CORES_FINANCEIRO
+    );
+  }
+  (function () {
+    var chave = chaveFinanceiroDetalhado();
+    if (chave) chave.addEventListener("change", desenharGraficoFinanceiro);
+  })();
 
   function formatarMiBi(valor) {
     var texto;
@@ -13063,7 +13286,8 @@ def montar_html_painel(df_base):
       '<div class="preview-card-resumo"><div class="rotulo">Investimento</div><div class="valor">' + formatarMiBi(dados.investimento) + '</div></div>';
 
     criarGraficoBarras("preview-grafico-prazo", dados.prazo);
-    criarGraficoPizza("preview-grafico-financeiro", dados.financeiro, CORES_FINANCEIRO);
+    _dadosFinanceiroAtuais = dados;
+    desenharGraficoFinanceiro();
     criarGraficoPizza("preview-grafico-panorama", dados.panorama, CORES_FASE);
     criarGraficoPizza("preview-grafico-termo", dados.termo, {
       "Termo Assinado": COR_VERDE,
@@ -14629,7 +14853,10 @@ def _api_gerar_pdf_bytes(filtros, secoes=None):
     descritor, caminho_temp = tempfile.mkstemp(suffix=".pdf", prefix="pac_relatorio_web_")
     os.close(descritor)
     try:
-        _gerar_pdf(df, caminho_temp, filtros.get("COLUNAS_DETALHAMENTO"), secoes)
+        _gerar_pdf(
+            df, caminho_temp, filtros.get("COLUNAS_DETALHAMENTO"), secoes,
+            financeiro_detalhado=filtros.get("FINANCEIRO_DETALHADO"),
+        )
         with open(caminho_temp, "rb") as f:
             conteudo_pdf = f.read()
         return {"ok": True, "nome_arquivo": nome_arquivo_pdf, "conteudo": conteudo_pdf}
@@ -14739,7 +14966,10 @@ def abrir_interface_filtros(df_base):
                     arquivo_pdf = caminho_recurso(nome_arquivo_pdf)
                     fallback_usado = True
 
-                _gerar_pdf(df, arquivo_pdf, filtros.get("COLUNAS_DETALHAMENTO"), secoes)
+                _gerar_pdf(
+                    df, arquivo_pdf, filtros.get("COLUNAS_DETALHAMENTO"), secoes,
+                    financeiro_detalhado=filtros.get("FINANCEIRO_DETALHADO"),
+                )
                 return {"ok": True, "arquivo": arquivo_pdf, "fallback": fallback_usado}
             except Exception as erro:
                 import traceback
