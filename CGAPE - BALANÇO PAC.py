@@ -206,6 +206,7 @@ data_capa_txt = f"{ultima_atualizacao.day} de {MESES_PT[ultima_atualizacao.month
 timestamp = ultima_atualizacao.strftime("%Y.%m.%d_%Hhs%Mm")
 
 nome_arquivo_pdf = f"RELATORIO GERENCIAL PAC_{timestamp}.pdf"
+nome_arquivo_pptx_analise_financeira = f"ANALISE FINANCEIRA PAC_{timestamp}.pptx"
 PASTA_DOWNLOADS_PADRAO = os.path.join(os.path.expanduser("~"), "Downloads")
 
 # Geometria da Página - A3 PAISAGEM
@@ -11108,6 +11109,7 @@ def montar_html_painel(df_base):
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
       <button class="btn" id="btn-preview">DASHBOARD</button>
       <button class="btn-acento" id="btn-gerar">GERAR RELATÓRIO</button>
+      <button class="btn" id="btn-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx), com a carteira inteira — sem aplicar os filtros selecionados">ANÁLISE FINANCEIRA (PPTX)</button>
       <button type="button" class="tema-switch" id="tema-switch-filtros" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
         <span class="tema-switch-trilho">
           <span class="tema-switch-icone tema-switch-sol">
@@ -11509,13 +11511,16 @@ def montar_html_painel(df_base):
     return await resposta.json();
   }
 
-  // Variante para os dois botões que geram PDF (relatório completo e Ficha
-  // Cadastral): no desktop, o Python já salva o arquivo direto no disco via
+  // Variante para os botões que geram um arquivo binário pra baixar/abrir
+  // (PDF do relatório completo, PDF da Ficha Cadastral, PPTX da Análise
+  // Financeira): no desktop, o Python já salva o arquivo direto no disco via
   // diálogo nativo e só devolve status; num navegador comum não existe
   // diálogo de "Salvar como" para o servidor abrir, então o servidor web
-  // devolve os BYTES do PDF na resposta e é o próprio navegador quem
-  // baixa/abre o arquivo.
-  async function baixarPDF(nome, ...args) {
+  // devolve os BYTES do arquivo na resposta e é o próprio navegador quem
+  // baixa/abre. abrirEmNovaAba=true é só pro PDF (o navegador sabe exibi-lo
+  // direto); outros formatos (PPTX, XLSX) o navegador não sabe renderizar,
+  // então forçamos o download de verdade com um link <a download>.
+  async function baixarArquivoBinario(nome, tipoMimeEsperado, nomeArquivoFallback, abrirEmNovaAba, ...args) {
     if (pacApiDesktopDisponivel()) {
       return await window.pywebview.api[nome](...args);
     }
@@ -11524,15 +11529,15 @@ def montar_html_painel(df_base):
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args),
     });
-    // O servidor devolve o PDF de verdade (Content-Type: application/pdf)
-    // só quando deu certo; qualquer outro caso (recorte vazio, erro,
-    // filtros inválidos) volta como JSON, no mesmo formato
+    // O servidor devolve o arquivo de verdade (Content-Type do formato
+    // esperado) só quando deu certo; qualquer outro caso (recorte vazio,
+    // erro, filtros inválidos) volta como JSON, no mesmo formato
     // {"ok": false, ...} de sempre — por isso checa o Content-Type em vez
     // de só o status HTTP, senão um corpo JSON de erro seria tratado como
-    // se fosse o PDF.
+    // se fosse o arquivo.
     const tipo = resposta.headers.get("Content-Type") || "";
-    if (!resposta.ok || !tipo.includes("application/pdf")) {
-      let corpo = { ok: false, erro: "Falha ao gerar o PDF." };
+    if (!resposta.ok || !tipo.includes(tipoMimeEsperado)) {
+      let corpo = { ok: false, erro: "Falha ao gerar o arquivo." };
       try {
         corpo = await resposta.json();
       } catch (e) { /* resposta sem corpo JSON — mantém o erro padrão acima */ }
@@ -11540,11 +11545,34 @@ def montar_html_painel(df_base):
     }
     const disposicao = resposta.headers.get("Content-Disposition") || "";
     const nomeMatch = disposicao.match(/filename="?([^"]+)"?/);
-    const nomeArquivo = nomeMatch ? nomeMatch[1] : "relatorio.pdf";
+    const nomeArquivo = nomeMatch ? nomeMatch[1] : nomeArquivoFallback;
     const blob = await resposta.blob();
     const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
+    if (abrirEmNovaAba) {
+      window.open(url, "_blank");
+    } else {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = nomeArquivo;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
     return { ok: true, arquivo: nomeArquivo };
+  }
+
+  async function baixarPDF(nome, ...args) {
+    return await baixarArquivoBinario(nome, "application/pdf", "relatorio.pdf", true, ...args);
+  }
+
+  async function baixarPPTX(nome, ...args) {
+    return await baixarArquivoBinario(
+      nome,
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "apresentacao.pptx",
+      false,
+      ...args
+    );
   }
 
   const estadoSelecao = {};
@@ -14499,6 +14527,28 @@ def montar_html_painel(df_base):
 
   botoesGerar.forEach(function (b) { b.onclick = executarGeracaoRelatorio; });
 
+  // Botão "ANÁLISE FINANCEIRA (PPTX)" — sem passo de filtros/qualidade/
+  // seleção de páginas no meio: é sempre a carteira inteira, um clique só.
+  async function gerarApresentacaoFinanceira() {
+    var botao = document.getElementById("btn-gerar-pptx");
+    var textoOriginal = botao.textContent;
+    botao.disabled = true;
+    botao.textContent = "Gerando...";
+    try {
+      var resultado = await baixarPPTX("gerar_pptx_analise_financeira");
+      if (!resultado || resultado.cancelado) return;
+      if (!resultado.ok) {
+        alert(resultado.erro || "Não foi possível gerar a apresentação.");
+      }
+    } catch (erro) {
+      alert("Ocorreu um erro ao gerar a apresentação:" + NL + NL + erro);
+    } finally {
+      botao.disabled = false;
+      botao.textContent = textoOriginal;
+    }
+  }
+  document.getElementById("btn-gerar-pptx").onclick = gerarApresentacaoFinanceira;
+
   // --- Fechamento automático por inatividade (5 minutos) ---
   const TEMPO_INATIVIDADE_MS = 15 * 60 * 1000;
   let temporizadorInatividade = null;
@@ -14867,6 +14917,44 @@ def _api_gerar_pdf_bytes(filtros, secoes=None):
             pass
 
 
+def _construir_pptx_analise_financeira_bytes():
+    # Monta o PPTX de Análise Financeira do PAC (ver gerar_pptx_pac.py) a
+    # partir da base JÁ carregada neste processo — configurar(sys.modules
+    # [__name__]) injeta "este módulo em execução" no script, que o usa
+    # exatamente como usaria o "pac" do seu próprio bootstrap standalone
+    # (col_valor_contratado, agora_bahia, _campos_alerta_qualidade etc.),
+    # sem reler a planilha nem reexecutar este arquivo inteiro de novo.
+    # Import adiado (não no topo do arquivo): python-pptx é uma dependência
+    # nova, só deste botão — se não estiver instalada (ex.: num rebuild do
+    # .exe esquecido de atualizar o ambiente), o resto do painel continua
+    # funcionando normalmente; só este botão volta um erro claro.
+    try:
+        import gerar_pptx_pac
+    except ImportError as erro:
+        raise RuntimeError(
+            "Dependência 'python-pptx' não encontrada neste ambiente. "
+            "Rode 'pip install -r requirements.txt' (desktop) ou "
+            "'pip install -r requirements-web.txt' (servidor web) e tente de novo."
+        ) from erro
+
+    gerar_pptx_pac.configurar(sys.modules[__name__])
+    conteudo, _metricas = gerar_pptx_pac.gerar_pptx_bytes(df_original)
+    return conteudo
+
+
+def _api_gerar_pptx_analise_financeira_bytes():
+    # Equivalente web do botão "ANÁLISE FINANCEIRA (PPTX)" — mesmo padrão de
+    # _api_gerar_pdf_bytes: gera tudo em memória e devolve os bytes prontos
+    # pro navegador baixar (ver servidor_web.py). Sempre usa a base INTEIRA
+    # (sem filtro), por desenho: é uma leitura de carteira completa pensada
+    # pra apresentação ao Governo Federal, não um recorte ad-hoc.
+    try:
+        conteudo = _construir_pptx_analise_financeira_bytes()
+    except Exception as erro:
+        return {"ok": False, "erro": str(erro)}
+    return {"ok": True, "nome_arquivo": nome_arquivo_pptx_analise_financeira, "conteudo": conteudo}
+
+
 def _api_exportar_ficha_pdf_bytes(item):
     # Equivalente web de APIFiltros.exportar_ficha_pdf — mesma lógica do
     # gerar_pdf_bytes acima, mas para o PDF de uma única ação.
@@ -14971,6 +15059,44 @@ def abrir_interface_filtros(df_base):
                     financeiro_detalhado=filtros.get("FINANCEIRO_DETALHADO"),
                 )
                 return {"ok": True, "arquivo": arquivo_pdf, "fallback": fallback_usado}
+            except Exception as erro:
+                import traceback
+                traceback.print_exc()
+                return {"ok": False, "erro": str(erro)}
+
+        def gerar_pptx_analise_financeira(self):
+            # Botão "ANÁLISE FINANCEIRA (PPTX)" no modo desktop — mesmo
+            # padrão de exportar_ficha_pdf: diálogo nativo já na pasta
+            # Downloads, com o nome sugerido, e abre o arquivo assim que
+            # salvo. O equivalente web é _api_gerar_pptx_analise_financeira_
+            # bytes, que devolve os bytes em vez de salvar direto no disco.
+            try:
+                pasta_inicial = (
+                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
+                )
+                resultado_dialogo = janela.create_file_dialog(
+                    webview.SAVE_DIALOG,
+                    directory=pasta_inicial,
+                    save_filename=nome_arquivo_pptx_analise_financeira,
+                    file_types=("Apresentação PowerPoint (*.pptx)",),
+                )
+                if not resultado_dialogo:
+                    return {"ok": False, "cancelado": True}
+
+                caminho_escolhido = (
+                    resultado_dialogo[0]
+                    if isinstance(resultado_dialogo, (list, tuple))
+                    else resultado_dialogo
+                )
+                if not caminho_escolhido.lower().endswith(".pptx"):
+                    caminho_escolhido += ".pptx"
+
+                conteudo = _construir_pptx_analise_financeira_bytes()
+                with open(caminho_escolhido, "wb") as f:
+                    f.write(conteudo)
+                if os.name == "nt":
+                    os.startfile(caminho_escolhido)
+                return {"ok": True, "arquivo": caminho_escolhido}
             except Exception as erro:
                 import traceback
                 traceback.print_exc()

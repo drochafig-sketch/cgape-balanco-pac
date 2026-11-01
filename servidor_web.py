@@ -18,7 +18,6 @@ Em produção (Render, ver render.yaml): gunicorn servidor_web:app
 import importlib.util
 import os
 import sys
-import tempfile
 
 # Precisa ser definida ANTES de importar o arquivo original: ele lê
 # PAC_WEB_MODE == "1" uma única vez, na primeira linha executada do módulo,
@@ -44,6 +43,7 @@ sys.modules[_spec.name] = pac
 _spec.loader.exec_module(pac)
 
 app = Flask(__name__)
+
 
 @app.route("/")
 def painel():
@@ -79,12 +79,14 @@ def _rota_json(funcao):
     return rota
 
 
-def _rota_pdf(funcao):
-    # Mesma ideia de _rota_json, mas para as duas operações que geram PDF:
-    # quando dá certo, a resposta É o PDF (Content-Type: application/pdf +
-    # Content-Disposition com o nome sugerido) — quando não, volta um JSON
-    # {"ok": False, ...} normal, no mesmo formato de sempre. O baixarPDF()
-    # do lado do JS decide o que fazer olhando o Content-Type da resposta.
+def _rota_binario(funcao, mimetype, disposicao="inline"):
+    # Mesma ideia de _rota_json, mas para operações que geram um arquivo
+    # binário pronto pra baixar/abrir (PDF, PPTX): quando dá certo, a
+    # resposta É o arquivo (Content-Type do mimetype pedido + Content-
+    # Disposition com o nome sugerido) — quando não, volta um JSON
+    # {"ok": False, ...} normal, no mesmo formato de sempre. Do lado do JS,
+    # baixarArquivoBinario() (ver baixarPDF/baixarPPTX) decide o que fazer
+    # olhando o Content-Type da resposta.
     def rota():
         try:
             resultado = funcao(*_argumentos_da_requisicao())
@@ -94,13 +96,17 @@ def _rota_pdf(funcao):
         if not resultado.get("ok"):
             return jsonify(resultado)
 
-        resposta = Response(resultado["conteudo"], mimetype="application/pdf")
-        nome_arquivo = resultado.get("nome_arquivo", "relatorio.pdf")
-        resposta.headers["Content-Disposition"] = f'inline; filename="{nome_arquivo}"'
+        resposta = Response(resultado["conteudo"], mimetype=mimetype)
+        nome_arquivo = resultado.get("nome_arquivo", "arquivo")
+        resposta.headers["Content-Disposition"] = f'{disposicao}; filename="{nome_arquivo}"'
         return resposta
 
     rota.__name__ = f"rota_{funcao.__name__}"
     return rota
+
+
+def _rota_pdf(funcao):
+    return _rota_binario(funcao, "application/pdf")
 
 
 # Uma rota por método que a ponte APIFiltros já expunha no desktop (mesmos
@@ -137,6 +143,15 @@ app.add_url_rule(
 app.add_url_rule(
     "/api/escolher_local_e_gerar",
     view_func=_rota_pdf(pac._api_gerar_pdf_bytes),
+    methods=["POST"],
+)
+app.add_url_rule(
+    "/api/gerar_pptx_analise_financeira",
+    view_func=_rota_binario(
+        pac._api_gerar_pptx_analise_financeira_bytes,
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        disposicao="attachment",
+    ),
     methods=["POST"],
 )
 app.add_url_rule(
