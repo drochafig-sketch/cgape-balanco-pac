@@ -1,18 +1,18 @@
-﻿.\Scripts\python.exe : 1621 INFO: PyInstaller: 6.22.2, contrib hooks: 2026.6
-No linha:1 caractere:302
-+ ... tch {} } }; .\Scripts\python.exe -m PyInstaller --onefile --noconsole ...
+﻿.\Scripts\python.exe : 2221 INFO: PyInstaller: 6.22.2, contrib hooks: 2026.6
+No linha:1 caractere:418
++ ... ; exit 1 }; .\Scripts\python.exe -m PyInstaller --onefile --noconsole ...
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (1621 INFO: PyIn...b hooks: 2026.6:String) [], RemoteException
+    + CategoryInfo          : NotSpecified: (2221 INFO: PyIn...b hooks: 2026.6:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
-1622 INFO: Python: 3.12.10
-1673 INFO: Platform: Windows-10-10.0.19045-SP0
-1673 INFO: Python environment: X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv
-1681 INFO: wrote .\CGAPE - BALANCO PAC.spec
-1696 INFO: Removing temporary files and cleaning cache in C:\Users\diego.figueiredo\AppData\Local\pyinstaller
-1359 WARNING: Failed to collect submodules for 'webview.platforms.android' because importing 
+2221 INFO: Python: 3.12.10
+2349 INFO: Platform: Windows-10-10.0.19045-SP0
+2349 INFO: Python environment: X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv
+2383 INFO: wrote .\CGAPE - BALANCO PAC.spec
+2419 INFO: Removing temporary files and cleaning cache in C:\Users\diego.figueiredo\AppData\Local\pyinstaller
+1221 WARNING: Failed to collect submodules for 'webview.platforms.android' because importing 
 'webview.platforms.android' raised: ModuleNotFoundError: No module named 'android'
-82236 INFO: Module search paths (PYTHONPATH):
+79304 INFO: Module search paths (PYTHONPATH):
 ['X:\\COAPI\\NOTAS TÉCNICAS COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv',
  'C:\\Program '
  'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\\python312.zip',
@@ -26,205 +26,205 @@ No linha:1 caractere:302
  'X:\\COAPI\\NOTAS TÉCNICAS '
  'COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages',
  'X:\\COAPI\\NOTAS TÉCNICAS COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv']
-87776 INFO: Appending 'binaries' from .spec
-88053 INFO: Appending 'datas' from .spec
-88339 INFO: checking Analysis
-88341 INFO: Building Analysis because Analysis-00.toc is non existent
-88341 INFO: Looking for Python shared library...
-88342 INFO: Using Python shared library: C:\Program 
+84436 INFO: Appending 'binaries' from .spec
+84688 INFO: Appending 'datas' from .spec
+84954 INFO: checking Analysis
+84956 INFO: Building Analysis because Analysis-00.toc is non existent
+84956 INFO: Looking for Python shared library...
+84957 INFO: Using Python shared library: C:\Program 
 Files\WindowsApps\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\python312.dll
-88342 INFO: Running Analysis Analysis-00.toc
-88342 INFO: Target bytecode optimization level: 0
-88342 INFO: Initializing module dependency graph...
-88345 INFO: Initializing module graph hook caches...
-88639 INFO: Analyzing modules for base_library.zip ...
-94411 INFO: Processing standard module hook 'hook-heapq.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+84957 INFO: Running Analysis Analysis-00.toc
+84957 INFO: Target bytecode optimization level: 0
+84958 INFO: Initializing module dependency graph...
+84961 INFO: Initializing module graph hook caches...
+85216 INFO: Analyzing modules for base_library.zip ...
+91426 INFO: Processing standard module hook 'hook-heapq.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-94596 INFO: Processing standard module hook 'hook-encodings.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+91677 INFO: Processing standard module hook 'hook-encodings.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-98623 INFO: Processing standard module hook 'hook-math.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+95871 INFO: Processing standard module hook 'hook-math.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-99190 INFO: Processing standard module hook 'hook-pickle.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+96377 INFO: Processing standard module hook 'hook-pickle.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-102188 INFO: Caching module dependency graph...
-102318 INFO: Analyzing X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\CGAPE - BALANÇO PAC.py
-103108 INFO: Processing standard module hook 'hook-webbrowser.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+99573 INFO: Caching module dependency graph...
+99707 INFO: Analyzing X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\CGAPE - BALANÇO PAC.py
+100475 INFO: Processing standard module hook 'hook-webbrowser.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-103212 INFO: Processing standard module hook 'hook-numpy.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+100602 INFO: Processing standard module hook 'hook-numpy.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-105285 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+102405 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-105328 INFO: SetuptoolsInfo: initializing cached setuptools info...
-112557 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+102442 INFO: SetuptoolsInfo: initializing cached setuptools info...
+110424 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-112867 INFO: Processing standard module hook 'hook-xml.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+110737 INFO: Processing standard module hook 'hook-xml.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-113312 INFO: Processing standard module hook 'hook-_ctypes.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+111191 INFO: Processing standard module hook 'hook-_ctypes.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-114750 INFO: Processing standard module hook 'hook-platform.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+112717 INFO: Processing standard module hook 'hook-platform.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-115081 INFO: Processing standard module hook 'hook-sysconfig.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+113078 INFO: Processing standard module hook 'hook-sysconfig.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-119340 INFO: Processing standard module hook 'hook-difflib.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+117636 INFO: Processing standard module hook 'hook-difflib.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-120892 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+119452 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-121907 INFO: Processing standard module hook 'hook-pandas.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+120782 INFO: Processing standard module hook 'hook-pandas.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-146285 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+143678 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-150436 INFO: Processing standard module hook 'hook-pandas.io.formats.style.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+148191 INFO: Processing standard module hook 'hook-pandas.io.formats.style.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-174711 INFO: Processing standard module hook 'hook-pandas.plotting.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+172348 INFO: Processing standard module hook 'hook-pandas.plotting.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-177097 INFO: Processing standard module hook 'hook-dateutil.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+175039 INFO: Processing standard module hook 'hook-dateutil.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-178019 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+176164 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-180973 INFO: Processing standard module hook 'hook-openpyxl.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+179910 INFO: Processing standard module hook 'hook-openpyxl.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-186255 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+185635 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-188095 INFO: Processing standard module hook 'hook-PIL.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+187952 INFO: Processing standard module hook 'hook-PIL.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-188315 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+188194 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-190927 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+191204 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-195835 INFO: Processing standard module hook 'hook-sqlite3.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+196777 INFO: Processing standard module hook 'hook-sqlite3.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-197824 INFO: Processing standard module hook 'hook-pandas.io.clipboard.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+198895 INFO: Processing standard module hook 'hook-pandas.io.clipboard.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-198366 INFO: Processing standard module hook 'hook-xml.dom.domreg.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+199483 INFO: Processing standard module hook 'hook-xml.dom.domreg.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-200030 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+201578 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
-200070 INFO: TclTkInfo: initializing cached Tcl/Tk info...
-201456 INFO: Processing standard module hook 'hook-_tkinter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+201614 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+202995 INFO: Processing standard module hook 'hook-_tkinter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-201521 INFO: Processing standard module hook 'hook-webview.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+203065 INFO: Processing standard module hook 'hook-webview.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\webview\\__pyinstaller'
-202734 INFO: Processing standard module hook 'hook-jinja2.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+204240 INFO: Processing standard module hook 'hook-jinja2.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-204495 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+206379 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-204837 INFO: Processing standard module hook 'hook-clr.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+206933 INFO: Processing standard module hook 'hook-clr.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\pythonnet\\_pyinstaller'
-205835 INFO: Processing standard module hook 'hook-clr_loader.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+208133 INFO: Processing standard module hook 'hook-clr_loader.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-206256 INFO: Processing standard module hook 'hook-pycparser.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+208606 INFO: Processing standard module hook 'hook-pycparser.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-206623 INFO: Processing standard module hook 'hook-setuptools.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+209045 INFO: Processing standard module hook 'hook-setuptools.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-206725 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+209163 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-206943 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+209409 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-206951 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 
+209423 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 
 'setuptools._vendor.jaraco'!
-207024 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+209488 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-207034 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 
+209501 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 
 'setuptools._vendor.more_itertools'!
-207616 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+210207 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-208238 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+211087 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-208250 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+211106 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-208296 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+211178 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-208307 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 
+211190 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 
 'setuptools._vendor.backports'!
-209378 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+212570 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-209388 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 
+212598 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 
 'setuptools._vendor.tomli'!
-210886 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+214629 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-210894 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 
+214641 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 
 'setuptools._vendor.wheel'!
-212603 INFO: Processing standard module hook 'hook-reportlab.lib.utils.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+216552 INFO: Processing standard module hook 'hook-reportlab.lib.utils.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-212874 INFO: Processing standard module hook 'hook-reportlab.pdfbase._fontdata.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+216917 INFO: Processing standard module hook 'hook-reportlab.pdfbase._fontdata.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-221280 INFO: Analyzing hidden import 'reportlab.graphics.barcode.code128'
-221328 INFO: Analyzing hidden import 'reportlab.graphics.barcode.code39'
-221355 INFO: Analyzing hidden import 'reportlab.graphics.barcode.code93'
-221380 INFO: Analyzing hidden import 'reportlab.graphics.barcode.ecc200datamatrix'
-221425 INFO: Analyzing hidden import 'reportlab.graphics.barcode.fourstate'
-221443 INFO: Analyzing hidden import 'reportlab.graphics.barcode.lto'
-221465 INFO: Analyzing hidden import 'reportlab.graphics.barcode.test'
-221584 INFO: Analyzing hidden import 'webview.__pyinstaller'
-221598 INFO: Analyzing hidden import 'webview.__pyinstaller.hook-webview'
-221701 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+225054 INFO: Analyzing hidden import 'reportlab.graphics.barcode.code128'
+225105 INFO: Analyzing hidden import 'reportlab.graphics.barcode.code39'
+225133 INFO: Analyzing hidden import 'reportlab.graphics.barcode.code93'
+225162 INFO: Analyzing hidden import 'reportlab.graphics.barcode.ecc200datamatrix'
+225207 INFO: Analyzing hidden import 'reportlab.graphics.barcode.fourstate'
+225227 INFO: Analyzing hidden import 'reportlab.graphics.barcode.lto'
+225253 INFO: Analyzing hidden import 'reportlab.graphics.barcode.test'
+225379 INFO: Analyzing hidden import 'webview.__pyinstaller'
+225395 INFO: Analyzing hidden import 'webview.__pyinstaller.hook-webview'
+225521 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-221711 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 
+225534 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 
 'setuptools._vendor.importlib_metadata'!
-221766 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from 'X:\\COAPI\\NOTAS 
+225595 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from 'X:\\COAPI\\NOTAS 
 TÉCNICAS COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-221968 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+225848 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-221978 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
-222209 INFO: Processing standard module hook 'hook-win32ctypes.core.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+225861 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
+226112 INFO: Processing standard module hook 'hook-win32ctypes.core.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-229162 INFO: Analyzing hidden import 'webview._version'
-229180 INFO: Analyzing hidden import 'pythonnet._pyinstaller'
-229193 INFO: Analyzing hidden import 'pythonnet._pyinstaller.hook-clr'
-229218 INFO: Processing module hooks (post-graph stage)...
-229268 WARNING: Hidden import "pycparser.lextab" not found!
-229270 WARNING: Hidden import "pycparser.yacctab" not found!
-230242 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+233709 INFO: Analyzing hidden import 'webview._version'
+233725 INFO: Analyzing hidden import 'pythonnet._pyinstaller'
+233744 INFO: Analyzing hidden import 'pythonnet._pyinstaller.hook-clr'
+233766 INFO: Processing module hooks (post-graph stage)...
+233823 WARNING: Hidden import "pycparser.lextab" not found!
+233826 WARNING: Hidden import "pycparser.yacctab" not found!
+235174 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-230809 INFO: Processing standard module hook 'hook-_tkinter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+235957 INFO: Processing standard module hook 'hook-_tkinter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks'
-230820 INFO: Processing standard module hook 'hook-tzdata.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+235968 INFO: Processing standard module hook 'hook-tzdata.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-240350 INFO: Performing binary vs. data reclassification (1756 entries)
-246779 INFO: Looking for ctypes DLLs
-247078 INFO: Analyzing run-time hooks ...
-247088 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+246169 INFO: Performing binary vs. data reclassification (1756 entries)
+260082 INFO: Looking for ctypes DLLs
+260369 INFO: Analyzing run-time hooks ...
+260380 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
-247141 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+260435 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
-247181 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+260468 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
-247205 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+260498 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
-247222 INFO: Including run-time hook 'pyi_rth__tkinter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
+260527 INFO: Including run-time hook 'pyi_rth__tkinter.py' from 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
-247358 INFO: Creating base_library.zip...
-247653 INFO: Looking for dynamic libraries
-270122 INFO: Extra DLL search directories (AddDllDirectory): ['X:\\COAPI\\NOTAS TÉCNICAS 
+260697 INFO: Creating base_library.zip...
+260955 INFO: Looking for dynamic libraries
+283565 INFO: Extra DLL search directories (AddDllDirectory): ['X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\numpy.libs', 'X:\\COAPI\\NOTAS TÉCNICAS 
 COAPI\\2024-2026\\PANORAMA\\2026\\Superados\\venv\\Lib\\site-packages\\pandas.libs']
-270122 INFO: Extra DLL search directories (PATH): []
-279391 INFO: Warnings written to X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\build\CGAPE - 
+283566 INFO: Extra DLL search directories (PATH): []
+294476 INFO: Warnings written to X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\build\CGAPE - 
 BALANCO PAC\warn-CGAPE - BALANCO PAC.txt
-280401 INFO: Graph cross-reference written to X:\COAPI\NOTAS TÉCNICAS 
+295403 INFO: Graph cross-reference written to X:\COAPI\NOTAS TÉCNICAS 
 COAPI\2024-2026\PANORAMA\2026\Superados\venv\build\CGAPE - BALANCO PAC\xref-CGAPE - BALANCO PAC.html
-280923 INFO: checking PYZ
-280925 INFO: Building PYZ because PYZ-00.toc is non existent
-280925 INFO: Building PYZ (ZlibArchive) X:\COAPI\NOTAS TÉCNICAS 
+296036 INFO: checking PYZ
+296037 INFO: Building PYZ because PYZ-00.toc is non existent
+296037 INFO: Building PYZ (ZlibArchive) X:\COAPI\NOTAS TÉCNICAS 
 COAPI\2024-2026\PANORAMA\2026\Superados\venv\build\CGAPE - BALANCO PAC\PYZ-00.pyz
-284980 INFO: Building PYZ (ZlibArchive) X:\COAPI\NOTAS TÉCNICAS 
+300775 INFO: Building PYZ (ZlibArchive) X:\COAPI\NOTAS TÉCNICAS 
 COAPI\2024-2026\PANORAMA\2026\Superados\venv\build\CGAPE - BALANCO PAC\PYZ-00.pyz completed successfully.
-285260 INFO: checking PKG
-285261 INFO: Building PKG because PKG-00.toc is non existent
-285261 INFO: Building PKG (CArchive) CGAPE - BALANCO PAC.pkg
-328856 INFO: Building PKG (CArchive) CGAPE - BALANCO PAC.pkg completed successfully.
-329027 INFO: Bootloader X:\COAPI\NOTAS TÉCNICAS 
+301140 INFO: checking PKG
+301142 INFO: Building PKG because PKG-00.toc is non existent
+301142 INFO: Building PKG (CArchive) CGAPE - BALANCO PAC.pkg
+351251 INFO: Building PKG (CArchive) CGAPE - BALANCO PAC.pkg completed successfully.
+351620 INFO: Bootloader X:\COAPI\NOTAS TÉCNICAS 
 COAPI\2024-2026\PANORAMA\2026\Superados\venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
-329027 INFO: checking EXE
-329028 INFO: Building EXE because EXE-00.toc is non existent
-329028 INFO: Building EXE from EXE-00.toc
-329045 INFO: Copying bootloader EXE to X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\dist\CGAPE 
+351620 INFO: checking EXE
+351623 INFO: Building EXE because EXE-00.toc is non existent
+351623 INFO: Building EXE from EXE-00.toc
+351642 INFO: Copying bootloader EXE to X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\dist\CGAPE 
 - BALANCO PAC.exe
-329510 INFO: Copying icon to EXE
-329860 INFO: Copying 0 resources to EXE
-329860 INFO: Embedding manifest in EXE
-330177 INFO: Appending PKG archive to EXE
-341398 INFO: Fixing EXE headers
-363536 INFO: Building EXE from EXE-00.toc completed successfully.
-363761 INFO: Build complete! The results are available in: X:\COAPI\NOTAS TÉCNICAS 
-COAPI\2024-2026\PANORAMA\2026\Superados\venv\dist
+352064 INFO: Copying icon to EXE
+352503 WARNING: Execution of 'CopyIcons' failed on attempt #1 / 20: error(5, 'EndUpdateResourceW', 'Acesso negado.'). 
+Retrying in 0.05 second(s)...
+352721 INFO: Copying 0 resources to EXE
+352721 INFO: Embedding manifest in EXE
+353017 INFO: Appending PKG archive to EXE
+364277 INFO: Fixing EXE headers
+386913 INFO: Building EXE from EXE-00.toc completed successfully.

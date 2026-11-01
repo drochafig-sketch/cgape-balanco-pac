@@ -37,8 +37,7 @@ Não precisa repetir os passos acima.
 
 ## Variáveis de ambiente
 
-`PAC_WEB_MODE` e `PYTHON_VERSION` já vêm definidas no `render.yaml`, não
-precisa mexer:
+Já vêm definidas no `render.yaml`, não precisa mexer:
 
 - `PAC_WEB_MODE=1` — liga os pontos do código que só fazem sentido no
   servidor (não chamar `os.startfile`, não abrir diálogo do tkinter em erro
@@ -47,8 +46,6 @@ precisa mexer:
   o relatório hoje (ver `_EXPORTADO/AMBIENTE_PYTHON.txt`), pelo mesmo motivo
   que o `MIGRACAO.md` já explica: versão diferente de Python/biblioteca
   pode mudar o relatório visualmente.
-
-O painel não pede login — o link abre direto para qualquer um que o tiver.
 
 ## Avisos conhecidos
 
