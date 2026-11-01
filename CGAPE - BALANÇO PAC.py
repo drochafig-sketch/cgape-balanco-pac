@@ -11292,6 +11292,7 @@ def montar_html_painel(df_base):
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
         <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
+        <button class="btn" id="dash-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx), com a carteira inteira — sem aplicar os filtros selecionados">ANÁLISE FINANCEIRA (PPTX)</button>
         <button type="button" class="tema-switch" id="tema-switch-dash" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
           <span class="tema-switch-trilho">
             <span class="tema-switch-icone tema-switch-sol">
@@ -14527,13 +14528,18 @@ def montar_html_painel(df_base):
 
   botoesGerar.forEach(function (b) { b.onclick = executarGeracaoRelatorio; });
 
-  // Botão "ANÁLISE FINANCEIRA (PPTX)" — sem passo de filtros/qualidade/
-  // seleção de páginas no meio: é sempre a carteira inteira, um clique só.
+  // Botão "ANÁLISE FINANCEIRA (PPTX)" — aparece duas vezes (tela de
+  // filtros e topo do dashboard, mesmo padrão do par btnGerar/
+  // previewGerarTopo acima) — sem passo de filtros/qualidade/seleção de
+  // páginas no meio: é sempre a carteira inteira, um clique só.
+  const botoesGerarPPTX = [
+    document.getElementById("btn-gerar-pptx"),
+    document.getElementById("dash-gerar-pptx"),
+  ].filter(Boolean);
+  const textoOriginalBtnGerarPPTX = botoesGerarPPTX.length ? botoesGerarPPTX[0].textContent : "";
+
   async function gerarApresentacaoFinanceira() {
-    var botao = document.getElementById("btn-gerar-pptx");
-    var textoOriginal = botao.textContent;
-    botao.disabled = true;
-    botao.textContent = "Gerando...";
+    botoesGerarPPTX.forEach(function (b) { b.disabled = true; b.textContent = "Gerando..."; });
     try {
       var resultado = await baixarPPTX("gerar_pptx_analise_financeira");
       if (!resultado || resultado.cancelado) return;
@@ -14543,11 +14549,10 @@ def montar_html_painel(df_base):
     } catch (erro) {
       alert("Ocorreu um erro ao gerar a apresentação:" + NL + NL + erro);
     } finally {
-      botao.disabled = false;
-      botao.textContent = textoOriginal;
+      botoesGerarPPTX.forEach(function (b) { b.disabled = false; b.textContent = textoOriginalBtnGerarPPTX; });
     }
   }
-  document.getElementById("btn-gerar-pptx").onclick = gerarApresentacaoFinanceira;
+  botoesGerarPPTX.forEach(function (b) { b.onclick = gerarApresentacaoFinanceira; });
 
   // --- Fechamento automático por inatividade (5 minutos) ---
   const TEMPO_INATIVIDADE_MS = 15 * 60 * 1000;
