@@ -155,6 +155,11 @@ app.add_url_rule(
     methods=["POST"],
 )
 app.add_url_rule(
+    "/api/visualizar_html_analise_financeira",
+    view_func=_rota_binario(pac._api_gerar_html_analise_financeira_bytes, "text/html"),
+    methods=["POST"],
+)
+app.add_url_rule(
     "/api/exportar_ficha_pdf",
     view_func=_rota_pdf(pac._api_exportar_ficha_pdf_bytes),
     methods=["POST"],

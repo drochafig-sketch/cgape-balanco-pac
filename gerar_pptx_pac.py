@@ -213,14 +213,17 @@ def novo_slide(prs, tema, pagina, total_paginas):
 
 def add_pendencia_tag(slide, x, y, w=1.8, h=0.4):
     add_rect(slide, x, y, w, h, fill=PENDENCIA_FUNDO, line=VERMELHO, arredondado=True, line_w=1.25)
-    add_text(slide, x, y, w, h, "⚠ PENDÊNCIA", 11, VERMELHO, negrito=True, alinhar=PP_ALIGN.CENTER,
+    add_text(slide, x, y, w, h, "⚠ PENDÊNCIA", 13, VERMELHO, negrito=True, alinhar=PP_ALIGN.CENTER,
               ancorar=MSO_ANCHOR.MIDDLE)
 
 
 def barra_horizontal(slide, x, y, largura_max, altura, rotulo, valor, total, cor_barra, largura_rotulo=4.2,
-                      tam_rotulo=13, largura_valor=2.6):
+                      tam_rotulo=16, largura_valor=2.9, tam_valor=16):
     # Tudo (rótulo + barra + valor) precisa caber dentro de largura_max, a
     # partir de x — senão o rótulo de valor estoura a borda do slide.
+    # Tamanhos de fonte grandes de propósito: o canvas é 20x11,25 pol (bem
+    # maior que o 13,33x7,5 padrão) — um corpo de texto "normal" de
+    # apresentação (11-13pt) fica minúsculo nessa escala.
     fracao = (valor / total) if total else 0
     add_text(slide, x, y, largura_rotulo, altura, rotulo, tam_rotulo, NAVY, negrito=True,
               ancorar=MSO_ANCHOR.MIDDLE)
@@ -231,7 +234,7 @@ def barra_horizontal(slide, x, y, largura_max, altura, rotulo, valor, total, cor
         add_rect(slide, x_barra, y + altura * 0.18, max(largura_disponivel * fracao, 0.05), altura * 0.64,
                   fill=cor_barra)
     add_text(slide, x_barra + largura_disponivel + 0.15, y, largura_valor, altura,
-              f"{abreviar_moeda(valor)}  ({pct(valor, total)})", 12, NAVY, negrito=True,
+              f"{abreviar_moeda(valor)}  ({pct(valor, total)})", tam_valor, NAVY, negrito=True,
               ancorar=MSO_ANCHOR.MIDDLE)
 
 
@@ -392,21 +395,21 @@ def slide_1_panorama(prs, m):
 
     # barra empilhada contratado x a contratar
     y_barra = 3.9
-    add_text(s, 0.9, y_barra - 0.4, 6, 0.3, "CONTRATADO  x  A CONTRATAR", 13, NAVY, negrito=True)
+    add_text(s, 0.9, y_barra - 0.45, 6, 0.35, "CONTRATADO  x  A CONTRATAR", 17, NAVY, negrito=True)
     largura_barra = 17.0
     x0 = 0.9
     frac_contratado = m["total_contratado"] / m["total_investimento"] if m["total_investimento"] else 0
     add_rect(s, x0, y_barra, largura_barra * frac_contratado, 0.9, fill=VERDE)
     add_rect(s, x0 + largura_barra * frac_contratado, y_barra, largura_barra * (1 - frac_contratado), 0.9,
               fill=LARANJA)
-    add_text(s, x0 + 0.15, y_barra + 0.12, 6, 0.3, f"CONTRATADO · {abreviar_moeda(m['total_contratado'])}", 14,
+    add_text(s, x0 + 0.15, y_barra + 0.1, 6, 0.35, f"CONTRATADO · {abreviar_moeda(m['total_contratado'])}", 17,
               BRANCO, negrito=True)
-    add_text(s, x0 + 0.15, y_barra + 0.48, 6, 0.3, pct(m["total_contratado"], m["total_investimento"]), 13,
+    add_text(s, x0 + 0.15, y_barra + 0.5, 6, 0.3, pct(m["total_contratado"], m["total_investimento"]), 15,
               BRANCO)
     x_txt2 = x0 + largura_barra * frac_contratado + 0.15
-    add_text(s, x_txt2, y_barra + 0.12, 7, 0.3, f"A CONTRATAR · {abreviar_moeda(m['total_a_contratar'])}", 14,
+    add_text(s, x_txt2, y_barra + 0.1, 7, 0.35, f"A CONTRATAR · {abreviar_moeda(m['total_a_contratar'])}", 17,
               BRANCO, negrito=True)
-    add_text(s, x_txt2, y_barra + 0.48, 7, 0.3, pct(m["total_a_contratar"], m["total_investimento"]), 13,
+    add_text(s, x_txt2, y_barra + 0.5, 7, 0.3, pct(m["total_a_contratar"], m["total_investimento"]), 15,
               BRANCO)
 
     # contadores por status
@@ -424,7 +427,7 @@ def slide_1_panorama(prs, m):
         add_rect(s, x, y_cards, largura_card, 2.0, fill=BRANCO, line=CINZA_BORDA, arredondado=True, line_w=1)
         add_rect(s, x, y_cards, largura_card, 0.12, fill=c, arredondado=False)
         add_text(s, x + 0.25, y_cards + 0.35, largura_card - 0.5, 0.9, str(qtd), 44, c, negrito=True)
-        add_text(s, x + 0.25, y_cards + 1.35, largura_card - 0.5, 0.55, rotulo, 12, CINZA_TEXTO, negrito=True)
+        add_text(s, x + 0.25, y_cards + 1.3, largura_card - 0.5, 0.6, rotulo, 14, CINZA_TEXTO, negrito=True)
     return s
 
 
@@ -432,9 +435,9 @@ def slide_2_composicao_origem(prs, m):
     s = novo_slide(prs, "COMPOSIÇÃO POR ORIGEM DO RECURSO", 2, TOTAL_PAGINAS)
     total = m["total_investimento"]
     y = 1.9
-    add_text(s, 0.9, y, 10, 0.35, "INVESTIMENTO TOTAL, POR FONTE (contratado + a contratar)", 14, CINZA_TEXTO,
+    add_text(s, 0.9, y, 14, 0.4, "INVESTIMENTO TOTAL, POR FONTE (contratado + a contratar)", 17, CINZA_TEXTO,
               negrito=True)
-    y += 0.55
+    y += 0.65
     fontes = [
         ("OGU (Apoiado)", m["contratado_ogu"] + m["a_contratar_ogu"], COR_OGU),
         ("FINANCIAMENTO", m["contratado_financiamento"] + m["a_contratar_financiamento"], COR_FINANCIAMENTO),
@@ -442,40 +445,40 @@ def slide_2_composicao_origem(prs, m):
          COR_ESTADUAL),
     ]
     for rotulo, valor, c in fontes:
-        barra_horizontal(s, 0.9, y, 17.6, 0.75, rotulo, valor, total, c, largura_rotulo=5.2)
-        y += 1.0
+        barra_horizontal(s, 0.9, y, 17.6, 0.75, rotulo, valor, total, c, largura_rotulo=5.4)
+        y += 1.05
 
     # destaque federal x estadual
     y += 0.3
     add_rect(s, 0.9, y, 8.4, 1.6, fill=CINZA_CLARO, arredondado=True)
-    add_text(s, 1.2, y + 0.18, 7.8, 0.3, "PARCELA FEDERAL (OGU + Financiamento)*", 12, CINZA_TEXTO, negrito=True)
-    add_text(s, 1.2, y + 0.5, 7.8, 0.8, abreviar_moeda(m["total_federal"]), 32, AZUL, negrito=True)
-    add_text(s, 1.2, y + 1.15, 7.8, 0.3, pct(m["total_federal"], total) + " do investimento total", 12,
+    add_text(s, 1.2, y + 0.16, 7.8, 0.35, "PARCELA FEDERAL (OGU + Financiamento)*", 14, CINZA_TEXTO, negrito=True)
+    add_text(s, 1.2, y + 0.52, 7.8, 0.8, abreviar_moeda(m["total_federal"]), 32, AZUL, negrito=True)
+    add_text(s, 1.2, y + 1.18, 7.8, 0.35, pct(m["total_federal"], total) + " do investimento total", 14,
               CINZA_TEXTO)
 
     add_rect(s, 9.6, y, 8.4, 1.6, fill=CINZA_CLARO, arredondado=True)
-    add_text(s, 9.9, y + 0.18, 7.8, 0.3, "PARCELA ESTADUAL (Contrapartida + Complementar)", 12, CINZA_TEXTO,
+    add_text(s, 9.9, y + 0.16, 7.8, 0.35, "PARCELA ESTADUAL (Contrapartida + Complementar)", 14, CINZA_TEXTO,
               negrito=True)
-    add_text(s, 9.9, y + 0.5, 7.8, 0.8, abreviar_moeda(m["total_estadual"]), 32, LARANJA, negrito=True)
-    add_text(s, 9.9, y + 1.15, 7.8, 0.3, pct(m["total_estadual"], total) + " do investimento total", 12,
+    add_text(s, 9.9, y + 0.52, 7.8, 0.8, abreviar_moeda(m["total_estadual"]), 32, LARANJA, negrito=True)
+    add_text(s, 9.9, y + 1.18, 7.8, 0.35, pct(m["total_estadual"], total) + " do investimento total", 14,
               CINZA_TEXTO)
 
     add_text(s, 0.9, y + 1.85, 17.6, 0.5,
               "* Financiamento classificado como parcela Federal por definição adotada nesta apresentação — "
               "a base não distingue dívida do Estado com aval federal de financiamento federal direto.",
-              10, CINZA_TEXTO)
+              12, CINZA_TEXTO)
     return s
 
 
 def slide_3_execucao_contratado(prs, m):
     s = novo_slide(prs, "EXECUÇÃO DO CONTRATADO, POR FONTE", 3, TOTAL_PAGINAS)
-    add_text(s, 0.9, 1.5, 10, 0.4, "TOTAL JÁ CONTRATADO", 14, CINZA_TEXTO, negrito=True)
+    add_text(s, 0.9, 1.5, 10, 0.4, "TOTAL JÁ CONTRATADO", 17, CINZA_TEXTO, negrito=True)
     add_text(s, 0.9, 1.85, 9, 1.0, abreviar_moeda(m["total_contratado"]), 44, VERDE, negrito=True)
-    add_text(s, 10.2, 2.1, 8.8, 0.6,
+    add_text(s, 10.2, 2.15, 8.8, 0.7,
               f"Detalhamento por fonte disponível para {pct(m['total_contratado']*m['cobertura_detalhamento_pct'], m['total_contratado'])} "
-              "do valor contratado.", 13, CINZA_TEXTO)
+              "do valor contratado.", 15, CINZA_TEXTO)
 
-    y = 3.2
+    y = 3.3
     total_c = m["total_contratado"]
     segmentos = [
         ("APOIADO (OGU) CONTRATADO", m["contratado_ogu"], COR_OGU),
@@ -484,42 +487,43 @@ def slide_3_execucao_contratado(prs, m):
         ("NÃO DISCRIMINADO", m["contratado_nao_discriminado"], COR_NAO_DISCRIMINADO),
     ]
     for rotulo, valor, c in segmentos:
-        barra_horizontal(s, 0.9, y, 17.6, 0.75, rotulo, valor, total_c, c, largura_rotulo=5.2)
-        y += 1.0
+        barra_horizontal(s, 0.9, y, 17.6, 0.75, rotulo, valor, total_c, c, largura_rotulo=5.4)
+        y += 1.05
 
     add_pendencia_tag(s, 0.9, y + 0.2, w=2.6)
-    add_text(s, 3.7, y + 0.2, 14.0, 0.75,
+    add_text(s, 3.7, y + 0.2, 14.0, 0.85,
               f"{m['qtd_sem_detalhamento']} ação sem nenhuma categoria de origem preenchida e mais ações com "
               "divergência entre Valor Contratado e o detalhamento — já sinalizadas no Controle de Qualidade "
-              "do painel, aguardando correção de cadastro.", 12, VERMELHO)
+              "do painel, aguardando correção de cadastro.", 14, VERMELHO)
     return s
 
 
 def slide_4_a_contratar(prs, m):
     s = novo_slide(prs, "O QUE AINDA PRECISA SER CONTRATADO", 4, TOTAL_PAGINAS)
-    add_text(s, 0.9, 1.5, 12, 0.4, "VALOR TOTAL A CONTRATAR", 16, CINZA_TEXTO, negrito=True)
+    add_text(s, 0.9, 1.5, 12, 0.4, "VALOR TOTAL A CONTRATAR", 17, CINZA_TEXTO, negrito=True)
     add_text(s, 0.9, 1.85, 12, 1.3, abreviar_moeda(m["total_a_contratar"]), 58, LARANJA, negrito=True)
-    add_text(s, 0.9, 3.05, 14, 0.4, pct(m["total_a_contratar"], m["total_investimento"]) +
-              " do investimento total da carteira ainda não tem instrumento assinado", 14, CINZA_TEXTO)
+    add_text(s, 0.9, 3.1, 17.6, 0.4, pct(m["total_a_contratar"], m["total_investimento"]) +
+              " do investimento total da carteira ainda não tem instrumento assinado", 15, CINZA_TEXTO)
 
-    y = 4.0
-    add_text(s, 0.9, y, 8, 0.3, "POR FONTE", 13, NAVY, negrito=True)
-    y2 = y + 0.5
+    y = 4.1
+    add_text(s, 0.9, y, 8, 0.35, "POR FONTE", 17, NAVY, negrito=True)
+    y2 = y + 0.6
     for rotulo, valor, c in [
         ("OGU (Apoiado)", m["a_contratar_ogu"], COR_OGU),
         ("Financiamento", m["a_contratar_financiamento"], COR_FINANCIAMENTO),
         ("Recurso Estadual", m["a_contratar_estadual"], COR_ESTADUAL),
     ]:
-        barra_horizontal(s, 0.9, y2, 8.6, 0.65, rotulo, valor, m["total_a_contratar"], c, largura_rotulo=2.6)
-        y2 += 0.85
+        barra_horizontal(s, 0.9, y2, 8.6, 0.7, rotulo, valor, m["total_a_contratar"], c, largura_rotulo=2.9,
+                          tam_rotulo=14, largura_valor=2.5, tam_valor=14)
+        y2 += 0.95
 
-    add_text(s, 9.9, y, 8.6, 0.3, "POR EIXO (top 5 em valor a contratar)", 13, NAVY, negrito=True)
+    add_text(s, 9.9, y, 8.6, 0.35, "POR EIXO (top 5 em valor a contratar)", 17, NAVY, negrito=True)
     por_eixo_ord = m["por_eixo"].sort_values("A_CONTRATAR", ascending=False).head(5)
-    y3 = y + 0.5
+    y3 = y + 0.6
     for eixo, linha in por_eixo_ord.iterrows():
-        barra_horizontal(s, 9.9, y3, 8.6, 0.7, eixo, float(linha["A_CONTRATAR"]), m["total_a_contratar"],
-                          TEAL, largura_rotulo=3.9, tam_rotulo=11, largura_valor=2.2)
-        y3 += 0.95
+        barra_horizontal(s, 9.9, y3, 8.6, 0.75, eixo, float(linha["A_CONTRATAR"]), m["total_a_contratar"],
+                          TEAL, largura_rotulo=3.7, tam_rotulo=13, largura_valor=2.3, tam_valor=13)
+        y3 += 1.0
     return s
 
 
@@ -549,10 +553,10 @@ def slide_5_tabela_resumo_fonte(prs, m):
 
     tabela_nativa(s, 0.9, 2.0, 18.2, 5.6, cabecalho, linhas,
                   larguras=[6.2, 3.0, 3.0, 3.0, 3.0],
-                  tam_fonte=14, linha_bold_indices={4, 5, 6})
+                  tam_fonte=16, linha_bold_indices={4, 5, 6})
     add_text(s, 0.9, 7.9, 17, 0.4,
               "\"Não discriminado\" = contratado sem detalhamento por fonte preenchido na base (ver slide 3).",
-              11, CINZA_TEXTO)
+              13, CINZA_TEXTO)
     return s
 
 
@@ -564,7 +568,7 @@ def slide_6_por_eixo(prs, m):
         linhas.append([eixo, int(linha["QTD"]), abreviar_moeda(linha["INVESTIMENTO"]),
                         abreviar_moeda(linha["CONTRATADO"]), abreviar_moeda(linha["A_CONTRATAR"])])
     tabela_nativa(s, 0.9, 1.9, 18.2, 6.6, cabecalho, linhas,
-                  larguras=[6.5, 2.2, 3.17, 3.17, 3.16], tam_fonte=13)
+                  larguras=[6.5, 2.2, 3.17, 3.17, 3.16], tam_fonte=15)
     return s
 
 
@@ -577,7 +581,7 @@ def slide_7_top10(prs, m):
         linhas.append([str(r[pac.col_objeto]), str(r["MUNICIPIO"]), abreviar_moeda(r["_A_CONTRATAR"]),
                         str(r["STATUS_TEXTO"]).title(), str(r["FASE_TEXTO"]).title()])
     tabela_nativa(s, 0.9, 1.7, 18.2, 6.9, cabecalho, linhas,
-                  larguras=[5.2, 3.5, 3.0, 3.2, 3.3], tam_fonte=12)
+                  larguras=[5.2, 3.5, 3.0, 3.2, 3.3], tam_fonte=14)
 
     concluidas_com_saldo = top10[top10["STATUS_TEXTO"].isin(["CONCLUÍDA", "INAUGURADA"])]
     if len(concluidas_com_saldo) > 0:
@@ -585,7 +589,7 @@ def slide_7_top10(prs, m):
         add_text(s, 3.7, 8.75, 14.5, 0.5,
                   f"{len(concluidas_com_saldo)} ação(ões) nesta lista aparece(m) como Concluída/Inaugurada mas "
                   "ainda com saldo a contratar na base — verificar cadastro antes de divulgar.",
-                  12, VERMELHO)
+                  14, VERMELHO)
     return s
 
 
@@ -608,11 +612,11 @@ def slide_8_pendencias(prs, m):
         x = 0.9 + i * (largura_card + espaco)
         add_rect(s, x, y, largura_card, 3.8, fill=PENDENCIA_FUNDO, line=VERMELHO, arredondado=True, line_w=1.25)
         add_text(s, x + 0.25, y + 0.25, largura_card - 0.5, 0.9, str(qtd), 44, VERMELHO, negrito=True)
-        add_text(s, x + 0.25, y + 1.2, largura_card - 0.5, 0.3, "ações", 12, CINZA_TEXTO)
+        add_text(s, x + 0.25, y + 1.2, largura_card - 0.5, 0.3, "ações", 14, CINZA_TEXTO)
         if valor:
-            add_text(s, x + 0.25, y + 1.55, largura_card - 0.5, 0.4, valor, 18, VERMELHO, negrito=True)
-        add_text(s, x + 0.25, y + 2.15, largura_card - 0.5, 0.55, rotulo, 12, NAVY, negrito=True)
-        add_text(s, x + 0.25, y + 2.75, largura_card - 0.5, 0.95, desc, 10, CINZA_TEXTO)
+            add_text(s, x + 0.25, y + 1.55, largura_card - 0.5, 0.4, valor, 20, VERMELHO, negrito=True)
+        add_text(s, x + 0.25, y + 2.15, largura_card - 0.5, 0.55, rotulo, 14, NAVY, negrito=True)
+        add_text(s, x + 0.25, y + 2.75, largura_card - 0.5, 0.95, desc, 12, CINZA_TEXTO)
     return s
 
 
@@ -628,8 +632,8 @@ def slide_9_sintese(prs, m):
     y = 1.9
     for valor, texto in mensagens:
         add_rect(s, 0.9, y, 17.6, 1.3, fill=CINZA_CLARO, arredondado=True)
-        add_text(s, 1.2, y + 0.12, 5.0, 1.06, valor, 30, VERDE, negrito=True, ancorar=MSO_ANCHOR.MIDDLE)
-        add_text(s, 6.4, y + 0.12, 11.8, 1.06, texto, 15, NAVY, ancorar=MSO_ANCHOR.MIDDLE)
+        add_text(s, 1.2, y + 0.12, 5.0, 1.06, valor, 32, VERDE, negrito=True, ancorar=MSO_ANCHOR.MIDDLE)
+        add_text(s, 6.4, y + 0.12, 11.8, 1.06, texto, 17, NAVY, ancorar=MSO_ANCHOR.MIDDLE)
         y += 1.5
     return s
 
@@ -661,6 +665,334 @@ def gerar_xlsx_apoio(m, caminho_saida):
         pd.DataFrame([m]).drop(columns=["por_eixo", "top10_a_contratar"]).to_excel(
             writer, sheet_name="Metricas Gerais", index=False
         )
+
+
+# ---------------------------------------------------------------------------
+# Versão HTML da mesma apresentação — mesmos 9 "slides", mesmas métricas
+# (reaproveita calcular_metricas), mesma paleta de cores. Existe por causa de
+# uma limitação real do PPTX: texto em caixa de posição/tamanho FIXOS (como
+# o PowerPoint exige) tem que ter o tamanho de fonte calculado à mão pra não
+# estourar — o HTML não tem esse problema (flexbox quebra linha sozinho,
+# a barra usa % de largura em vez de polegada calculada), então serve tanto
+# como conferência visual rápida (abre em qualquer navegador, sem precisar
+# de PowerPoint/Canva) quanto como versão alternativa pra quem só precisa
+# mostrar os números na tela, sem editar/enviar um arquivo de slides.
+# ---------------------------------------------------------------------------
+def _html_esc(texto):
+    import html as _html_mod
+    return _html_mod.escape(str(texto))
+
+
+def _html_barra(rotulo, valor, total, cor_barra, tam_rotulo_px=280):
+    fracao = (valor / total * 100) if total else 0
+    return f'''<div class="barra-linha">
+      <div class="barra-rotulo" style="width:{tam_rotulo_px}px">{_html_esc(rotulo)}</div>
+      <div class="barra-trilho"><div class="barra-fill" style="width:{fracao:.2f}%;background:#{cor_barra}"></div></div>
+      <div class="barra-valor">{_html_esc(abreviar_moeda(valor))}&nbsp;&nbsp;({_html_esc(pct(valor, total))})</div>
+    </div>'''
+
+
+def _html_tabela(cabecalho, linhas, linhas_bold=()):
+    ths = "".join(f"<th>{_html_esc(c)}</th>" for c in cabecalho)
+    trs = []
+    for i, linha in enumerate(linhas):
+        classe = " class=\"linha-bold\"" if i in linhas_bold else ""
+        tds = "".join(f"<td>{_html_esc(v)}</td>" for v in linha)
+        trs.append(f"<tr{classe}>{tds}</tr>")
+    return f'<table class="pac-tabela"><thead><tr>{ths}</tr></thead><tbody>{"".join(trs)}</tbody></table>'
+
+
+def _html_cabecalho_rodape(tema, pagina, total_paginas, conteudo_html):
+    nome_planilha = os.path.basename(pac.CAMINHO_PLANILHA) if hasattr(pac, "CAMINHO_PLANILHA") else \
+        "PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026"
+    posicao = pac.ultima_atualizacao.strftime("%m/%Y") if hasattr(pac, "ultima_atualizacao") else date.today().strftime("%m/%Y")
+    return f'''<section class="slide">
+      <div class="cabecalho">
+        <div class="titulo">PAC - {_html_esc(tema)}</div>
+        <div class="subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE PROJETOS ESTRUTURANTES</div>
+        <div class="governo"><div>GOVERNO DO ESTADO DA BAHIA</div><div>CASA CIVIL</div></div>
+      </div>
+      <div class="conteudo">{conteudo_html}</div>
+      <div class="rodape">
+        <span>Fonte: {_html_esc(nome_planilha)} · posição em {_html_esc(posicao)}</span>
+        <span>{pagina}/{total_paginas}</span>
+      </div>
+    </section>'''
+
+
+def montar_html_apresentacao(df):
+    m = calcular_metricas(df)
+    total_paginas = 9
+    total_investimento = m["total_investimento"]
+
+    # --- slide 1 ---
+    cards_status = [
+        ("CONCLUÍDO / INAUGURADO", m["qtd_concluido"], "2E7D32"),
+        ("EM OBRAS / ANDAMENTO", m["qtd_andamento"], "0B5CAD"),
+        ("SELEÇÃO / PREPARATÓRIA / LICITAÇÃO", m["qtd_preparatoria"], "E68A00"),
+        ("PARALISADO", m["qtd_paralisado"], "C62828"),
+    ]
+    frac_contratado = (m["total_contratado"] / total_investimento * 100) if total_investimento else 0
+    slide1 = _html_cabecalho_rodape("PANORAMA DA CARTEIRA", 1, total_paginas, f'''
+      <div class="rotulo-secao">INVESTIMENTO TOTAL DA CARTEIRA</div>
+      <div class="valor-principal" style="color:#2E7D32">{_html_esc(abreviar_moeda(total_investimento))}</div>
+      <div class="texto-secundario">{m["qtd_acoes"]} ações do PAC acompanhadas pelo Estado da Bahia</div>
+      <div class="rotulo-secao" style="margin-top:28px">CONTRATADO&nbsp;&nbsp;x&nbsp;&nbsp;A CONTRATAR</div>
+      <div class="barra-empilhada">
+        <div class="barra-empilhada-seg" style="width:{frac_contratado:.2f}%;background:#2E7D32">
+          <div class="be-titulo">CONTRATADO · {_html_esc(abreviar_moeda(m["total_contratado"]))}</div>
+          <div class="be-sub">{_html_esc(pct(m["total_contratado"], total_investimento))}</div>
+        </div>
+        <div class="barra-empilhada-seg" style="width:{100 - frac_contratado:.2f}%;background:#E68A00">
+          <div class="be-titulo">A CONTRATAR · {_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
+          <div class="be-sub">{_html_esc(pct(m["total_a_contratar"], total_investimento))}</div>
+        </div>
+      </div>
+      <div class="cartoes-grade">
+        {"".join(f'<div class="cartao-status"><div class="cs-barra" style="background:#{c}"></div><div class="cs-num" style="color:#{c}">{qtd}</div><div class="cs-rotulo">{_html_esc(rot)}</div></div>' for rot, qtd, c in cards_status)}
+      </div>
+    ''')
+
+    # --- slide 2 ---
+    total_ogu = m["contratado_ogu"] + m["a_contratar_ogu"]
+    total_fin = m["contratado_financiamento"] + m["a_contratar_financiamento"]
+    total_est = m["contratado_estadual"] + m["a_contratar_estadual"]
+    slide2 = _html_cabecalho_rodape("COMPOSIÇÃO POR ORIGEM DO RECURSO", 2, total_paginas, f'''
+      <div class="rotulo-secao">INVESTIMENTO TOTAL, POR FONTE (contratado + a contratar)</div>
+      <div class="bloco-barras">
+        {_html_barra("OGU (Apoiado)", total_ogu, total_investimento, "0B5CAD", 340)}
+        {_html_barra("FINANCIAMENTO", total_fin, total_investimento, "2F7F92", 340)}
+        {_html_barra("RECURSO ESTADUAL (Contrapartida + Complementar)", total_est, total_investimento, "E68A00", 340)}
+      </div>
+      <div class="duas-colunas" style="margin-top:24px">
+        <div class="cartao-destaque">
+          <div class="cd-rotulo">PARCELA FEDERAL (OGU + Financiamento)*</div>
+          <div class="cd-valor" style="color:#0B5CAD">{_html_esc(abreviar_moeda(m["total_federal"]))}</div>
+          <div class="cd-rodape">{_html_esc(pct(m["total_federal"], total_investimento))} do investimento total</div>
+        </div>
+        <div class="cartao-destaque">
+          <div class="cd-rotulo">PARCELA ESTADUAL (Contrapartida + Complementar)</div>
+          <div class="cd-valor" style="color:#E68A00">{_html_esc(abreviar_moeda(m["total_estadual"]))}</div>
+          <div class="cd-rodape">{_html_esc(pct(m["total_estadual"], total_investimento))} do investimento total</div>
+        </div>
+      </div>
+      <div class="nota-rodape">* Financiamento classificado como parcela Federal por definição adotada nesta
+      apresentação — a base não distingue dívida do Estado com aval federal de financiamento federal direto.</div>
+    ''')
+
+    # --- slide 3 ---
+    total_contratado = m["total_contratado"]
+    slide3 = _html_cabecalho_rodape("EXECUÇÃO DO CONTRATADO, POR FONTE", 3, total_paginas, f'''
+      <div class="duas-colunas-desiguais">
+        <div>
+          <div class="rotulo-secao">TOTAL JÁ CONTRATADO</div>
+          <div class="valor-principal" style="color:#2E7D32">{_html_esc(abreviar_moeda(total_contratado))}</div>
+        </div>
+        <div class="texto-secundario" style="align-self:center">Detalhamento por fonte disponível para
+        {_html_esc(pct(total_contratado * m["cobertura_detalhamento_pct"], total_contratado))} do valor contratado.</div>
+      </div>
+      <div class="bloco-barras" style="margin-top:20px">
+        {_html_barra("APOIADO (OGU) CONTRATADO", m["contratado_ogu"], total_contratado, "0B5CAD", 340)}
+        {_html_barra("FINANCIAMENTO CONTRATADO", m["contratado_financiamento"], total_contratado, "2F7F92", 340)}
+        {_html_barra("RECURSO ESTADUAL CONTRATADO", m["contratado_estadual"], total_contratado, "E68A00", 340)}
+        {_html_barra("NÃO DISCRIMINADO", m["contratado_nao_discriminado"], total_contratado, "8C8C8C", 340)}
+      </div>
+      <div class="caixa-pendencia">⚠ PENDÊNCIA — {m['qtd_sem_detalhamento']} ação sem nenhuma categoria de origem
+      preenchida e mais ações com divergência entre Valor Contratado e o detalhamento — já sinalizadas no
+      Controle de Qualidade do painel, aguardando correção de cadastro.</div>
+    ''')
+
+    # --- slide 4 ---
+    por_eixo_ord = m["por_eixo"].sort_values("A_CONTRATAR", ascending=False).head(5)
+    slide4 = _html_cabecalho_rodape("O QUE AINDA PRECISA SER CONTRATADO", 4, total_paginas, f'''
+      <div class="rotulo-secao">VALOR TOTAL A CONTRATAR</div>
+      <div class="valor-principal" style="color:#E68A00">{_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
+      <div class="texto-secundario">{_html_esc(pct(m["total_a_contratar"], total_investimento))} do investimento
+      total da carteira ainda não tem instrumento assinado</div>
+      <div class="duas-colunas" style="margin-top:24px; align-items:start">
+        <div>
+          <div class="rotulo-secao" style="margin-bottom:14px">POR FONTE</div>
+          <div class="bloco-barras">
+            {_html_barra("OGU (Apoiado)", m["a_contratar_ogu"], m["total_a_contratar"], "0B5CAD", 170)}
+            {_html_barra("Financiamento", m["a_contratar_financiamento"], m["total_a_contratar"], "2F7F92", 170)}
+            {_html_barra("Recurso Estadual", m["a_contratar_estadual"], m["total_a_contratar"], "E68A00", 170)}
+          </div>
+        </div>
+        <div>
+          <div class="rotulo-secao" style="margin-bottom:14px">POR EIXO (top 5 em valor a contratar)</div>
+          <div class="bloco-barras">
+            {"".join(_html_barra(eixo, float(linha["A_CONTRATAR"]), m["total_a_contratar"], "2F7F92", 230) for eixo, linha in por_eixo_ord.iterrows())}
+          </div>
+        </div>
+      </div>
+    ''')
+
+    # --- slide 5 ---
+    linhas5 = []
+    for nome, c_val, a_val in [
+        ("OGU (Apoiado)", m["contratado_ogu"], m["a_contratar_ogu"]),
+        ("Financiamento", m["contratado_financiamento"], m["a_contratar_financiamento"]),
+        ("Recurso Estadual", m["contratado_estadual"], m["a_contratar_estadual"]),
+        ("Não discriminado (contratado)", m["contratado_nao_discriminado"], 0.0),
+    ]:
+        tot = c_val + a_val
+        linhas5.append([nome, abreviar_moeda(c_val), abreviar_moeda(a_val), abreviar_moeda(tot),
+                         pct(tot, total_investimento)])
+    linhas5.append(["SUBTOTAL FEDERAL (OGU + Financiamento)", abreviar_moeda(m["contratado_federal"]),
+                     abreviar_moeda(m["a_contratar_federal"]), abreviar_moeda(m["total_federal"]),
+                     pct(m["total_federal"], total_investimento)])
+    linhas5.append(["SUBTOTAL ESTADUAL", abreviar_moeda(m["contratado_estadual"]),
+                     abreviar_moeda(m["a_contratar_estadual"]), abreviar_moeda(m["total_estadual"]),
+                     pct(m["total_estadual"], total_investimento)])
+    linhas5.append(["TOTAL GERAL", abreviar_moeda(m["total_contratado"]), abreviar_moeda(m["total_a_contratar"]),
+                     abreviar_moeda(total_investimento), "100,0%"])
+    slide5 = _html_cabecalho_rodape("TABELA-RESUMO POR FONTE", 5, total_paginas, f'''
+      {_html_tabela(["FONTE", "CONTRATADO", "A CONTRATAR", "TOTAL", "% DO TOTAL"], linhas5, linhas_bold={4, 5, 6})}
+      <div class="nota-rodape">"Não discriminado" = contratado sem detalhamento por fonte preenchido na base
+      (ver slide 3).</div>
+    ''')
+
+    # --- slide 6 ---
+    linhas6 = []
+    for eixo, linha in m["por_eixo"].iterrows():
+        linhas6.append([eixo, int(linha["QTD"]), abreviar_moeda(linha["INVESTIMENTO"]),
+                         abreviar_moeda(linha["CONTRATADO"]), abreviar_moeda(linha["A_CONTRATAR"])])
+    slide6 = _html_cabecalho_rodape("DETALHE POR EIXO DO PAC", 6, total_paginas,
+        _html_tabela(["EIXO", "Nº AÇÕES", "INVESTIMENTO", "CONTRATADO", "A CONTRATAR"], linhas6))
+
+    # --- slide 7 ---
+    top10 = m["top10_a_contratar"]
+    linhas7 = []
+    for _, r in top10.iterrows():
+        linhas7.append([str(r[pac.col_objeto]), str(r["MUNICIPIO"]), abreviar_moeda(r["_A_CONTRATAR"]),
+                         str(r["STATUS_TEXTO"]).title(), str(r["FASE_TEXTO"]).title()])
+    concluidas_com_saldo = top10[top10["STATUS_TEXTO"].isin(["CONCLUÍDA", "INAUGURADA"])]
+    aviso7 = ""
+    if len(concluidas_com_saldo) > 0:
+        aviso7 = (f'<div class="caixa-pendencia">⚠ PENDÊNCIA — {len(concluidas_com_saldo)} ação(ões) nesta '
+                  "lista aparece(m) como Concluída/Inaugurada mas ainda com saldo a contratar na base — "
+                  "verificar cadastro antes de divulgar.</div>")
+    slide7 = _html_cabecalho_rodape("MAIORES AÇÕES A CONTRATAR", 7, total_paginas,
+        _html_tabela(["AÇÃO", "MUNICÍPIO", "A CONTRATAR", "STATUS", "FASE"], linhas7) + aviso7)
+
+    # --- slide 8 ---
+    cards8 = [
+        ("CLÁUSULA SUSPENSIVA VIGENTE", m["qtd_clausula_vigente"], abreviar_moeda(m["valor_clausula_vigente"]),
+         "ações com condição contratual ainda não resolvida"),
+        ("OBRA NÃO INICIADA", m["qtd_obra_nao_iniciada"], None,
+         "mais de 40 dias desde a Emissão de O.S., sem avanço registrado"),
+        ("PRAZO DE PENDÊNCIA/TAREFA VENCIDO", m["qtd_prazo_pendencia_vencido"], None,
+         "tarefas com prazo já ultrapassado"),
+        ("SEM CATEGORIA DE ORIGEM DO RECURSO", m["qtd_sem_detalhamento"], None,
+         "impede identificar a fonte do valor contratado"),
+    ]
+    slide8 = _html_cabecalho_rodape("PENDÊNCIAS QUE CONDICIONAM A CONTRATAÇÃO", 8, total_paginas, f'''
+      <div class="cartoes-pendencia">
+        {"".join(f"""<div class="cartao-pendencia">
+          <div class="cp-num">{qtd}</div>
+          <div class="cp-acoes">ações</div>
+          {f'<div class="cp-valor">{_html_esc(valor)}</div>' if valor else ''}
+          <div class="cp-rotulo">{_html_esc(rotulo)}</div>
+          <div class="cp-desc">{_html_esc(desc)}</div>
+        </div>""" for rotulo, qtd, valor, desc in cards8)}
+      </div>
+    ''')
+
+    # --- slide 9 ---
+    mensagens9 = [
+        (abreviar_moeda(m["total_a_contratar"]), "ainda precisam ser contratados para concluir a carteira do PAC-BA"),
+        (abreviar_moeda(m["a_contratar_federal"]), "desse valor dependem de fonte Federal (OGU + Financiamento)"),
+        (f"{m['gestao_federal_qtd']}", "ações sob execução direta de órgãos federais na carteira"),
+        (abreviar_moeda(m["valor_clausula_vigente"]),
+         f"já contratados têm cláusula suspensiva vigente ({m['qtd_clausula_vigente']} ações) — recurso condicionado"),
+    ]
+    slide9 = _html_cabecalho_rodape("SÍNTESE E PLEITO", 9, total_paginas, f'''
+      <div class="lista-sintese">
+        {"".join(f'''<div class="linha-sintese">
+          <div class="ls-valor">{_html_esc(valor)}</div>
+          <div class="ls-texto">{_html_esc(texto)}</div>
+        </div>''' for valor, texto in mensagens9)}
+      </div>
+    ''')
+
+    css = '''
+    * { box-sizing: border-box; }
+    body { margin:0; padding:40px 16px; background:#e9ebef; font-family:'Roboto','Segoe UI',Arial,sans-serif; }
+    .slide { width:1480px; max-width:100%; aspect-ratio:20/11.25; margin:0 auto 40px; background:#fff;
+      box-shadow:0 4px 24px rgba(0,0,0,.2); position:relative; overflow:hidden; border-radius:6px; }
+    .cabecalho { background:#0B1F3F; color:#fff; padding:22px 40px 14px; position:relative; }
+    .cabecalho .titulo { font-size:30px; font-weight:700; }
+    .cabecalho .subtitulo { font-size:14px; font-weight:700; color:#C9D6EA; margin-top:8px; }
+    .cabecalho .governo { position:absolute; top:22px; right:40px; text-align:right; font-weight:700;
+      font-size:17px; color:#4FA3E0; line-height:1.7; }
+    .conteudo { padding: 28px 40px; }
+    .rodape { position:absolute; bottom:14px; left:40px; right:40px; display:flex; justify-content:space-between;
+      font-size:12px; color:#5B6576; }
+    .rotulo-secao { font-size:18px; font-weight:700; color:#5B6576; text-transform:uppercase; }
+    .valor-principal { font-size:68px; font-weight:900; margin-top:6px; }
+    .texto-secundario { font-size:17px; color:#5B6576; margin-top:6px; }
+    .barra-empilhada { display:flex; height:90px; border-radius:4px; overflow:hidden; margin-top:14px; }
+    .barra-empilhada-seg { padding:14px 18px; color:#fff; }
+    .be-titulo { font-size:19px; font-weight:700; }
+    .be-sub { font-size:16px; margin-top:6px; }
+    .cartoes-grade { display:flex; gap:20px; margin-top:28px; }
+    .cartao-status { flex:1; background:#fff; border:1px solid #D8DCE3; border-radius:10px; overflow:hidden; }
+    .cs-barra { height:8px; }
+    .cs-num { font-size:48px; font-weight:900; padding:14px 18px 0; }
+    .cs-rotulo { font-size:15px; font-weight:700; color:#5B6576; padding:10px 18px 18px; }
+    .bloco-barras { margin-top:10px; }
+    .barra-linha { display:flex; align-items:center; gap:18px; margin-bottom:16px; }
+    .barra-rotulo { font-weight:700; color:#0B1F3F; font-size:17px; flex-shrink:0; }
+    .barra-trilho { flex:1; height:30px; background:#F2F4F7; border-radius:4px; overflow:hidden; }
+    .barra-fill { height:100%; }
+    .barra-valor { width:220px; text-align:right; font-weight:700; color:#0B1F3F; font-size:17px; flex-shrink:0; }
+    .duas-colunas { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+    .duas-colunas-desiguais { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+    .cartao-destaque { background:#F2F4F7; border-radius:10px; padding:20px 24px; }
+    .cd-rotulo { font-size:15px; font-weight:700; color:#5B6576; }
+    .cd-valor { font-size:38px; font-weight:900; margin-top:8px; }
+    .cd-rodape { font-size:15px; color:#5B6576; margin-top:8px; }
+    .nota-rodape { font-size:13px; color:#5B6576; margin-top:18px; }
+    .caixa-pendencia { background:#FDECEC; border:1px solid #C62828; border-radius:10px; padding:14px 20px;
+      color:#C62828; font-weight:700; font-size:15px; margin-top:18px; }
+    table.pac-tabela { width:100%; border-collapse:collapse; font-size:17px; margin-top:6px; }
+    table.pac-tabela th { background:#0B1F3F; color:#fff; text-align:right; padding:12px 16px; font-size:16px; }
+    table.pac-tabela th:first-child, table.pac-tabela td:first-child { text-align:left; }
+    table.pac-tabela td { padding:10px 16px; text-align:right; border-bottom:1px solid #D8DCE3; }
+    table.pac-tabela tr:nth-child(even) td { background:#F2F4F7; }
+    table.pac-tabela tr.linha-bold td { font-weight:700; border-top:2px solid #0B1F3F; }
+    .cartoes-pendencia { display:flex; gap:20px; margin-top:10px; }
+    .cartao-pendencia { flex:1; background:#FDECEC; border:1px solid #C62828; border-radius:10px; padding:20px; }
+    .cp-num { font-size:48px; font-weight:900; color:#C62828; }
+    .cp-acoes { font-size:15px; color:#5B6576; }
+    .cp-valor { font-size:22px; font-weight:900; color:#C62828; margin-top:10px; }
+    .cp-rotulo { font-size:15px; font-weight:700; color:#0B1F3F; margin-top:16px; }
+    .cp-desc { font-size:13px; color:#5B6576; margin-top:8px; }
+    .lista-sintese { display:flex; flex-direction:column; gap:16px; margin-top:8px; }
+    .linha-sintese { display:flex; align-items:center; gap:28px; background:#F2F4F7; border-radius:10px;
+      padding:18px 24px; }
+    .ls-valor { font-size:34px; font-weight:900; color:#2E7D32; width:260px; flex-shrink:0; }
+    .ls-texto { font-size:18px; color:#0B1F3F; }
+    '''
+
+    return f'''<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Análise Financeira do PAC - Apresentação</title>
+<style>{css}</style>
+</head>
+<body>
+{slide1}{slide2}{slide3}{slide4}{slide5}{slide6}{slide7}{slide8}{slide9}
+</body>
+</html>'''
+
+
+def gerar_html_bytes(df):
+    # Mesmo padrão de gerar_pptx_bytes: monta tudo em memória, sem tocar o
+    # disco — usado pelo botão "ANÁLISE FINANCEIRA (HTML)" do painel.
+    html_texto = montar_html_apresentacao(df)
+    return html_texto.encode("utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -725,6 +1057,11 @@ def main():
     caminho_xlsx = os.path.join(PASTA_BASE, "APOIO_ANALISE_FINANCEIRA_PAC.xlsx")
     gerar_xlsx_apoio(m, caminho_xlsx)
     print("XLSX de apoio gerado:", caminho_xlsx)
+
+    caminho_html = os.path.join(PASTA_BASE, "ANALISE_FINANCEIRA_PAC.html")
+    with open(caminho_html, "w", encoding="utf-8") as f:
+        f.write(montar_html_apresentacao(pac.df_original))
+    print("HTML gerado:", caminho_html)
 
 
 if __name__ == "__main__":

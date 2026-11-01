@@ -11110,6 +11110,7 @@ def montar_html_painel(df_base):
       <button class="btn" id="btn-preview">DASHBOARD</button>
       <button class="btn-acento" id="btn-gerar">GERAR RELATÓRIO</button>
       <button class="btn" id="btn-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx), com a carteira inteira — sem aplicar os filtros selecionados">ANÁLISE FINANCEIRA (PPTX)</button>
+      <button class="btn" id="btn-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
       <button type="button" class="tema-switch" id="tema-switch-filtros" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
         <span class="tema-switch-trilho">
           <span class="tema-switch-icone tema-switch-sol">
@@ -11293,6 +11294,7 @@ def montar_html_painel(df_base):
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
         <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
         <button class="btn" id="dash-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx), com a carteira inteira — sem aplicar os filtros selecionados">ANÁLISE FINANCEIRA (PPTX)</button>
+        <button class="btn" id="dash-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
         <button type="button" class="tema-switch" id="tema-switch-dash" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
           <span class="tema-switch-trilho">
             <span class="tema-switch-icone tema-switch-sol">
@@ -11574,6 +11576,12 @@ def montar_html_painel(df_base):
       false,
       ...args
     );
+  }
+
+  async function baixarHTML(nome, ...args) {
+    // abrirEmNovaAba=true: HTML o navegador sabe exibir direto, igual PDF —
+    // não precisa forçar download.
+    return await baixarArquivoBinario(nome, "text/html", "apresentacao.html", true, ...args);
   }
 
   const estadoSelecao = {};
@@ -14554,6 +14562,30 @@ def montar_html_painel(df_base):
   }
   botoesGerarPPTX.forEach(function (b) { b.onclick = gerarApresentacaoFinanceira; });
 
+  // Botão "VER APRESENTAÇÃO (HTML)" — mesma apresentação, versão pra
+  // conferir rápido no navegador (sem precisar de PowerPoint/Canva).
+  const botoesVerHTML = [
+    document.getElementById("btn-ver-html"),
+    document.getElementById("dash-ver-html"),
+  ].filter(Boolean);
+  const textoOriginalBtnVerHTML = botoesVerHTML.length ? botoesVerHTML[0].textContent : "";
+
+  async function verApresentacaoHtml() {
+    botoesVerHTML.forEach(function (b) { b.disabled = true; b.textContent = "Gerando..."; });
+    try {
+      var resultado = await baixarHTML("visualizar_html_analise_financeira");
+      if (!resultado || resultado.cancelado) return;
+      if (!resultado.ok) {
+        alert(resultado.erro || "Não foi possível gerar a apresentação em HTML.");
+      }
+    } catch (erro) {
+      alert("Ocorreu um erro ao gerar a apresentação:" + NL + NL + erro);
+    } finally {
+      botoesVerHTML.forEach(function (b) { b.disabled = false; b.textContent = textoOriginalBtnVerHTML; });
+    }
+  }
+  botoesVerHTML.forEach(function (b) { b.onclick = verApresentacaoHtml; });
+
   // --- Fechamento automático por inatividade (5 minutos) ---
   const TEMPO_INATIVIDADE_MS = 15 * 60 * 1000;
   let temporizadorInatividade = null;
@@ -14960,6 +14992,38 @@ def _api_gerar_pptx_analise_financeira_bytes():
     return {"ok": True, "nome_arquivo": nome_arquivo_pptx_analise_financeira, "conteudo": conteudo}
 
 
+def _construir_html_analise_financeira_bytes():
+    # Mesma ideia de _construir_pptx_analise_financeira_bytes, mas pra
+    # versão HTML da apresentação (ver montar_html_apresentacao em
+    # gerar_pptx_pac.py) — existe porque texto em caixa de tamanho fixo do
+    # PPTX precisa de fonte calculada à mão pra não estourar; no HTML o
+    # navegador quebra linha e redimensiona sozinho, então serve como
+    # conferência visual rápida sem precisar abrir PowerPoint/Canva.
+    try:
+        import gerar_pptx_pac
+    except ImportError as erro:
+        raise RuntimeError(
+            "Dependência 'python-pptx' não encontrada neste ambiente. "
+            "Rode 'pip install -r requirements.txt' (desktop) ou "
+            "'pip install -r requirements-web.txt' (servidor web) e tente de novo."
+        ) from erro
+
+    gerar_pptx_pac.configurar(sys.modules[__name__])
+    return gerar_pptx_pac.gerar_html_bytes(df_original)
+
+
+def _api_gerar_html_analise_financeira_bytes():
+    # Equivalente web do botão "VER APRESENTAÇÃO (HTML)" — mesmo padrão de
+    # _api_gerar_pptx_analise_financeira_bytes, só que o navegador abre o
+    # HTML direto numa aba (ver abrirEmNovaAba em baixarArquivoBinario),
+    # sem forçar download.
+    try:
+        conteudo = _construir_html_analise_financeira_bytes()
+    except Exception as erro:
+        return {"ok": False, "erro": str(erro)}
+    return {"ok": True, "nome_arquivo": "ANALISE_FINANCEIRA_PAC.html", "conteudo": conteudo}
+
+
 def _api_exportar_ficha_pdf_bytes(item):
     # Equivalente web de APIFiltros.exportar_ficha_pdf — mesma lógica do
     # gerar_pdf_bytes acima, mas para o PDF de uma única ação.
@@ -15102,6 +15166,28 @@ def abrir_interface_filtros(df_base):
                 if os.name == "nt":
                     os.startfile(caminho_escolhido)
                 return {"ok": True, "arquivo": caminho_escolhido}
+            except Exception as erro:
+                import traceback
+                traceback.print_exc()
+                return {"ok": False, "erro": str(erro)}
+
+        def visualizar_html_analise_financeira(self):
+            # Botão "VER APRESENTAÇÃO (HTML)" no modo desktop — sem diálogo
+            # de salvar: é só uma conferência visual rápida, então grava
+            # sempre no mesmo arquivo (sobrescreve a cada clique) e abre
+            # direto no navegador padrão. Quem quiser guardar/enviar o
+            # arquivo pode "Salvar como" dali do próprio navegador.
+            try:
+                conteudo = _construir_html_analise_financeira_bytes()
+                pasta_destino = (
+                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
+                )
+                caminho_html = os.path.join(pasta_destino, "ANALISE_FINANCEIRA_PAC.html")
+                with open(caminho_html, "wb") as f:
+                    f.write(conteudo)
+                if os.name == "nt":
+                    os.startfile(caminho_html)
+                return {"ok": True, "arquivo": caminho_html}
             except Exception as erro:
                 import traceback
                 traceback.print_exc()
