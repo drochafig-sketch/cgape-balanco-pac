@@ -279,6 +279,20 @@ col_apoiado_contratado = "APOIADO CONTRATADO"
 col_contrapartida_contratado = "CONTRAPARTIDA CONTRATADA"
 col_complementar_contratado = "COMPLEMENTAR CONTRATADO"
 col_financiamento_contratado = "FINANCIAMENTO CONTRATADO"
+
+def tem_detalhamento_contratado(df):
+    # True quando a planilha tem as 4 colunas de detalhamento do contratado
+    # por fonte (Apoiado/Contrapartida/Complementar/Financiamento
+    # Contratados) — usado em todo lugar que precisa decidir entre mostrar
+    # "Valor Contratado" dividido por fonte (CONTRATADO/A CONTRATAR por
+    # categoria, ver TONS_FINANCEIRO) ou, em planilhas antigas sem essas
+    # colunas, o esquema de sempre (1 segmento neutro pro total contratado).
+    return all(
+        c in df.columns
+        for c in (col_apoiado_contratado, col_financiamento_contratado,
+                   col_contrapartida_contratado, col_complementar_contratado)
+    )
+
 col_empresa_contratada = "EMPRESA CONTRATADA"
 col_financiamento_ajustado = "FINANCIAMENTO AJUSTADO"
 col_apoiado_ajustado = "APOIADO AJUSTADO"
@@ -359,6 +373,46 @@ def dessaturar_hex(hex_base, fator=None):
 def cor_grafico(hex_base):
     # Versão ReportLab da cor já dessaturada.
     return colors.HexColor(dessaturar_hex(hex_base))
+
+def clarear_hex(hex_base, fator=0.55):
+    # Mistura o hex com branco — usado pra variação "A CONTRATAR" das cores
+    # financeiras abaixo: mesma família da cor "CONTRATADO" (cheia), só que
+    # mais clara. fator = fração de branco na mistura (0 = cor original,
+    # 1 = branco puro).
+    limpo = str(hex_base).lstrip("#")
+    vermelho, verde, azul = (int(limpo[i:i + 2], 16) for i in (0, 2, 4))
+    vermelho = round(vermelho + (255 - vermelho) * fator)
+    verde = round(verde + (255 - verde) * fator)
+    azul = round(azul + (255 - azul) * fator)
+    return "#{:02X}{:02X}{:02X}".format(vermelho, verde, azul)
+
+# Tokens de cor ÚNICOS para "Apoiado (OGU) / Financiamento / Recurso
+# Estadual", cada um com duas variações — CONTRATADO (cor cheia, a mesma já
+# usada em CORES_DETALHAMENTO_SECRETARIA/CORES_FINANCEIRO) e A_CONTRATAR
+# (mesma cor, clareada). Única fonte: o PDF usa este dict (convertido pra
+# colors.HexColor mais abaixo) e o painel web recebe o mesmo dict em
+# paletaGraficos["financeiro"] — os dois NUNCA saem com tons diferentes.
+# Reaproveita as MESMAS cores-base já usadas no projeto (#4E92BA/#BB6060/
+# #BC9E2C) — não são cores novas.
+TONS_FINANCEIRO = {
+    "apoiado": {
+        "contratado": dessaturar_hex("#4E92BA"),
+        "aContratar": clarear_hex(dessaturar_hex("#4E92BA")),
+    },
+    "financiamento": {
+        "contratado": dessaturar_hex("#BB6060"),
+        "aContratar": clarear_hex(dessaturar_hex("#BB6060")),
+    },
+    "estadual": {
+        "contratado": dessaturar_hex("#BC9E2C"),
+        "aContratar": clarear_hex(dessaturar_hex("#BC9E2C")),
+    },
+    # Mesmo cinza já usado em COR_CONTRATADO_NAO_DISCRIMINADO (gráfico
+    # "Detalhar contratado" do Resumo Financeiro) — contratado sem fonte
+    # identificada na base (ver regra de qualidade "categoria da origem do
+    # recurso").
+    "naoDiscriminado": "#8C8C8C",
+}
 
 COR_MARCA_TEAL = colors.HexColor("#72B4AE")        # teal puro do dashboard
 COR_MARCA_TEAL_ESCURO = colors.HexColor("#2E6F68")  # versão escura, p/ texto e fundos
@@ -2528,31 +2582,114 @@ def gerar_cards_resumo(qtd, investimento):
 
 CORES_DETALHAMENTO_SECRETARIA = {
     "Valor Contratado": cor_grafico("#49925C"),
-    "Valor Apoiado OGU": cor_grafico("#4E92BA"),
-    "Recurso Estadual": cor_grafico("#BC9E2C"),
-    "Financiamento": cor_grafico("#BB6060"),
+    "Valor Apoiado OGU": colors.HexColor(TONS_FINANCEIRO["apoiado"]["contratado"]),
+    "Recurso Estadual": colors.HexColor(TONS_FINANCEIRO["estadual"]["contratado"]),
+    "Financiamento": colors.HexColor(TONS_FINANCEIRO["financiamento"]["contratado"]),
 }
 
-def desenhar_legenda_detalhamento_secretaria(largura=LARGURA_UTIL):
+# Mesmos 3 componentes acima, na variação CLAREADA (A CONTRATAR) — "Valor
+# Contratado" não entra aqui: ele é o TOTAL contratado (não um componente
+# "a contratar" por fonte), então continua usando a cor cheia de
+# CORES_DETALHAMENTO_SECRETARIA mesmo nos lugares que usam esta função.
+CORES_DETALHAMENTO_SECRETARIA_CLARO = {
+    "Valor Apoiado OGU": colors.HexColor(TONS_FINANCEIRO["apoiado"]["aContratar"]),
+    "Recurso Estadual": colors.HexColor(TONS_FINANCEIRO["estadual"]["aContratar"]),
+    "Financiamento": colors.HexColor(TONS_FINANCEIRO["financiamento"]["aContratar"]),
+}
+
+# Cores da barra empilhada "Detalhamento por Secretaria/Órgão" — usada
+# quando a planilha TEM as colunas de detalhamento contratado (ver
+# tem_detalhamento_contratado em gerar_grafico_detalhamento_secretaria):
+# Valor Contratado deixa de ser 1 segmento neutro e vira 3 pares
+# contratado/a-contratar (um por fonte) + "Não Discriminado" pro que não
+# tem a fonte do contratado identificada na base. Quando a planilha NÃO tem
+# essas colunas, a barra cai no esquema antigo (CORES_DETALHAMENTO_
+# SECRETARIA, 4 nomes) — union dos dois pra cobrir ambos os casos.
+CORES_BARRA_SECRETARIA = {
+    "Apoiado Contratado": colors.HexColor(TONS_FINANCEIRO["apoiado"]["contratado"]),
+    "Apoiado A Contratar": colors.HexColor(TONS_FINANCEIRO["apoiado"]["aContratar"]),
+    "Financiamento Contratado": colors.HexColor(TONS_FINANCEIRO["financiamento"]["contratado"]),
+    "Financiamento A Contratar": colors.HexColor(TONS_FINANCEIRO["financiamento"]["aContratar"]),
+    "Estadual Contratado": colors.HexColor(TONS_FINANCEIRO["estadual"]["contratado"]),
+    "Estadual A Contratar": colors.HexColor(TONS_FINANCEIRO["estadual"]["aContratar"]),
+    "Não Discriminado": colors.HexColor(TONS_FINANCEIRO["naoDiscriminado"]),
+    **CORES_DETALHAMENTO_SECRETARIA,
+}
+
+
+def _cor_card_financeiro(chave_cor):
+    # Usada pelos cards de resumo financeiro (gerar_cards_resumo_
+    # detalhamento_financeiro / gerar_linha_titulo_gestao_com_cards_totais):
+    # "Valor Contratado" é o único TOTAL (não um componente "a contratar"
+    # por fonte) — fica com a cor cheia de sempre; os outros 3 (Valor
+    # Apoiado OGU / Recurso Estadual / Financiamento) são sempre valores
+    # AJUSTADOS, ou seja, "a contratar" — ficam na variação clareada.
+    return CORES_DETALHAMENTO_SECRETARIA_CLARO.get(chave_cor, CORES_DETALHAMENTO_SECRETARIA[chave_cor])
+
+def desenhar_legenda_detalhamento_secretaria(largura=LARGURA_UTIL, detalhado=False):
     # Uma linha só, com um quadradinho colorido + nome por componente —
     # mesma legenda usada uma única vez no topo da seção equivalente do
     # dashboard (não repete em cada barra).
     #
-    # Valor Apoiado OGU, Recurso Estadual e Financiamento levam "*" — são
-    # valores de PREVISÃO ORÇAMENTÁRIA (ainda não contratados), mesmo
-    # critério da legenda do RESUMO FINANCEIRO do Painel Geral (ver
-    # NOMES_PREVISAO_ORCAMENTARIA em gerar_grafico_financeiro), mas com um
-    # único "*" — nesta página específica não há outra marcação em disputa
-    # pelo símbolo. Valor Contratado é firme e por isso fica sem marcação.
-    NOMES_PREVISAO_ORCAMENTARIA = {"Valor Apoiado OGU", "Recurso Estadual", "Financiamento"}
-    altura = 26
-    d = Drawing(largura, altura)
+    # detalhado=True (planilha com as colunas de detalhamento contratado,
+    # ver tem_detalhamento_contratado): mostra os 6 pares CONTRATADO/A
+    # CONTRATAR por fonte + Não Discriminado, igual aos segmentos da barra.
+    # detalhado=False (planilha antiga): esquema de sempre — Valor Apoiado
+    # OGU, Recurso Estadual e Financiamento levam "*" — são valores de
+    # PREVISÃO ORÇAMENTÁRIA (ainda não contratados), mesmo critério da
+    # legenda do RESUMO FINANCEIRO do Painel Geral (ver NOMES_PREVISAO_
+    # ORCAMENTARIA em gerar_grafico_financeiro), mas com um único "*" —
+    # nesta página específica não há outra marcação em disputa pelo
+    # símbolo. Valor Contratado é firme e por isso fica sem marcação.
+    if not detalhado:
+        NOMES_PREVISAO_ORCAMENTARIA = {"Valor Apoiado OGU", "Recurso Estadual", "Financiamento"}
+        itens = [
+            (f"{nome}*" if nome in NOMES_PREVISAO_ORCAMENTARIA else nome, cor)
+            for nome, cor in CORES_DETALHAMENTO_SECRETARIA.items()
+        ]
+        altura = 26
+        d = Drawing(largura, altura)
+        x = 0
+        for rotulo, cor in itens:
+            d.add(Rect(x, 6, 14, 14, fillColor=cor, strokeColor=None))
+            d.add(String(x + 19, 6.5, rotulo, fontName=FONTE_PADRAO, fontSize=16, fillColor=colors.HexColor("#555555")))
+            x += 19 + len(rotulo) * 9.0 + 30
+        return d
+
+    # detalhado=True: 7 itens (nomes bem mais longos, ex: "Financiamento
+    # Contratado") não cabem numa linha só dentro de largura — quebra em
+    # quantas linhas forem necessárias, em vez de estourar a página.
+    itens = [(nome, CORES_BARRA_SECRETARIA[nome]) for nome in (
+        "Apoiado Contratado", "Apoiado A Contratar",
+        "Financiamento Contratado", "Financiamento A Contratar",
+        "Estadual Contratado", "Estadual A Contratar",
+        "Não Discriminado",
+    )]
+    altura_linha = 26
+    linhas_itens = []
+    linha_atual = []
     x = 0
-    for nome, cor in CORES_DETALHAMENTO_SECRETARIA.items():
-        rotulo = f"{nome}*" if nome in NOMES_PREVISAO_ORCAMENTARIA else nome
-        d.add(Rect(x, 6, 14, 14, fillColor=cor, strokeColor=None))
-        d.add(String(x + 19, 6.5, rotulo, fontName=FONTE_PADRAO, fontSize=16, fillColor=colors.HexColor("#555555")))
-        x += 19 + len(rotulo) * 9.0 + 30
+    for rotulo, cor in itens:
+        largura_item = 19 + len(rotulo) * 9.0 + 30
+        if x + largura_item > largura and linha_atual:
+            linhas_itens.append(linha_atual)
+            linha_atual = []
+            x = 0
+        linha_atual.append((rotulo, cor, x))
+        x += largura_item
+    if linha_atual:
+        linhas_itens.append(linha_atual)
+
+    altura = altura_linha * len(linhas_itens)
+    d = Drawing(largura, altura)
+    for i, linha in enumerate(linhas_itens):
+        y_base = altura - (i + 1) * altura_linha
+        for rotulo, cor, x_pos in linha:
+            d.add(Rect(x_pos, y_base + 6, 14, 14, fillColor=cor, strokeColor=None))
+            d.add(String(
+                x_pos + 19, y_base + 6.5, rotulo,
+                fontName=FONTE_PADRAO, fontSize=16, fillColor=colors.HexColor("#555555"),
+            ))
     return d
 
 def gerar_cards_resumo_detalhamento_financeiro(qtd, investimento, df_base):
@@ -2630,7 +2767,7 @@ def gerar_cards_resumo_detalhamento_financeiro(qtd, investimento, df_base):
     ]
     for i, (_, _, chave_cor) in enumerate(componentes):
         col = 3 + i
-        cor = CORES_DETALHAMENTO_SECRETARIA[chave_cor]
+        cor = _cor_card_financeiro(chave_cor)
         estilo.append(("BACKGROUND", (col, 0), (col, 0), cor))
         estilo.append(("BACKGROUND", (col, 1), (col, 1), colors.whitesmoke))
         estilo.append(("BOX", (col, 0), (col, -1), 1.0, colors.grey))
@@ -2970,7 +3107,7 @@ def gerar_linha_titulo_gestao_com_cards_totais(texto_titulo, totais):
     ]
     for i, (_, _, chave_cor) in enumerate(componentes):
         col = 1 + i
-        cor = COR_MARCA_TEAL_ESCURO if chave_cor is None else CORES_DETALHAMENTO_SECRETARIA[chave_cor]
+        cor = COR_MARCA_TEAL_ESCURO if chave_cor is None else _cor_card_financeiro(chave_cor)
         estilo.append(("BACKGROUND", (col, 0), (col, 0), cor))
         estilo.append(("BACKGROUND", (col, 1), (col, 1), colors.whitesmoke))
         estilo.append(("BOX", (col, 0), (col, -1), 1.0, colors.grey))
@@ -3041,21 +3178,57 @@ def desenhar_barra_detalhamento_secretaria(item, largura, altura_barra=13, mostr
     # Estadual/Financiamento dentro do investimento daquela secretaria, sem
     # comparar o comprimento total entre secretarias diferentes.
     base = item["investimento"] if item["investimento"] > 0 else 1
-    segmentos = [
-        ("Valor Contratado", item["valorContratado"]),
-        ("Valor Apoiado OGU", item["valorApoiadoOgu"]),
-        ("Recurso Estadual", item["recursoEstadual"]),
-        ("Financiamento", item["financiamento"]),
-    ]
-    siglas = {"Valor Contratado": "VC", "Valor Apoiado OGU": "OGU", "Recurso Estadual": "RE", "Financiamento": "FIN"}
-    partes_texto = []
-    for nome, valor in segmentos:
-        if valor <= 0:
-            continue
-        texto_segmento = f"{siglas[nome]}: {_formatar_mi_bi_texto_puro(valor)}"
-        if nome == "Financiamento" and item.get("fontesFinanciamento"):
-            texto_segmento += " (" + ", ".join(item["fontesFinanciamento"]) + ")"
-        partes_texto.append(texto_segmento)
+    # Com o detalhamento do contratado por fonte (ver tem_detalhamento_
+    # contratado em gerar_grafico_detalhamento_secretaria): Valor Contratado
+    # some como segmento único e vira 3 pares CONTRATADO (cor cheia) + A
+    # CONTRATAR (clareada), um por fonte, mais "Não Discriminado" pro que
+    # sobra sem fonte identificada. Sem o detalhamento (planilha antiga):
+    # cai no esquema de sempre, 1 segmento neutro pro total contratado.
+    tem_detalhamento = item.get("valorApoiadoContratado") is not None
+    if tem_detalhamento:
+        segmentos = [
+            ("Apoiado Contratado", item["valorApoiadoContratado"]),
+            ("Apoiado A Contratar", item["valorApoiadoOgu"]),
+            ("Financiamento Contratado", item["valorFinanciamentoContratado"]),
+            ("Financiamento A Contratar", item["financiamento"]),
+            ("Estadual Contratado", item["valorEstadualContratado"]),
+            ("Estadual A Contratar", item["recursoEstadual"]),
+            ("Não Discriminado", item["valorNaoDiscriminado"]),
+        ]
+        partes_texto = []
+        for sigla, contratado, a_contratar in (
+            ("OGU", item["valorApoiadoContratado"], item["valorApoiadoOgu"]),
+            ("FIN", item["valorFinanciamentoContratado"], item["financiamento"]),
+            ("RE", item["valorEstadualContratado"], item["recursoEstadual"]),
+        ):
+            total_fonte = contratado + a_contratar
+            if total_fonte <= 0:
+                continue
+            texto_segmento = (
+                f"{sigla}: {_formatar_mi_bi_texto_puro(total_fonte)} "
+                f"({_formatar_mi_bi_texto_puro(contratado)} contratado)"
+            )
+            if sigla == "FIN" and item.get("fontesFinanciamento"):
+                texto_segmento += " — " + ", ".join(item["fontesFinanciamento"])
+            partes_texto.append(texto_segmento)
+        if item["valorNaoDiscriminado"] > 0:
+            partes_texto.append(f"Não discriminado: {_formatar_mi_bi_texto_puro(item['valorNaoDiscriminado'])}")
+    else:
+        segmentos = [
+            ("Valor Contratado", item["valorContratado"]),
+            ("Valor Apoiado OGU", item["valorApoiadoOgu"]),
+            ("Recurso Estadual", item["recursoEstadual"]),
+            ("Financiamento", item["financiamento"]),
+        ]
+        siglas = {"Valor Contratado": "VC", "Valor Apoiado OGU": "OGU", "Recurso Estadual": "RE", "Financiamento": "FIN"}
+        partes_texto = []
+        for nome, valor in segmentos:
+            if valor <= 0:
+                continue
+            texto_segmento = f"{siglas[nome]}: {_formatar_mi_bi_texto_puro(valor)}"
+            if nome == "Financiamento" and item.get("fontesFinanciamento"):
+                texto_segmento += " (" + ", ".join(item["fontesFinanciamento"]) + ")"
+            partes_texto.append(texto_segmento)
     texto_detalhe = "     ".join(partes_texto)
 
     # Texto do detalhamento numa linha só, na mesma fonte/tamanho da
@@ -3098,7 +3271,7 @@ def desenhar_barra_detalhamento_secretaria(item, largura, altura_barra=13, mostr
         largura_segmento = (valor / base) * largura
         for forma in formas_barra_arredondada(
             x, topo_barra - altura_barra, largura_segmento, altura_barra,
-            CORES_DETALHAMENTO_SECRETARIA[nome],
+            CORES_BARRA_SECRETARIA[nome],
             ponta_inicio=(posicao == 0),
             ponta_fim=(posicao == len(segmentos_visiveis) - 1),
             raio=altura_barra / 2,
@@ -3129,18 +3302,23 @@ def gerar_grafico_detalhamento_secretaria(df_base):
     # (Contrapartida + Complementar) + Financiamento, todos já ajustados
     # pra não contar duas vezes — garante que a barra empilhada sempre fecha
     # em 100% exatos.
-    df_resumo = (
-        df_base.groupby(["GESTAO", "SECRETARIA_LIMPA"])
-        .agg(
-            QTD=(col_objeto, "count"),
-            VALOR_CONTRATADO=(col_valor_contratado, "sum"),
-            APOIADO_AJ=(col_apoiado_ajustado, "sum"),
-            CONTRAPARTIDA_AJ=(col_contrapartida_ajustado, "sum"),
-            COMPLEMENTAR_AJ=(col_complementar_ajustado, "sum"),
-            FINANCIAMENTO_AJ=(col_financiamento_ajustado, "sum"),
-        )
-        .reset_index()
+    detalhado = tem_detalhamento_contratado(df_base)
+    agregacoes = dict(
+        QTD=(col_objeto, "count"),
+        VALOR_CONTRATADO=(col_valor_contratado, "sum"),
+        APOIADO_AJ=(col_apoiado_ajustado, "sum"),
+        CONTRAPARTIDA_AJ=(col_contrapartida_ajustado, "sum"),
+        COMPLEMENTAR_AJ=(col_complementar_ajustado, "sum"),
+        FINANCIAMENTO_AJ=(col_financiamento_ajustado, "sum"),
     )
+    if detalhado:
+        agregacoes.update(
+            APOIADO_CONTRATADO=(col_apoiado_contratado, "sum"),
+            CONTRAPARTIDA_CONTRATADA=(col_contrapartida_contratado, "sum"),
+            COMPLEMENTAR_CONTRATADO=(col_complementar_contratado, "sum"),
+            FINANCIAMENTO_CONTRATADO=(col_financiamento_contratado, "sum"),
+        )
+    df_resumo = df_base.groupby(["GESTAO", "SECRETARIA_LIMPA"]).agg(**agregacoes).reset_index()
     df_resumo["RECURSO_ESTADUAL"] = df_resumo["CONTRAPARTIDA_AJ"] + df_resumo["COMPLEMENTAR_AJ"]
     df_resumo["INVESTIMENTO"] = (
         df_resumo["VALOR_CONTRATADO"]
@@ -3148,6 +3326,16 @@ def gerar_grafico_detalhamento_secretaria(df_base):
         + df_resumo["RECURSO_ESTADUAL"]
         + df_resumo["FINANCIAMENTO_AJ"]
     )
+    if detalhado:
+        df_resumo["ESTADUAL_CONTRATADO"] = (
+            df_resumo["CONTRAPARTIDA_CONTRATADA"] + df_resumo["COMPLEMENTAR_CONTRATADO"]
+        )
+        df_resumo["NAO_DISCRIMINADO"] = (
+            df_resumo["VALOR_CONTRATADO"]
+            - df_resumo["APOIADO_CONTRATADO"]
+            - df_resumo["FINANCIAMENTO_CONTRATADO"]
+            - df_resumo["ESTADUAL_CONTRATADO"]
+        ).clip(lower=0)
     df_resumo = df_resumo[df_resumo["QTD"] > 0]
     if df_resumo.empty:
         return None
@@ -3218,6 +3406,10 @@ def gerar_grafico_detalhamento_secretaria(df_base):
                 "recursoEstadual": float(row["RECURSO_ESTADUAL"]),
                 "financiamento": float(row["FINANCIAMENTO_AJ"]),
                 "fontesFinanciamento": fontes_fin_por_grupo.get((gestao, str(row["SECRETARIA_LIMPA"])), []),
+                "valorApoiadoContratado": float(row["APOIADO_CONTRATADO"]) if detalhado else None,
+                "valorFinanciamentoContratado": float(row["FINANCIAMENTO_CONTRATADO"]) if detalhado else None,
+                "valorEstadualContratado": float(row["ESTADUAL_CONTRATADO"]) if detalhado else None,
+                "valorNaoDiscriminado": float(row["NAO_DISCRIMINADO"]) if detalhado else None,
             }
             rotulo = Paragraph(
                 f'<font name="{FONTE_PADRAO_NEGRITO}">{item["secretaria"]}</font> '
@@ -6240,18 +6432,23 @@ def _dados_pre_visualizacao(df):
     # coluna bruta "INVESTIMENTO TOTAL" da planilha), pra garantir que o
     # total da barra bate exatamente com a soma dos segmentos empilhados —
     # mesmo princípio já usado no card "INVESTIMENTO" do topo do dashboard.
-    df_sec_grp = (
-        df.groupby("SECRETARIA_LIMPA")
-        .agg(
-            QTD=(col_objeto, "count"),
-            VALOR_CONTRATADO=(col_valor_contratado, "sum"),
-            APOIADO_AJ=(col_apoiado_ajustado, "sum"),
-            CONTRAPARTIDA_AJ=(col_contrapartida_ajustado, "sum"),
-            COMPLEMENTAR_AJ=(col_complementar_ajustado, "sum"),
-            FINANCIAMENTO_AJ=(col_financiamento_ajustado, "sum"),
-        )
-        .reset_index()
+    detalhado_secretaria = tem_detalhamento_contratado(df)
+    agregacoes_sec = dict(
+        QTD=(col_objeto, "count"),
+        VALOR_CONTRATADO=(col_valor_contratado, "sum"),
+        APOIADO_AJ=(col_apoiado_ajustado, "sum"),
+        CONTRAPARTIDA_AJ=(col_contrapartida_ajustado, "sum"),
+        COMPLEMENTAR_AJ=(col_complementar_ajustado, "sum"),
+        FINANCIAMENTO_AJ=(col_financiamento_ajustado, "sum"),
     )
+    if detalhado_secretaria:
+        agregacoes_sec.update(
+            APOIADO_CONTRATADO=(col_apoiado_contratado, "sum"),
+            CONTRAPARTIDA_CONTRATADA=(col_contrapartida_contratado, "sum"),
+            COMPLEMENTAR_CONTRATADO=(col_complementar_contratado, "sum"),
+            FINANCIAMENTO_CONTRATADO=(col_financiamento_contratado, "sum"),
+        )
+    df_sec_grp = df.groupby("SECRETARIA_LIMPA").agg(**agregacoes_sec).reset_index()
     df_sec_grp["RECURSO_ESTADUAL"] = df_sec_grp["CONTRAPARTIDA_AJ"] + df_sec_grp["COMPLEMENTAR_AJ"]
     df_sec_grp["INVESTIMENTO_CALC"] = (
         df_sec_grp["VALOR_CONTRATADO"]
@@ -6259,6 +6456,16 @@ def _dados_pre_visualizacao(df):
         + df_sec_grp["RECURSO_ESTADUAL"]
         + df_sec_grp["FINANCIAMENTO_AJ"]
     )
+    if detalhado_secretaria:
+        df_sec_grp["ESTADUAL_CONTRATADO"] = (
+            df_sec_grp["CONTRAPARTIDA_CONTRATADA"] + df_sec_grp["COMPLEMENTAR_CONTRATADO"]
+        )
+        df_sec_grp["NAO_DISCRIMINADO"] = (
+            df_sec_grp["VALOR_CONTRATADO"]
+            - df_sec_grp["APOIADO_CONTRATADO"]
+            - df_sec_grp["FINANCIAMENTO_CONTRATADO"]
+            - df_sec_grp["ESTADUAL_CONTRATADO"]
+        ).clip(lower=0)
     df_sec_grp = df_sec_grp[df_sec_grp["QTD"] > 0].sort_values("INVESTIMENTO_CALC", ascending=False)
     detalhamento_secretaria = [
         {
@@ -6269,6 +6476,10 @@ def _dados_pre_visualizacao(df):
             "valorApoiadoOgu": float(r["APOIADO_AJ"]),
             "recursoEstadual": float(r["RECURSO_ESTADUAL"]),
             "financiamento": float(r["FINANCIAMENTO_AJ"]),
+            "valorApoiadoContratado": float(r["APOIADO_CONTRATADO"]) if detalhado_secretaria else None,
+            "valorFinanciamentoContratado": float(r["FINANCIAMENTO_CONTRATADO"]) if detalhado_secretaria else None,
+            "valorEstadualContratado": float(r["ESTADUAL_CONTRATADO"]) if detalhado_secretaria else None,
+            "valorNaoDiscriminado": float(r["NAO_DISCRIMINADO"]) if detalhado_secretaria else None,
         }
         for _, r in df_sec_grp.iterrows()
     ]
@@ -7831,7 +8042,7 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     )
                 )
                 elements.append(Spacer(1, 10))
-                elements.append(desenhar_legenda_detalhamento_secretaria())
+                elements.append(desenhar_legenda_detalhamento_secretaria(detalhado=tem_detalhamento_contratado(df)))
                 elements.append(Spacer(1, 10))
                 elements.append(grafico_detalhamento_financeiro)
                 elements.append(PageBreak())
@@ -8768,6 +8979,10 @@ def montar_html_painel(df_base):
             "medidorRegular": dessaturar_hex("#D9A441"),
             "medidorBom": dessaturar_hex("#9FCE9B"),
             "medidorOtimo": dessaturar_hex("#3F8F52"),
+            # Tokens CONTRATADO (cor cheia) / A CONTRATAR (clareada) por
+            # fonte — única definição, compartilhada com o PDF (ver
+            # TONS_FINANCEIRO) pelos mesmos motivos do resto desta paleta.
+            "financeiro": TONS_FINANCEIRO,
         },
         "arvoresData": {
             "DATAS_CONCLUSAO_FASE": _construir_arvore_datas(df_base, col_prazo),
@@ -12640,6 +12855,25 @@ def montar_html_painel(df_base):
     // Mesmo cinza de COR_CONTRATADO_NAO_DISCRIMINADO, no lado Python (PDF).
     "NÃO DISCRIMINADO": "#8C8C8C",
   };
+  // Tokens CONTRATADO (cor cheia) / A CONTRATAR (clareada) por fonte —
+  // mesmo dict do lado Python (TONS_FINANCEIRO), repassado pronto via
+  // paletaGraficos.financeiro pra nunca sair com tons diferentes entre o
+  // painel e o PDF. Fallback só pra arquivo de dados antigo sem a chave.
+  const TONS_FINANCEIRO = PALETA_GRAFICOS.financeiro || {
+    apoiado: { contratado: COR_AZUL, aContratar: COR_AZUL },
+    financiamento: { contratado: COR_VERMELHO, aContratar: COR_VERMELHO },
+    estadual: { contratado: COR_AMARELO, aContratar: COR_AMARELO },
+    naoDiscriminado: "#8C8C8C",
+  };
+  const CORES_BARRA_SECRETARIA = {
+    "Apoiado Contratado": TONS_FINANCEIRO.apoiado.contratado,
+    "Apoiado A Contratar": TONS_FINANCEIRO.apoiado.aContratar,
+    "Financiamento Contratado": TONS_FINANCEIRO.financiamento.contratado,
+    "Financiamento A Contratar": TONS_FINANCEIRO.financiamento.aContratar,
+    "Estadual Contratado": TONS_FINANCEIRO.estadual.contratado,
+    "Estadual A Contratar": TONS_FINANCEIRO.estadual.aContratar,
+    "Não Discriminado": TONS_FINANCEIRO.naoDiscriminado,
+  };
 
   // Chave "Detalhar contratado" do Resumo Financeiro: alterna o gráfico
   // entre a visão geral (Contratado x previsões) e o Valor Contratado
@@ -13340,6 +13574,35 @@ def montar_html_painel(df_base):
   // linha por fonte (CONTRAPARTIDA, OGU, FINANCIAMENTO etc.), com
   // quantidade, investimento, valor contratado, recurso estadual e
   // financiamento, ordenada da maior pra menor investimento.
+  // Segmentos da barra de uma secretaria — dois esquemas possíveis:
+  //   detalhado (planilha com as colunas de detalhamento do contratado):
+  //     3 pares CONTRATADO (cor cheia) / A CONTRATAR (clareada), um por
+  //     fonte, + Não Discriminado.
+  //   não detalhado (planilha antiga): Valor Contratado (1 segmento neutro
+  //     verde) + os 3 componentes a contratar, cor cheia — igual a sempre.
+  function detalhamentoSecretariaDisponivel(item) {
+    return item.valorApoiadoContratado !== null && item.valorApoiadoContratado !== undefined;
+  }
+  function segmentosSecretaria(item) {
+    if (detalhamentoSecretariaDisponivel(item)) {
+      return [
+        { nome: "Apoiado Contratado", valor: item.valorApoiadoContratado, cor: CORES_BARRA_SECRETARIA["Apoiado Contratado"] },
+        { nome: "Apoiado A Contratar", valor: item.valorApoiadoOgu, cor: CORES_BARRA_SECRETARIA["Apoiado A Contratar"] },
+        { nome: "Financiamento Contratado", valor: item.valorFinanciamentoContratado, cor: CORES_BARRA_SECRETARIA["Financiamento Contratado"] },
+        { nome: "Financiamento A Contratar", valor: item.financiamento, cor: CORES_BARRA_SECRETARIA["Financiamento A Contratar"] },
+        { nome: "Estadual Contratado", valor: item.valorEstadualContratado, cor: CORES_BARRA_SECRETARIA["Estadual Contratado"] },
+        { nome: "Estadual A Contratar", valor: item.recursoEstadual, cor: CORES_BARRA_SECRETARIA["Estadual A Contratar"] },
+        { nome: "Não Discriminado", valor: item.valorNaoDiscriminado, cor: CORES_BARRA_SECRETARIA["Não Discriminado"] },
+      ];
+    }
+    return [
+      { nome: "Valor Contratado", valor: item.valorContratado, cor: COR_VERDE },
+      { nome: "Valor Apoiado OGU", valor: item.valorApoiadoOgu, cor: COR_AZUL },
+      { nome: "Recurso Estadual", valor: item.recursoEstadual, cor: COR_AMARELO },
+      { nome: "Financiamento", valor: item.financiamento, cor: COR_VERMELHO },
+    ];
+  }
+
   function montarDetalhamentoSecretaria(lista) {
     var container = document.getElementById("preview-detalhamento-secretaria");
     container.innerHTML = "";
@@ -13348,13 +13611,26 @@ def montar_html_painel(df_base):
       return;
     }
 
+    var detalhado = detalhamentoSecretariaDisponivel(lista[0]);
     var legenda = document.createElement("div");
     legenda.className = "grafico-secretaria-legenda";
-    legenda.innerHTML =
-      '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_VERDE + ';"></span>Valor Contratado</span>' +
-      '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_AZUL + ';"></span>Valor Apoiado OGU</span>' +
-      '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_AMARELO + ';"></span>Recurso Estadual</span>' +
-      '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_VERMELHO + ';"></span>Financiamento</span>';
+    if (detalhado) {
+      legenda.innerHTML = [
+        ["Apoiado Contratado", "Apoiado A Contratar"],
+        ["Financiamento Contratado", "Financiamento A Contratar"],
+        ["Estadual Contratado", "Estadual A Contratar"],
+      ].map(function (par) {
+        return '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + CORES_BARRA_SECRETARIA[par[0]] + ';"></span>' + par[0] + '</span>' +
+          '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + CORES_BARRA_SECRETARIA[par[1]] + ';"></span>' + par[1] + '</span>';
+      }).join("") +
+        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + CORES_BARRA_SECRETARIA["Não Discriminado"] + ';"></span>Não Discriminado</span>';
+    } else {
+      legenda.innerHTML =
+        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_VERDE + ';"></span>Valor Contratado</span>' +
+        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_AZUL + ';"></span>Valor Apoiado OGU</span>' +
+        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_AMARELO + ';"></span>Recurso Estadual</span>' +
+        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_VERMELHO + ';"></span>Financiamento</span>';
+    }
     container.appendChild(legenda);
 
     var wrap = document.createElement("div");
@@ -13363,17 +13639,14 @@ def montar_html_painel(df_base):
       var linha = document.createElement("div");
       linha.className = "grafico-secretaria-linha";
       var base = item.investimento > 0 ? item.investimento : 1;
-      var segmentos = [
-        { valor: item.valorContratado, cor: COR_VERDE },
-        { valor: item.valorApoiadoOgu, cor: COR_AZUL },
-        { valor: item.recursoEstadual, cor: COR_AMARELO },
-        { valor: item.financiamento, cor: COR_VERMELHO },
-      ];
-      var segmentosHtml = segmentos
+      var segmentosHtml = segmentosSecretaria(item)
         .filter(function (s) { return s.valor > 0; })
         .map(function (s) {
           var pctSegmento = (s.valor / base) * 100;
-          return '<div class="grafico-secretaria-segmento" style="width:' + pctSegmento + '%;background:' + s.cor + ';"></div>';
+          // Borda sutil entre segmentos claros/escuros da mesma fonte —
+          // não depende só da cor pra diferenciar contratado de a
+          // contratar (acessibilidade).
+          return '<div class="grafico-secretaria-segmento" title="' + s.nome + '" style="width:' + pctSegmento + '%;background:' + s.cor + ';"></div>';
         })
         .join("");
       linha.innerHTML =
@@ -13392,12 +13665,32 @@ def montar_html_painel(df_base):
   function ativarTooltipSecretaria(linha, item) {
     linha.addEventListener("mouseenter", function () {
       var tooltip = obterTooltipObjetos();
-      tooltip.innerHTML =
-        '<div class="tooltip-objetos-titulo">' + item.secretaria + '</div>' +
-        '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Valor Contratado</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.valorContratado) + '</span></div>' +
-        '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Valor Apoiado OGU</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.valorApoiadoOgu) + '</span></div>' +
-        '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Recurso Estadual</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.recursoEstadual) + '</span></div>' +
-        '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Financiamento</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.financiamento) + '</span></div>';
+      var linhasTexto;
+      if (detalhamentoSecretariaDisponivel(item)) {
+        var categorias = [
+          ["Apoiado", item.valorApoiadoContratado, item.valorApoiadoOgu],
+          ["Financiamento", item.valorFinanciamentoContratado, item.financiamento],
+          ["Recurso Estadual", item.valorEstadualContratado, item.recursoEstadual],
+        ];
+        linhasTexto = categorias.map(function (c) {
+          var nome = c[0], contratado = c[1], aContratar = c[2];
+          var totalCategoria = contratado + aContratar;
+          var pctContratado = totalCategoria > 0 ? (contratado / totalCategoria * 100).toFixed(0) : "0";
+          var pctAContratar = totalCategoria > 0 ? (aContratar / totalCategoria * 100).toFixed(0) : "0";
+          return '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">' + nome + ' – contratado</span><span class="tooltip-objetos-valor">' + formatarMiBi(contratado) + ' (' + pctContratado + '%)</span></div>' +
+            '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">' + nome + ' – a contratar</span><span class="tooltip-objetos-valor">' + formatarMiBi(aContratar) + ' (' + pctAContratar + '%)</span></div>';
+        }).join("");
+        if (item.valorNaoDiscriminado > 0) {
+          linhasTexto += '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Não discriminado</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.valorNaoDiscriminado) + '</span></div>';
+        }
+      } else {
+        linhasTexto =
+          '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Valor Contratado</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.valorContratado) + '</span></div>' +
+          '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Valor Apoiado OGU</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.valorApoiadoOgu) + '</span></div>' +
+          '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Recurso Estadual</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.recursoEstadual) + '</span></div>' +
+          '<div class="tooltip-objetos-item"><span class="tooltip-objetos-nome">Financiamento</span><span class="tooltip-objetos-valor">' + formatarMiBi(item.financiamento) + '</span></div>';
+      }
+      tooltip.innerHTML = '<div class="tooltip-objetos-titulo">' + item.secretaria + '</div>' + linhasTexto;
       tooltip.classList.add("visivel");
       posicionarTooltipObjetos(linha);
     });
