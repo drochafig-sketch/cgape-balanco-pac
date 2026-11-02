@@ -20,9 +20,10 @@ Escopo e definições decididas com o usuário em 01/11/2026 (ver conversa):
     usada no resto do app (ver _serie_investimento_ajustado no .py original):
     Valor Contratado substitui os 4 componentes quando preenchido, pra não
     contar o mesmo dinheiro duas vezes.
-  - FINANCIAMENTO é tratado como parcela FEDERAL (junto com OGU/Apoiado) —
-    decisão do usuário, não é um fato da base (a planilha não diferencia
-    dívida do Estado com aval federal de financiamento federal direto).
+  - FINANCIAMENTO é tratado como parcela ESTADUAL (junto com Contrapartida/
+    Complementar) — decisão do usuário (atualizada em 02/11/2026; antes era
+    Federal), não é um fato da base (a planilha não diferencia dívida do
+    Estado com aval federal de financiamento federal direto).
   - Sem dado de desembolso/liberação/empenho na base: os slides NÃO fazem
     nenhuma promessa de "execução financeira" além de Contratado x A
     Contratar x Detalhamento por fonte.
@@ -365,11 +366,11 @@ def calcular_metricas(df):
     m["total_contratado"] = float(contratado.sum())
     m["total_a_contratar"] = float(a_contratar_linha.sum())
 
-    # a contratar por fonte (decisão do usuário: financiamento = Federal)
+    # a contratar por fonte (OGU/Financiamento/Estadual — sempre separados,
+    # independente de qual "parcela" cada um entra abaixo)
     m["a_contratar_ogu"] = float(apoiado_aj.sum())
     m["a_contratar_financiamento"] = float(financiamento_aj.sum())
     m["a_contratar_estadual"] = float((contrapartida_aj + complementar_aj).sum())
-    m["a_contratar_federal"] = m["a_contratar_ogu"] + m["a_contratar_financiamento"]
 
     # detalhamento do contratado (colunas novas)
     m["contratado_ogu"] = float(df[pac.col_apoiado_contratado].sum())
@@ -377,14 +378,21 @@ def calcular_metricas(df):
     m["contratado_estadual"] = float(
         (df[pac.col_contrapartida_contratado] + df[pac.col_complementar_contratado]).sum()
     )
-    m["contratado_federal"] = m["contratado_ogu"] + m["contratado_financiamento"]
     soma_detalhado = m["contratado_ogu"] + m["contratado_financiamento"] + m["contratado_estadual"]
     m["contratado_nao_discriminado"] = max(0.0, m["total_contratado"] - soma_detalhado)
     m["cobertura_detalhamento_pct"] = soma_detalhado / m["total_contratado"] if m["total_contratado"] else 0
 
-    # Federal x Estadual (geral — contratado + a contratar)
-    m["total_federal"] = m["a_contratar_federal"] + m["contratado_federal"]
-    m["total_estadual"] = m["a_contratar_estadual"] + m["contratado_estadual"]
+    # Parcela Federal x Parcela Estadual (geral — contratado + a contratar):
+    # decisão do usuário em 02/11/2026 — Financiamento passa a contar como
+    # parcela ESTADUAL (antes contava como Federal, junto com OGU). Não é um
+    # fato da base, é definição adotada só pra esta apresentação.
+    m["contratado_parcela_federal"] = m["contratado_ogu"]
+    m["a_contratar_parcela_federal"] = m["a_contratar_ogu"]
+    m["total_parcela_federal"] = m["contratado_parcela_federal"] + m["a_contratar_parcela_federal"]
+
+    m["contratado_parcela_estadual"] = m["contratado_financiamento"] + m["contratado_estadual"]
+    m["a_contratar_parcela_estadual"] = m["a_contratar_financiamento"] + m["a_contratar_estadual"]
+    m["total_parcela_estadual"] = m["contratado_parcela_estadual"] + m["a_contratar_parcela_estadual"]
 
     # contadores por status (4 categorias do padrão visual)
     concluido_mask = df["STATUS_TEXTO"].isin(["CONCLUÍDA", "INAUGURADA"])
@@ -514,20 +522,20 @@ def slide_2_composicao_origem(prs, m):
     # destaque federal x estadual
     y += 0.3
     add_rect(s, 0.9, y, 8.4, 1.6, fill=CINZA_CLARO, arredondado=True)
-    add_text(s, 1.2, y + 0.16, 7.8, 0.35, "PARCELA FEDERAL (OGU + Financiamento)*", 14, CINZA_TEXTO, negrito=True)
-    add_text(s, 1.2, y + 0.52, 7.8, 0.8, abreviar_moeda(m["total_federal"]), 32, AZUL, negrito=True)
-    add_text(s, 1.2, y + 1.18, 7.8, 0.35, pct(m["total_federal"], total) + " do investimento total", 14,
+    add_text(s, 1.2, y + 0.16, 7.8, 0.35, "PARCELA FEDERAL (OGU)", 14, CINZA_TEXTO, negrito=True)
+    add_text(s, 1.2, y + 0.52, 7.8, 0.8, abreviar_moeda(m["total_parcela_federal"]), 32, AZUL, negrito=True)
+    add_text(s, 1.2, y + 1.18, 7.8, 0.35, pct(m["total_parcela_federal"], total) + " do investimento total", 14,
               CINZA_TEXTO)
 
     add_rect(s, 9.6, y, 8.4, 1.6, fill=CINZA_CLARO, arredondado=True)
-    add_text(s, 9.9, y + 0.16, 7.8, 0.35, "PARCELA ESTADUAL (Contrapartida + Complementar)", 14, CINZA_TEXTO,
-              negrito=True)
-    add_text(s, 9.9, y + 0.52, 7.8, 0.8, abreviar_moeda(m["total_estadual"]), 32, LARANJA, negrito=True)
-    add_text(s, 9.9, y + 1.18, 7.8, 0.35, pct(m["total_estadual"], total) + " do investimento total", 14,
+    add_text(s, 9.9, y + 0.16, 7.8, 0.35, "PARCELA ESTADUAL (Financiamento + Contrapartida + Complementar)*", 14,
+              CINZA_TEXTO, negrito=True)
+    add_text(s, 9.9, y + 0.52, 7.8, 0.8, abreviar_moeda(m["total_parcela_estadual"]), 32, LARANJA, negrito=True)
+    add_text(s, 9.9, y + 1.18, 7.8, 0.35, pct(m["total_parcela_estadual"], total) + " do investimento total", 14,
               CINZA_TEXTO)
 
     add_text(s, 0.9, y + 1.85, 17.6, 0.5,
-              "* Financiamento classificado como parcela Federal por definição adotada nesta apresentação — "
+              "* Financiamento classificado como parcela Estadual por definição adotada nesta apresentação — "
               "a base não distingue dívida do Estado com aval federal de financiamento federal direto.",
               12, CINZA_TEXTO)
     return s
@@ -605,12 +613,13 @@ def slide_5_tabela_resumo_fonte(prs, m):
         tot = c_val + a_val
         linhas.append([nome, abreviar_moeda(c_val), abreviar_moeda(a_val), abreviar_moeda(tot),
                         pct(tot, total_geral)])
-    linhas.append(["SUBTOTAL FEDERAL (OGU + Financiamento)", abreviar_moeda(m["contratado_federal"]),
-                    abreviar_moeda(m["a_contratar_federal"]), abreviar_moeda(m["total_federal"]),
-                    pct(m["total_federal"], total_geral)])
-    linhas.append(["SUBTOTAL ESTADUAL", abreviar_moeda(m["contratado_estadual"]),
-                    abreviar_moeda(m["a_contratar_estadual"]), abreviar_moeda(m["total_estadual"]),
-                    pct(m["total_estadual"], total_geral)])
+    linhas.append(["SUBTOTAL FEDERAL (OGU)", abreviar_moeda(m["contratado_parcela_federal"]),
+                    abreviar_moeda(m["a_contratar_parcela_federal"]), abreviar_moeda(m["total_parcela_federal"]),
+                    pct(m["total_parcela_federal"], total_geral)])
+    linhas.append(["SUBTOTAL ESTADUAL (Financiamento + Contrapartida + Complementar)",
+                    abreviar_moeda(m["contratado_parcela_estadual"]),
+                    abreviar_moeda(m["a_contratar_parcela_estadual"]), abreviar_moeda(m["total_parcela_estadual"]),
+                    pct(m["total_parcela_estadual"], total_geral)])
     linhas.append(["TOTAL GERAL", abreviar_moeda(m["total_contratado"]), abreviar_moeda(m["total_a_contratar"]),
                     abreviar_moeda(total_geral), "100,0%"])
 
@@ -687,7 +696,7 @@ def slide_9_sintese(prs, m):
     s = novo_slide(prs, "SÍNTESE E PLEITO", 9, TOTAL_PAGINAS)
     mensagens = [
         (abreviar_moeda(m["total_a_contratar"]), "ainda precisam ser contratados para concluir a carteira do PAC-BA"),
-        (abreviar_moeda(m["a_contratar_federal"]), "desse valor dependem de fonte Federal (OGU + Financiamento)"),
+        (abreviar_moeda(m["a_contratar_parcela_federal"]), "desse valor dependem de fonte Federal (OGU)"),
         (f"{m['gestao_federal_qtd']}", "ações sob execução direta de órgãos federais na carteira"),
         (abreviar_moeda(m["valor_clausula_vigente"]), f"já contratados têm cláusula suspensiva vigente "
           f"({m['qtd_clausula_vigente']} ações) — recurso condicionado"),
@@ -854,17 +863,17 @@ def montar_html_apresentacao(df):
       </div>
       <div class="duas-colunas" style="margin-top:24px">
         <div class="cartao-destaque">
-          <div class="cd-rotulo">PARCELA FEDERAL (OGU + Financiamento)*</div>
-          <div class="cd-valor" style="color:#0B5CAD">{_html_esc(abreviar_moeda(m["total_federal"]))}</div>
-          <div class="cd-rodape">{_html_esc(pct(m["total_federal"], total_investimento))} do investimento total</div>
+          <div class="cd-rotulo">PARCELA FEDERAL (OGU)</div>
+          <div class="cd-valor" style="color:#0B5CAD">{_html_esc(abreviar_moeda(m["total_parcela_federal"]))}</div>
+          <div class="cd-rodape">{_html_esc(pct(m["total_parcela_federal"], total_investimento))} do investimento total</div>
         </div>
         <div class="cartao-destaque">
-          <div class="cd-rotulo">PARCELA ESTADUAL (Contrapartida + Complementar)</div>
-          <div class="cd-valor" style="color:#E68A00">{_html_esc(abreviar_moeda(m["total_estadual"]))}</div>
-          <div class="cd-rodape">{_html_esc(pct(m["total_estadual"], total_investimento))} do investimento total</div>
+          <div class="cd-rotulo">PARCELA ESTADUAL (Financiamento + Contrapartida + Complementar)*</div>
+          <div class="cd-valor" style="color:#E68A00">{_html_esc(abreviar_moeda(m["total_parcela_estadual"]))}</div>
+          <div class="cd-rodape">{_html_esc(pct(m["total_parcela_estadual"], total_investimento))} do investimento total</div>
         </div>
       </div>
-      <div class="nota-rodape">* Financiamento classificado como parcela Federal por definição adotada nesta
+      <div class="nota-rodape">* Financiamento classificado como parcela Estadual por definição adotada nesta
       apresentação — a base não distingue dívida do Estado com aval federal de financiamento federal direto.</div>
     ''')
 
@@ -926,12 +935,13 @@ def montar_html_apresentacao(df):
         tot = c_val + a_val
         linhas5.append([nome, abreviar_moeda(c_val), abreviar_moeda(a_val), abreviar_moeda(tot),
                          pct(tot, total_investimento)])
-    linhas5.append(["SUBTOTAL FEDERAL (OGU + Financiamento)", abreviar_moeda(m["contratado_federal"]),
-                     abreviar_moeda(m["a_contratar_federal"]), abreviar_moeda(m["total_federal"]),
-                     pct(m["total_federal"], total_investimento)])
-    linhas5.append(["SUBTOTAL ESTADUAL", abreviar_moeda(m["contratado_estadual"]),
-                     abreviar_moeda(m["a_contratar_estadual"]), abreviar_moeda(m["total_estadual"]),
-                     pct(m["total_estadual"], total_investimento)])
+    linhas5.append(["SUBTOTAL FEDERAL (OGU)", abreviar_moeda(m["contratado_parcela_federal"]),
+                     abreviar_moeda(m["a_contratar_parcela_federal"]), abreviar_moeda(m["total_parcela_federal"]),
+                     pct(m["total_parcela_federal"], total_investimento)])
+    linhas5.append(["SUBTOTAL ESTADUAL (Financiamento + Contrapartida + Complementar)",
+                     abreviar_moeda(m["contratado_parcela_estadual"]),
+                     abreviar_moeda(m["a_contratar_parcela_estadual"]), abreviar_moeda(m["total_parcela_estadual"]),
+                     pct(m["total_parcela_estadual"], total_investimento)])
     linhas5.append(["TOTAL GERAL", abreviar_moeda(m["total_contratado"]), abreviar_moeda(m["total_a_contratar"]),
                      abreviar_moeda(total_investimento), "100,0%"])
     slide5 = _html_cabecalho_rodape("TABELA-RESUMO POR FONTE", 5, total_paginas, f'''
@@ -989,7 +999,7 @@ def montar_html_apresentacao(df):
     # --- slide 9 ---
     mensagens9 = [
         (abreviar_moeda(m["total_a_contratar"]), "ainda precisam ser contratados para concluir a carteira do PAC-BA"),
-        (abreviar_moeda(m["a_contratar_federal"]), "desse valor dependem de fonte Federal (OGU + Financiamento)"),
+        (abreviar_moeda(m["a_contratar_parcela_federal"]), "desse valor dependem de fonte Federal (OGU)"),
         (f"{m['gestao_federal_qtd']}", "ações sob execução direta de órgãos federais na carteira"),
         (abreviar_moeda(m["valor_clausula_vigente"]),
          f"já contratados têm cláusula suspensiva vigente ({m['qtd_clausula_vigente']} ações) — recurso condicionado"),
