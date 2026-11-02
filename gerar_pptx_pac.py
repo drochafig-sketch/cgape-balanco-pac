@@ -84,6 +84,11 @@ COR_OGU = AZUL
 COR_FINANCIAMENTO = TEAL
 COR_ESTADUAL = LARANJA
 COR_NAO_DISCRIMINADO = "8C8C8C"
+# Variações "A CONTRATAR" (mesma família, mais claras) — ficam com o mesmo
+# valor do "cheio" até _sincronizar_cores_com_painel() rodar (ver abaixo).
+COR_OGU_CLARO = AZUL
+COR_FINANCIAMENTO_CLARO = TEAL
+COR_ESTADUAL_CLARO = LARANJA
 
 FONTE = "Roboto"
 
@@ -238,6 +243,39 @@ def barra_horizontal(slide, x, y, largura_max, altura, rotulo, valor, total, cor
               ancorar=MSO_ANCHOR.MIDDLE)
 
 
+def barra_horizontal_dupla(slide, x, y, largura_max, altura, rotulo, valor_contratado, valor_a_contratar,
+                            total, cor_cheia, cor_clara, largura_rotulo=5.4, tam_rotulo=16,
+                            largura_valor=3.6, tam_valor=16):
+    # Igual a barra_horizontal, mas o segmento colorido (proporcional ao
+    # total desta fonte sobre o total geral) é dividido em dois: CONTRATADO
+    # (cor cheia, primeiro) e A CONTRATAR (cor clara, depois) — mesma família
+    # de cor, só a tonalidade muda. Pedido do usuário em 02/11/2026.
+    total_item = valor_contratado + valor_a_contratar
+    fracao_item = (total_item / total) if total else 0
+    add_text(slide, x, y, largura_rotulo, altura, rotulo, tam_rotulo, NAVY, negrito=True,
+              ancorar=MSO_ANCHOR.MIDDLE)
+    x_barra = x + largura_rotulo + 0.2
+    largura_disponivel = largura_max - largura_rotulo - 0.2 - largura_valor - 0.15
+    add_rect(slide, x_barra, y + altura * 0.18, largura_disponivel, altura * 0.64, fill=CINZA_CLARO)
+    largura_item = largura_disponivel * fracao_item
+    if largura_item > 0:
+        fracao_contratado = (valor_contratado / total_item) if total_item else 0
+        largura_c = largura_item * fracao_contratado
+        largura_a = largura_item - largura_c
+        if largura_c > 0:
+            add_rect(slide, x_barra, y + altura * 0.18, max(largura_c, 0.03), altura * 0.64, fill=cor_cheia)
+        if largura_a > 0:
+            add_rect(slide, x_barra + largura_c, y + altura * 0.18, max(largura_a, 0.03), altura * 0.64,
+                      fill=cor_clara)
+    add_text(slide, x_barra + largura_disponivel + 0.15, y, largura_valor, altura,
+              f"{abreviar_moeda(total_item)}  ({pct(total_item, total)})", tam_valor, NAVY, negrito=True,
+              ancorar=MSO_ANCHOR.MIDDLE)
+    add_text(slide, x_barra, y + altura + 0.04, largura_disponivel + largura_valor + 0.15, 0.3,
+              f"Contratado: {abreviar_moeda(valor_contratado)} ({pct(valor_contratado, total_item)})   ·   "
+              f"A contratar: {abreviar_moeda(valor_a_contratar)} ({pct(valor_a_contratar, total_item)})",
+              12, CINZA_TEXTO)
+
+
 def tabela_nativa(slide, x, y, w, h, cabecalho, linhas, larguras=None, tam_fonte=12,
                    linha_bold_indices=None):
     linha_bold_indices = linha_bold_indices or set()
@@ -289,9 +327,30 @@ def tabela_nativa(slide, x, y, w, h, cabecalho, linhas, larguras=None, tam_fonte
 
 
 # ---------------------------------------------------------------------------
+# Cores — decisão do usuário em 02/11/2026: a apresentação deixa de ter
+# identidade própria para OGU/Financiamento/Estadual e passa a usar
+# exatamente os mesmos tons do painel/PDF (pac.TONS_FINANCEIRO), pra não
+# existir uma "cor da apresentação" diferente da "cor do painel" pra Apoiado,
+# Financiamento e Recurso Estadual. Só pode rodar depois de configurar(pac).
+# ---------------------------------------------------------------------------
+def _sincronizar_cores_com_painel():
+    global COR_OGU, COR_FINANCIAMENTO, COR_ESTADUAL, COR_NAO_DISCRIMINADO
+    global COR_OGU_CLARO, COR_FINANCIAMENTO_CLARO, COR_ESTADUAL_CLARO
+    tons = pac.TONS_FINANCEIRO
+    COR_OGU = tons["apoiado"]["contratado"].lstrip("#")
+    COR_OGU_CLARO = tons["apoiado"]["aContratar"].lstrip("#")
+    COR_FINANCIAMENTO = tons["financiamento"]["contratado"].lstrip("#")
+    COR_FINANCIAMENTO_CLARO = tons["financiamento"]["aContratar"].lstrip("#")
+    COR_ESTADUAL = tons["estadual"]["contratado"].lstrip("#")
+    COR_ESTADUAL_CLARO = tons["estadual"]["aContratar"].lstrip("#")
+    COR_NAO_DISCRIMINADO = tons["naoDiscriminado"].lstrip("#")
+
+
+# ---------------------------------------------------------------------------
 # Métricas (tudo recalculado a partir de df — nada hardcoded)
 # ---------------------------------------------------------------------------
 def calcular_metricas(df):
+    _sincronizar_cores_com_painel()
     contratado = df[pac.col_valor_contratado]
     apoiado_aj = df[pac.col_apoiado_ajustado]
     financiamento_aj = df[pac.col_financiamento_ajustado]
@@ -437,16 +496,20 @@ def slide_2_composicao_origem(prs, m):
     y = 1.9
     add_text(s, 0.9, y, 14, 0.4, "INVESTIMENTO TOTAL, POR FONTE (contratado + a contratar)", 17, CINZA_TEXTO,
               negrito=True)
+    add_text(s, 13.6, y, 4.9, 0.4, "tom forte = CONTRATADO · tom claro = A CONTRATAR", 12, CINZA_TEXTO,
+              alinhar=PP_ALIGN.RIGHT, ancorar=MSO_ANCHOR.MIDDLE)
     y += 0.65
     fontes = [
-        ("OGU (Apoiado)", m["contratado_ogu"] + m["a_contratar_ogu"], COR_OGU),
-        ("FINANCIAMENTO", m["contratado_financiamento"] + m["a_contratar_financiamento"], COR_FINANCIAMENTO),
-        ("RECURSO ESTADUAL (Contrapartida + Complementar)", m["contratado_estadual"] + m["a_contratar_estadual"],
-         COR_ESTADUAL),
+        ("OGU (Apoiado)", m["contratado_ogu"], m["a_contratar_ogu"], COR_OGU, COR_OGU_CLARO),
+        ("FINANCIAMENTO", m["contratado_financiamento"], m["a_contratar_financiamento"], COR_FINANCIAMENTO,
+         COR_FINANCIAMENTO_CLARO),
+        ("RECURSO ESTADUAL (Contrapartida + Complementar)", m["contratado_estadual"], m["a_contratar_estadual"],
+         COR_ESTADUAL, COR_ESTADUAL_CLARO),
     ]
-    for rotulo, valor, c in fontes:
-        barra_horizontal(s, 0.9, y, 17.6, 0.75, rotulo, valor, total, c, largura_rotulo=5.4)
-        y += 1.05
+    for rotulo, c_val, a_val, cheia, clara in fontes:
+        barra_horizontal_dupla(s, 0.9, y, 17.6, 0.75, rotulo, c_val, a_val, total, cheia, clara,
+                                largura_rotulo=5.4)
+        y += 1.4
 
     # destaque federal x estadual
     y += 0.3
@@ -509,9 +572,9 @@ def slide_4_a_contratar(prs, m):
     add_text(s, 0.9, y, 8, 0.35, "POR FONTE", 17, NAVY, negrito=True)
     y2 = y + 0.6
     for rotulo, valor, c in [
-        ("OGU (Apoiado)", m["a_contratar_ogu"], COR_OGU),
-        ("Financiamento", m["a_contratar_financiamento"], COR_FINANCIAMENTO),
-        ("Recurso Estadual", m["a_contratar_estadual"], COR_ESTADUAL),
+        ("OGU (Apoiado)", m["a_contratar_ogu"], COR_OGU_CLARO),
+        ("Financiamento", m["a_contratar_financiamento"], COR_FINANCIAMENTO_CLARO),
+        ("Recurso Estadual", m["a_contratar_estadual"], COR_ESTADUAL_CLARO),
     ]:
         barra_horizontal(s, 0.9, y2, 8.6, 0.7, rotulo, valor, m["total_a_contratar"], c, largura_rotulo=2.9,
                           tam_rotulo=14, largura_valor=2.5, tam_valor=14)
@@ -692,6 +755,31 @@ def _html_barra(rotulo, valor, total, cor_barra, tam_rotulo_px=280):
     </div>'''
 
 
+def _html_barra_dupla(rotulo, valor_contratado, valor_a_contratar, total, cor_cheia, cor_clara,
+                       tam_rotulo_px=340):
+    # Igual a _html_barra, mas o trecho colorido vira dois tons empilhados
+    # (CONTRATADO cheio + A CONTRATAR claro) — mesma ideia da barra dupla do
+    # PPTX (barra_horizontal_dupla). Pedido do usuário em 02/11/2026.
+    total_item = valor_contratado + valor_a_contratar
+    fracao_item = (total_item / total * 100) if total else 0
+    frac_c = (valor_contratado / total_item * 100) if total_item else 0
+    frac_a = 100 - frac_c if total_item else 0
+    return f'''<div class="barra-linha">
+      <div class="barra-rotulo" style="width:{tam_rotulo_px}px">{_html_esc(rotulo)}</div>
+      <div class="barra-trilho">
+        <div class="barra-fill-grupo" style="width:{fracao_item:.4f}%">
+          <div class="barra-fill" style="width:{frac_c:.2f}%;background:#{cor_cheia}" title="Contratado"></div>
+          <div class="barra-fill" style="width:{frac_a:.2f}%;background:#{cor_clara}" title="A contratar"></div>
+        </div>
+      </div>
+      <div class="barra-valor">{_html_esc(abreviar_moeda(total_item))}&nbsp;&nbsp;({_html_esc(pct(total_item, total))})</div>
+    </div>
+    <div class="barra-detalhe">Contratado {_html_esc(abreviar_moeda(valor_contratado))}
+      ({_html_esc(pct(valor_contratado, total_item))}) &nbsp;·&nbsp;
+      A contratar {_html_esc(abreviar_moeda(valor_a_contratar))}
+      ({_html_esc(pct(valor_a_contratar, total_item))})</div>'''
+
+
 def _html_tabela(cabecalho, linhas, linhas_bold=()):
     ths = "".join(f"<th>{_html_esc(c)}</th>" for c in cabecalho)
     trs = []
@@ -754,15 +842,15 @@ def montar_html_apresentacao(df):
     ''')
 
     # --- slide 2 ---
-    total_ogu = m["contratado_ogu"] + m["a_contratar_ogu"]
-    total_fin = m["contratado_financiamento"] + m["a_contratar_financiamento"]
-    total_est = m["contratado_estadual"] + m["a_contratar_estadual"]
     slide2 = _html_cabecalho_rodape("COMPOSIÇÃO POR ORIGEM DO RECURSO", 2, total_paginas, f'''
-      <div class="rotulo-secao">INVESTIMENTO TOTAL, POR FONTE (contratado + a contratar)</div>
+      <div class="rotulo-secao" style="display:flex;justify-content:space-between;align-items:baseline">
+        <span>INVESTIMENTO TOTAL, POR FONTE (contratado + a contratar)</span>
+        <span style="font-size:13px;font-weight:400;color:#5B6576">tom forte = CONTRATADO · tom claro = A CONTRATAR</span>
+      </div>
       <div class="bloco-barras">
-        {_html_barra("OGU (Apoiado)", total_ogu, total_investimento, "0B5CAD", 340)}
-        {_html_barra("FINANCIAMENTO", total_fin, total_investimento, "2F7F92", 340)}
-        {_html_barra("RECURSO ESTADUAL (Contrapartida + Complementar)", total_est, total_investimento, "E68A00", 340)}
+        {_html_barra_dupla("OGU (Apoiado)", m["contratado_ogu"], m["a_contratar_ogu"], total_investimento, COR_OGU, COR_OGU_CLARO, 340)}
+        {_html_barra_dupla("FINANCIAMENTO", m["contratado_financiamento"], m["a_contratar_financiamento"], total_investimento, COR_FINANCIAMENTO, COR_FINANCIAMENTO_CLARO, 340)}
+        {_html_barra_dupla("RECURSO ESTADUAL (Contrapartida + Complementar)", m["contratado_estadual"], m["a_contratar_estadual"], total_investimento, COR_ESTADUAL, COR_ESTADUAL_CLARO, 340)}
       </div>
       <div class="duas-colunas" style="margin-top:24px">
         <div class="cartao-destaque">
@@ -792,10 +880,10 @@ def montar_html_apresentacao(df):
         {_html_esc(pct(total_contratado * m["cobertura_detalhamento_pct"], total_contratado))} do valor contratado.</div>
       </div>
       <div class="bloco-barras" style="margin-top:20px">
-        {_html_barra("APOIADO (OGU) CONTRATADO", m["contratado_ogu"], total_contratado, "0B5CAD", 340)}
-        {_html_barra("FINANCIAMENTO CONTRATADO", m["contratado_financiamento"], total_contratado, "2F7F92", 340)}
-        {_html_barra("RECURSO ESTADUAL CONTRATADO", m["contratado_estadual"], total_contratado, "E68A00", 340)}
-        {_html_barra("NÃO DISCRIMINADO", m["contratado_nao_discriminado"], total_contratado, "8C8C8C", 340)}
+        {_html_barra("APOIADO (OGU) CONTRATADO", m["contratado_ogu"], total_contratado, COR_OGU, 340)}
+        {_html_barra("FINANCIAMENTO CONTRATADO", m["contratado_financiamento"], total_contratado, COR_FINANCIAMENTO, 340)}
+        {_html_barra("RECURSO ESTADUAL CONTRATADO", m["contratado_estadual"], total_contratado, COR_ESTADUAL, 340)}
+        {_html_barra("NÃO DISCRIMINADO", m["contratado_nao_discriminado"], total_contratado, COR_NAO_DISCRIMINADO, 340)}
       </div>
       <div class="caixa-pendencia">⚠ PENDÊNCIA — {m['qtd_sem_detalhamento']} ação sem nenhuma categoria de origem
       preenchida e mais ações com divergência entre Valor Contratado e o detalhamento — já sinalizadas no
@@ -813,9 +901,9 @@ def montar_html_apresentacao(df):
         <div>
           <div class="rotulo-secao" style="margin-bottom:14px">POR FONTE</div>
           <div class="bloco-barras">
-            {_html_barra("OGU (Apoiado)", m["a_contratar_ogu"], m["total_a_contratar"], "0B5CAD", 170)}
-            {_html_barra("Financiamento", m["a_contratar_financiamento"], m["total_a_contratar"], "2F7F92", 170)}
-            {_html_barra("Recurso Estadual", m["a_contratar_estadual"], m["total_a_contratar"], "E68A00", 170)}
+            {_html_barra("OGU (Apoiado)", m["a_contratar_ogu"], m["total_a_contratar"], COR_OGU_CLARO, 170)}
+            {_html_barra("Financiamento", m["a_contratar_financiamento"], m["total_a_contratar"], COR_FINANCIAMENTO_CLARO, 170)}
+            {_html_barra("Recurso Estadual", m["a_contratar_estadual"], m["total_a_contratar"], COR_ESTADUAL_CLARO, 170)}
           </div>
         </div>
         <div>
@@ -943,9 +1031,11 @@ def montar_html_apresentacao(df):
     .bloco-barras { margin-top:10px; }
     .barra-linha { display:flex; align-items:center; gap:18px; margin-bottom:16px; }
     .barra-rotulo { font-weight:700; color:#0B1F3F; font-size:17px; flex-shrink:0; }
-    .barra-trilho { flex:1; height:30px; background:#F2F4F7; border-radius:4px; overflow:hidden; }
+    .barra-trilho { flex:1; height:30px; background:#F2F4F7; border-radius:4px; overflow:hidden; display:flex; }
     .barra-fill { height:100%; }
+    .barra-fill-grupo { height:100%; display:flex; }
     .barra-valor { width:220px; text-align:right; font-weight:700; color:#0B1F3F; font-size:17px; flex-shrink:0; }
+    .barra-detalhe { margin:-8px 0 16px 358px; font-size:13px; color:#5B6576; }
     .duas-colunas { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
     .duas-colunas-desiguais { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
     .cartao-destaque { background:#F2F4F7; border-radius:10px; padding:20px 24px; }
