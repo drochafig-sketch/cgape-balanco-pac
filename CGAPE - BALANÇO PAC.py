@@ -11324,7 +11324,7 @@ def montar_html_painel(df_base):
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
       <button class="btn" id="btn-preview">DASHBOARD</button>
       <button class="btn-acento" id="btn-gerar">GERAR RELATÓRIO</button>
-      <button class="btn" id="btn-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx), com a carteira inteira — sem aplicar os filtros selecionados">ANÁLISE FINANCEIRA (PPTX)</button>
+      <button class="btn" id="btn-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx) com os filtros selecionados; os slides são escolhidos em seguida">ANÁLISE FINANCEIRA (PPTX)</button>
       <button class="btn" id="btn-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
       <button type="button" class="tema-switch" id="tema-switch-filtros" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
         <span class="tema-switch-trilho">
@@ -11459,7 +11459,7 @@ def montar_html_painel(df_base):
 <div id="paginas-overlay">
   <div id="paginas-painel">
     <div class="modal-titulo">
-      <span>Selecione as páginas do relatório</span>
+      <span id="paginas-titulo">Selecione as páginas do relatório</span>
     </div>
     <div class="paginas-acoes">
       <button class="btn-mini" id="paginas-marcar-tudo">Marcar tudo</button>
@@ -11508,7 +11508,7 @@ def montar_html_painel(df_base):
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
         <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
-        <button class="btn" id="dash-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx), com a carteira inteira — sem aplicar os filtros selecionados">ANÁLISE FINANCEIRA (PPTX)</button>
+        <button class="btn" id="dash-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx) com os filtros selecionados; os slides são escolhidos em seguida">ANÁLISE FINANCEIRA (PPTX)</button>
         <button class="btn" id="dash-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
         <button type="button" class="tema-switch" id="tema-switch-dash" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
           <span class="tema-switch-trilho">
@@ -14059,10 +14059,8 @@ def montar_html_painel(df_base):
     });
   }
 
-  // Modal do Controle de Qualidade: mesmo comportamento de antes (botao OK
-  // fica bloqueado por 10s com contagem regressiva, forcando a leitura do
-  // aviso antes de prosseguir), so que como um modal HTML em vez de uma
-  // janela Tkinter separada.
+  // Modal do Controle de Qualidade, como um modal HTML em vez de uma
+  // janela Tkinter separada. O botao OK fica liberado de imediato.
   function montarHtmlAvisoQualidade(aviso, somenteVisualizar) {
     var html = '<div class="qc-cabecalho">' + escaparHtmlFicha(aviso.cabecalho).replace(/\n/g, "<br>") + '</div>';
     aviso.grupos.forEach(function (grupo) {
@@ -14259,17 +14257,25 @@ def montar_html_painel(df_base):
     return out;
   }
 
-  function mostrarJanelaPaginas(filtros) {
+  function mostrarJanelaPaginas(filtros, opcoes) {
     // Resolve com a lista de chaves escolhidas, ou com null quando a pessoa
     // cancela (aí a geração inteira é abortada, sem abrir o "Salvar como").
+    // opcoes (usado pela apresentação; sem ele, é a janela do relatório):
+    // api, titulo, rotuloConfirmar, semColunas, unidade/unidades, contador.
+    opcoes = opcoes || {};
+    var unidade = opcoes.unidade || "página";
+    var unidades = opcoes.unidades || "páginas";
     return new Promise(async function (resolve) {
+      document.getElementById("paginas-titulo").textContent = opcoes.titulo || "Selecione as páginas do relatório";
+      document.getElementById("paginas-confirmar").textContent = opcoes.rotuloConfirmar || "GERAR PDF";
+      document.getElementById("paginas-colunas").style.display = opcoes.semColunas ? "none" : "";
       var overlay = document.getElementById("paginas-overlay");
       var grade = document.getElementById("paginas-grade");
       var contador = document.getElementById("paginas-contador");
 
       var lista;
       try {
-        lista = await chamarAPI("listar_paginas_relatorio", filtros);
+        lista = await chamarAPI(opcoes.api || "listar_paginas_relatorio", filtros);
       } catch (erro) {
         alert("Não foi possível montar a lista de páginas:" + NL + NL + erro);
         resolve(null);
@@ -14293,7 +14299,7 @@ def montar_html_painel(df_base):
 
       function atualizarContador() {
         var n = lista.secoes.filter(function (s) { return marcadas[s.chave]; }).length;
-        contador.textContent = n + " de " + lista.secoes.length + " selecionadas";
+        contador.textContent = n + " de " + lista.secoes.length + " " + (opcoes.contador || "selecionadas");
         document.getElementById("paginas-confirmar").disabled = n === 0;
       }
 
@@ -14310,10 +14316,10 @@ def montar_html_painel(df_base):
             '<div class="pagina-card-titulo">' + escaparHtmlFicha(sec.titulo) + "</div>" +
             '<div class="pagina-card-sub">' +
             (sec.paginas === null
-              ? "várias páginas"
+              ? "várias " + unidades
               : sec.paginas > 1
-              ? sec.paginas + " páginas"
-              : "1 página") +
+              ? sec.paginas + " " + unidades
+              : "1 " + unidade) +
             "</div>";
           card.onclick = function () {
             marcadas[sec.chave] = !marcadas[sec.chave];
@@ -14341,9 +14347,11 @@ def montar_html_painel(df_base):
       // janela aberta e ligar os dois atalhos. O que ficar marcado ao
       // confirmar entra no relatório porque executarGeracaoRelatorio
       // remonta os filtros depois que esta janela fecha.
-      renderizarBlocoColunas();
-      document.getElementById("paginas-colunas-padrao").onclick = colunasAplicarPadrao;
-      document.getElementById("paginas-colunas-essencial").onclick = colunasAplicarEssencial;
+      if (!opcoes.semColunas) {
+        renderizarBlocoColunas();
+        document.getElementById("paginas-colunas-padrao").onclick = colunasAplicarPadrao;
+        document.getElementById("paginas-colunas-essencial").onclick = colunasAplicarEssencial;
+      }
 
       document.getElementById("paginas-marcar-tudo").onclick = function () {
         lista.secoes.forEach(function (s) { marcadas[s.chave] = true; });
@@ -14372,9 +14380,9 @@ def montar_html_painel(df_base):
   }
 
   // somenteVisualizar: aberto pelo botão de Controle de Qualidade ao lado
-  // da lupa — é só consulta, então sem contagem regressiva, sem "Cancelar"
-  // e o OK vira "Fechar". Sem esse sinal mantém o comportamento do gate da
-  // geração do relatório (OK travado por 10s, OK/Cancelar decidem seguir).
+  // da lupa — é só consulta, então sem "Cancelar" e o OK vira "Fechar".
+  // Sem esse sinal mantém o comportamento do gate da geração do relatório
+  // (OK/Cancelar decidem seguir).
   function mostrarModalQualidade(aviso, somenteVisualizar) {
     return new Promise(function (resolve) {
       _avisoQualidadeAtual = aviso;
@@ -14399,32 +14407,17 @@ def montar_html_painel(df_base):
       });
       overlay.style.display = "flex";
 
-      var intervalo = null;
+      contagem.textContent = "";
+      btnOk.disabled = false;
       if (somenteVisualizar) {
-        contagem.textContent = "";
-        btnOk.disabled = false;
         btnOk.textContent = "Fechar";
         btnCancelar.style.display = "none";
       } else {
-        btnOk.disabled = true;
         btnOk.textContent = "OK";
         btnCancelar.style.display = "";
-        var restante = 10;
-        contagem.textContent = "Aguarde " + restante + "s...";
-        intervalo = setInterval(function () {
-          restante -= 1;
-          if (restante <= 0) {
-            clearInterval(intervalo);
-            contagem.textContent = "";
-            btnOk.disabled = false;
-          } else {
-            contagem.textContent = "Aguarde " + restante + "s...";
-          }
-        }, 1000);
       }
 
       function finalizar(confirmado) {
-        if (intervalo) clearInterval(intervalo);
         overlay.style.display = "none";
         btnOk.onclick = null;
         btnCancelar.onclick = null;
@@ -14831,8 +14824,20 @@ def montar_html_painel(df_base):
 
   // Botão "ANÁLISE FINANCEIRA (PPTX)" — aparece duas vezes (tela de
   // filtros e topo do dashboard, mesmo padrão do par btnGerar/
-  // previewGerarTopo acima) — sem passo de filtros/qualidade/seleção de
-  // páginas no meio: é sempre a carteira inteira, um clique só.
+  // previewGerarTopo acima) — com os filtros ativos no painel e a mesma
+  // janela de seleção do relatório (aqui, de slides), sem passo de qualidade.
+  function escolherSlides(filtros, rotuloConfirmar) {
+    return mostrarJanelaPaginas(filtros, {
+      api: "listar_slides_apresentacao",
+      titulo: "Selecione os slides da apresentação",
+      rotuloConfirmar: rotuloConfirmar,
+      semColunas: true,
+      unidade: "slide",
+      unidades: "slides",
+      contador: "selecionados",
+    });
+  }
+  var AVISO_RECORTE_VAZIO = "Nenhum registro encontrado para os filtros selecionados. A apresentação não será gerada.";
   const botoesGerarPPTX = [
     document.getElementById("btn-gerar-pptx"),
     document.getElementById("dash-gerar-pptx"),
@@ -14840,11 +14845,16 @@ def montar_html_painel(df_base):
   const textoOriginalBtnGerarPPTX = botoesGerarPPTX.length ? botoesGerarPPTX[0].textContent : "";
 
   async function gerarApresentacaoFinanceira() {
+    var filtros = montarFiltrosAtuais();
+    var secoes = await escolherSlides(filtros, "GERAR PPTX");
+    if (secoes === null) return;
     botoesGerarPPTX.forEach(function (b) { b.disabled = true; b.textContent = "Gerando..."; });
     try {
-      var resultado = await baixarPPTX("gerar_pptx_analise_financeira");
+      var resultado = await baixarPPTX("gerar_pptx_analise_financeira", filtros, secoes);
       if (!resultado || resultado.cancelado) return;
-      if (!resultado.ok) {
+      if (resultado.vazio) {
+        alert(AVISO_RECORTE_VAZIO);
+      } else if (!resultado.ok) {
         alert(resultado.erro || "Não foi possível gerar a apresentação.");
       }
     } catch (erro) {
@@ -14864,11 +14874,16 @@ def montar_html_painel(df_base):
   const textoOriginalBtnVerHTML = botoesVerHTML.length ? botoesVerHTML[0].textContent : "";
 
   async function verApresentacaoHtml() {
+    var filtros = montarFiltrosAtuais();
+    var secoes = await escolherSlides(filtros, "VER APRESENTAÇÃO");
+    if (secoes === null) return;
     botoesVerHTML.forEach(function (b) { b.disabled = true; b.textContent = "Gerando..."; });
     try {
-      var resultado = await baixarHTML("visualizar_html_analise_financeira");
+      var resultado = await baixarHTML("visualizar_html_analise_financeira", filtros, secoes);
       if (!resultado || resultado.cancelado) return;
-      if (!resultado.ok) {
+      if (resultado.vazio) {
+        alert(AVISO_RECORTE_VAZIO);
+      } else if (!resultado.ok) {
         alert(resultado.erro || "Não foi possível gerar a apresentação em HTML.");
       }
     } catch (erro) {
@@ -15247,17 +15262,17 @@ def _api_gerar_pdf_bytes(filtros, secoes=None):
             pass
 
 
-def _construir_pptx_analise_financeira_bytes():
-    # Monta o PPTX de Análise Financeira do PAC (ver gerar_pptx_pac.py) a
-    # partir da base JÁ carregada neste processo — configurar(sys.modules
-    # [__name__]) injeta "este módulo em execução" no script, que o usa
-    # exatamente como usaria o "pac" do seu próprio bootstrap standalone
-    # (col_valor_contratado, agora_bahia, _campos_alerta_qualidade etc.),
-    # sem reler a planilha nem reexecutar este arquivo inteiro de novo.
+def _modulo_apresentacao():
+    # Módulo da Análise Financeira do PAC (ver gerar_pptx_pac.py) já ligado à
+    # base carregada neste processo — configurar(sys.modules[__name__]) injeta
+    # "este módulo em execução" no script, que o usa exatamente como usaria o
+    # "pac" do seu próprio bootstrap standalone (col_valor_contratado,
+    # agora_bahia, _campos_alerta_qualidade etc.), sem reler a planilha nem
+    # reexecutar este arquivo inteiro de novo.
     # Import adiado (não no topo do arquivo): python-pptx é uma dependência
-    # nova, só deste botão — se não estiver instalada (ex.: num rebuild do
+    # nova, só destes botões — se não estiver instalada (ex.: num rebuild do
     # .exe esquecido de atualizar o ambiente), o resto do painel continua
-    # funcionando normalmente; só este botão volta um erro claro.
+    # funcionando normalmente; só estes botões voltam um erro claro.
     try:
         import gerar_pptx_pac
     except ImportError as erro:
@@ -15268,50 +15283,75 @@ def _construir_pptx_analise_financeira_bytes():
         ) from erro
 
     gerar_pptx_pac.configurar(sys.modules[__name__])
-    conteudo, _metricas = gerar_pptx_pac.gerar_pptx_bytes(df_original)
+    return gerar_pptx_pac
+
+
+def _construir_pptx_analise_financeira_bytes(filtros=None, secoes=None):
+    modulo = _modulo_apresentacao()
+    conteudo, _metricas = modulo.gerar_pptx_bytes(_df_analise_financeira(filtros), filtros, secoes)
     return conteudo
 
 
-def _api_gerar_pptx_analise_financeira_bytes():
+def _api_listar_slides_apresentacao(filtros=None):
+    # Alimenta a janela de seleção de slides (mesma do relatório gerencial).
+    try:
+        return {"ok": True, "secoes": _modulo_apresentacao().listar_slides(_df_analise_financeira(filtros))}
+    except RecorteVazioErro:
+        return {"ok": False, "vazio": True}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
+class RecorteVazioErro(Exception):
+    pass
+
+
+def _df_analise_financeira(filtros):
+    # A apresentação segue os filtros ativos no painel, igual ao relatório
+    # PDF (pedido do usuário em 03/11/2026; antes era sempre a base inteira).
+    # Sem filtros (chamada antiga, sem argumento) = base inteira.
+    if not filtros:
+        return df_original
+    df = _filtrar_dataframe(filtros)
+    if df.empty:
+        raise RecorteVazioErro()
+    return df
+
+
+def _api_gerar_pptx_analise_financeira_bytes(filtros=None, secoes=None):
     # Equivalente web do botão "ANÁLISE FINANCEIRA (PPTX)" — mesmo padrão de
     # _api_gerar_pdf_bytes: gera tudo em memória e devolve os bytes prontos
-    # pro navegador baixar (ver servidor_web.py). Sempre usa a base INTEIRA
-    # (sem filtro), por desenho: é uma leitura de carteira completa pensada
-    # pra apresentação ao Governo Federal, não um recorte ad-hoc.
+    # pro navegador baixar (ver servidor_web.py), já com os filtros do painel.
     try:
-        conteudo = _construir_pptx_analise_financeira_bytes()
+        conteudo = _construir_pptx_analise_financeira_bytes(filtros, secoes)
+    except RecorteVazioErro:
+        return {"ok": False, "vazio": True}
     except Exception as erro:
         return {"ok": False, "erro": str(erro)}
     return {"ok": True, "nome_arquivo": nome_arquivo_pptx_analise_financeira, "conteudo": conteudo}
 
 
-def _construir_html_analise_financeira_bytes():
+def _construir_html_analise_financeira_bytes(filtros=None, secoes=None):
     # Mesma ideia de _construir_pptx_analise_financeira_bytes, mas pra
     # versão HTML da apresentação (ver montar_html_apresentacao em
     # gerar_pptx_pac.py) — existe porque texto em caixa de tamanho fixo do
     # PPTX precisa de fonte calculada à mão pra não estourar; no HTML o
     # navegador quebra linha e redimensiona sozinho, então serve como
     # conferência visual rápida sem precisar abrir PowerPoint/Canva.
-    try:
-        import gerar_pptx_pac
-    except ImportError as erro:
-        raise RuntimeError(
-            "Dependência 'python-pptx' não encontrada neste ambiente. "
-            "Rode 'pip install -r requirements.txt' (desktop) ou "
-            "'pip install -r requirements-web.txt' (servidor web) e tente de novo."
-        ) from erro
-
-    gerar_pptx_pac.configurar(sys.modules[__name__])
-    return gerar_pptx_pac.gerar_html_bytes(df_original)
+    return _modulo_apresentacao().gerar_html_bytes(_df_analise_financeira(filtros), filtros, secoes)
 
 
-def _api_gerar_html_analise_financeira_bytes():
+def _api_gerar_html_analise_financeira_bytes(filtros=None, secoes=None):
     # Equivalente web do botão "VER APRESENTAÇÃO (HTML)" — mesmo padrão de
     # _api_gerar_pptx_analise_financeira_bytes, só que o navegador abre o
     # HTML direto numa aba (ver abrirEmNovaAba em baixarArquivoBinario),
     # sem forçar download.
     try:
-        conteudo = _construir_html_analise_financeira_bytes()
+        conteudo = _construir_html_analise_financeira_bytes(filtros, secoes)
+    except RecorteVazioErro:
+        return {"ok": False, "vazio": True}
     except Exception as erro:
         return {"ok": False, "erro": str(erro)}
     return {"ok": True, "nome_arquivo": "ANALISE_FINANCEIRA_PAC.html", "conteudo": conteudo}
@@ -15426,13 +15466,19 @@ def abrir_interface_filtros(df_base):
                 traceback.print_exc()
                 return {"ok": False, "erro": str(erro)}
 
-        def gerar_pptx_analise_financeira(self):
+        def listar_slides_apresentacao(self, filtros=None):
+            return _api_listar_slides_apresentacao(filtros)
+
+        def gerar_pptx_analise_financeira(self, filtros=None, secoes=None):
             # Botão "ANÁLISE FINANCEIRA (PPTX)" no modo desktop — mesmo
             # padrão de exportar_ficha_pdf: diálogo nativo já na pasta
             # Downloads, com o nome sugerido, e abre o arquivo assim que
             # salvo. O equivalente web é _api_gerar_pptx_analise_financeira_
             # bytes, que devolve os bytes em vez de salvar direto no disco.
             try:
+                # recorte vazio avisa antes de abrir o diálogo de salvar
+                if filtros and _filtrar_dataframe(filtros).empty:
+                    return {"ok": False, "vazio": True}
                 pasta_inicial = (
                     PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
                 )
@@ -15453,7 +15499,7 @@ def abrir_interface_filtros(df_base):
                 if not caminho_escolhido.lower().endswith(".pptx"):
                     caminho_escolhido += ".pptx"
 
-                conteudo = _construir_pptx_analise_financeira_bytes()
+                conteudo = _construir_pptx_analise_financeira_bytes(filtros, secoes)
                 with open(caminho_escolhido, "wb") as f:
                     f.write(conteudo)
                 if os.name == "nt":
@@ -15464,14 +15510,14 @@ def abrir_interface_filtros(df_base):
                 traceback.print_exc()
                 return {"ok": False, "erro": str(erro)}
 
-        def visualizar_html_analise_financeira(self):
+        def visualizar_html_analise_financeira(self, filtros=None, secoes=None):
             # Botão "VER APRESENTAÇÃO (HTML)" no modo desktop — sem diálogo
             # de salvar: é só uma conferência visual rápida, então grava
             # sempre no mesmo arquivo (sobrescreve a cada clique) e abre
             # direto no navegador padrão. Quem quiser guardar/enviar o
             # arquivo pode "Salvar como" dali do próprio navegador.
             try:
-                conteudo = _construir_html_analise_financeira_bytes()
+                conteudo = _construir_html_analise_financeira_bytes(filtros, secoes)
                 pasta_destino = (
                     PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
                 )
@@ -15481,6 +15527,8 @@ def abrir_interface_filtros(df_base):
                 if os.name == "nt":
                     os.startfile(caminho_html)
                 return {"ok": True, "arquivo": caminho_html}
+            except RecorteVazioErro:
+                return {"ok": False, "vazio": True}
             except Exception as erro:
                 import traceback
                 traceback.print_exc()

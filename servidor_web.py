@@ -146,6 +146,11 @@ app.add_url_rule(
     methods=["POST"],
 )
 app.add_url_rule(
+    "/api/listar_slides_apresentacao",
+    view_func=_rota_json(pac._api_listar_slides_apresentacao),
+    methods=["POST"],
+)
+app.add_url_rule(
     "/api/gerar_pptx_analise_financeira",
     view_func=_rota_binario(
         pac._api_gerar_pptx_analise_financeira_bytes,
