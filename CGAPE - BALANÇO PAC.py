@@ -294,6 +294,14 @@ def tem_detalhamento_contratado(df):
     )
 
 col_empresa_contratada = "EMPRESA CONTRATADA"
+# Cópias do que está na planilha, antes da regra de contratação (ver o ETL)
+COLUNAS_CONTRATADO_PLANILHA = {
+    coluna: f"_PLANILHA {coluna}"
+    for coluna in (
+        col_valor_contratado, col_apoiado_contratado, col_contrapartida_contratado,
+        col_complementar_contratado, col_financiamento_contratado,
+    )
+}
 col_financiamento_ajustado = "FINANCIAMENTO AJUSTADO"
 col_apoiado_ajustado = "APOIADO AJUSTADO"
 col_contrapartida_ajustado = "CONTRAPARTIDA AJUSTADO"
@@ -1481,6 +1489,16 @@ def _texto_vazio(valor):
     texto = str(valor).strip()
     return not texto or texto.upper() in ("NAN", "NAT", "NONE")
 
+def _linha_valores_da_planilha(row):
+    # A linha com o VALOR CONTRATADO e o detalhamento como estão na planilha,
+    # antes da regra de contratação (ver o ETL): o Controle de
+    # Qualidade e a Ficha conferem o cadastro, não o valor usado nos cálculos.
+    linha = row.copy()
+    for coluna, coluna_planilha in COLUNAS_CONTRATADO_PLANILHA.items():
+        if coluna_planilha in row.index:
+            linha[coluna] = row[coluna_planilha]
+    return linha
+
 def _valor_contratado_vazio(valor):
     # Verdadeiro quando o VALOR CONTRATADO está em branco ou zerado — campo
     # numérico (moeda), não usa _texto_vazio (que é pra campos de texto).
@@ -1513,10 +1531,12 @@ def _montar_dados_ficha_acao(row):
     def campo(coluna):
         return _texto_campo_ficha(row, coluna)
 
+    linha_planilha = _linha_valores_da_planilha(row)
+
     def valor_moeda(coluna):
         if coluna not in row.index:
             return ""
-        v = row[coluna]
+        v = linha_planilha[coluna]
         if v is None or (isinstance(v, float) and pd.isna(v)):
             return ""
         try:
@@ -1559,7 +1579,7 @@ def _montar_dados_ficha_acao(row):
         # — ela pode não estar sincronizada linha a linha com os componentes
         # acima. Usa a MESMA regra ajustada do resto do relatório gerencial
         # (ver _serie_investimento_ajustado): Valor Contratado substitui
-        # Financiamento/Apoiado/Contrapartida/Complementar quando preenchido,
+        # Financiamento/Apoiado/Contrapartida/Complementar em ação contratada,
         # pra não contar o mesmo dinheiro duas vezes. Sem isso, a Ficha
         # Técnica mostrava um total diferente do card/tabela do dashboard
         # para a mesma ação.
@@ -5661,20 +5681,28 @@ for _col_contratado_detalhe in (
     if _col_contratado_detalhe in df.columns:
         df[_col_contratado_detalhe] = df[_col_contratado_detalhe].apply(converter_valor)
 
-# Colunas auxiliares condicionais: se VALOR CONTRATADO > 0, o valor ajustado é zero;
-# caso contrário, mantém o valor original da coluna.
-df[col_financiamento_ajustado] = np.where(
-    df[col_valor_contratado] > 0, 0, df[col_financiamento]
-)
-df[col_apoiado_ajustado] = np.where(
-    df[col_valor_contratado] > 0, 0, df[col_apoiado]
-)
-df[col_contrapartida_ajustado] = np.where(
-    df[col_valor_contratado] > 0, 0, df[col_contrapartida]
-)
-df[col_complementar_ajustado] = np.where(
-    df[col_valor_contratado] > 0, 0, df[col_complementar]
-)
+# Regra de contratação (decisão do usuário em 06/11/2026): a ação está
+# contratada (Termo de Compromisso firmado) quando tem o Nº DO TERMO DE COMP.
+# (TC) / CT FINANCIAMENTO preenchido, com qualquer texto, E VALOR CONTRATADO
+# maior que zero. Qualquer outro caso é a contratar, pelo planejado de cada
+# fonte. Daqui em diante, VALOR CONTRATADO, o detalhamento por fonte e as colunas
+# AJUSTADO refletem essa regra em todo o projeto. O que está de fato na planilha
+# fica em COLUNAS_CONTRATADO_PLANILHA, para o Controle de Qualidade e a Ficha
+# Cadastral (ver _linha_valores_da_planilha).
+for _coluna, _coluna_planilha in COLUNAS_CONTRATADO_PLANILHA.items():
+    if _coluna in df.columns:
+        df[_coluna_planilha] = df[_coluna]
+
+_contratada = (df[col_tc].apply(classificar_termo_compromisso) == "SIM") & (df[col_valor_contratado] > 0)
+
+for _coluna in COLUNAS_CONTRATADO_PLANILHA:
+    if _coluna in df.columns:
+        df[_coluna] = np.where(_contratada, df[_coluna], 0.0)
+
+df[col_financiamento_ajustado] = np.where(_contratada, 0, df[col_financiamento])
+df[col_apoiado_ajustado] = np.where(_contratada, 0, df[col_apoiado])
+df[col_contrapartida_ajustado] = np.where(_contratada, 0, df[col_contrapartida])
+df[col_complementar_ajustado] = np.where(_contratada, 0, df[col_complementar])
 
 df["STATUS_ORDEM"] = df[col_status].apply(extrair_ordem_status)
 df["STATUS_TEXTO"] = df[col_status].apply(limpar_texto_status).astype(str).str.strip()
@@ -5735,9 +5763,9 @@ STATUS_PADRAO_SELECIONADOS = {
 
 def _serie_investimento_ajustado(df):
     # Investimento AJUSTADO por linha — mesma regra usada em todo o
-    # relatório: Valor Contratado substitui Financiamento/Apoiado/
-    # Contrapartida/Complementar quando preenchido, evitando contar duas
-    # vezes. Devolve uma Series alinhada ao índice de df, pra usar em
+    # relatório: em ação contratada (Nº do TC e Valor Contratado), Valor Contratado
+    # substitui Financiamento/Apoiado/Contrapartida/Complementar, evitando
+    # contar duas vezes. Devolve uma Series alinhada ao índice de df, pra usar em
     # qualquer groupby/agg no lugar da coluna bruta "INVESTIMENTO TOTAL"
     # (que pode não estar sincronizada linha a linha com esses
     # componentes).
@@ -5909,6 +5937,7 @@ def _construir_arvore_datas(df, coluna):
 LIMITE_LISTA_BUSCA_FICHA = 50
 
 def _campos_alerta_qualidade(row, hoje=None):
+    row = _linha_valores_da_planilha(row)
     # Mesma lógica de detecção usada no painel de Controle de Qualidade
     # (_montar_aviso_qualidade), só que aplicada a UMA linha só — devolve
     # um dict {chave_do_campo_na_ficha: motivo} com os campos que
@@ -6246,8 +6275,10 @@ def _montar_aviso_qualidade(df):
             col_complementar_contratado, col_financiamento_contratado,
         )
         if all(c in df.columns for c in _colunas_detalhamento_contratado):
-            _total_valor_contratado = float(df[col_valor_contratado].sum())
-            _total_detalhamento = float(sum(df[c].sum() for c in _colunas_detalhamento_contratado))
+            _total_valor_contratado = float(df[COLUNAS_CONTRATADO_PLANILHA[col_valor_contratado]].sum())
+            _total_detalhamento = float(
+                sum(df[COLUNAS_CONTRATADO_PLANILHA[c]].sum() for c in _colunas_detalhamento_contratado)
+            )
             # moeda_texto_puro, não moeda_sem_quebra: este texto passa pelo
             # escaparHtmlFicha do JS (pensado pra texto cru da planilha), que
             # escapa o "&" do "&nbsp;" e o exibe como texto literal em vez de

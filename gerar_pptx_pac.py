@@ -535,111 +535,103 @@ def calcular_metricas(df):
 # ---------------------------------------------------------------------------
 # Slides
 # ---------------------------------------------------------------------------
-# Faixa do slide Visão Geral (pedido do usuário em 05/11/2026): acima da barra
-# Contratado x A Contratar, metade da espessura dela e alinhada com ela, abre
-# cada status nas fontes (tom forte = contratado, tom claro = a contratar). O
-# valor só aparece se couber no segmento; as cores estão na legenda.
-ROTULO_DESTAQUE_FINANCIAMENTO = "FINANCIAMENTO A CONTRATAR"
-ALT_FAIXA_FONTES = 0.45
-FOLGA_FAIXA_FONTES = 0.03
-ROTULOS_FAIXA_FONTES = {"ogu": "OGU", "financiamento": "Financiamento", "estadual": "Estadual",
-                        "nao_discriminado": "Não discriminado"}
+# Topo do slide Visão Geral (print do usuário em 06/11/2026): investimento total
+# à esquerda; à direita, Recursos a Contratar aberto por fonte. A barra passa a
+# falar em Termo de Compromisso, que é o que define contratado x a contratar.
+ROTULO_RECURSOS_A_CONTRATAR = "RECURSOS COM T.C. NÃO FIRMADO"
+X_RECURSOS_A_CONTRATAR = 13.2
+LARG_RECURSOS_A_CONTRATAR = 5.3
+ALT_LINHA_RECURSOS = 0.42
+ALT_TOPO_VISAO_GERAL = 2.55
+LARG_BARRA_VISAO_GERAL = 17.6
 
 
-def _segmentos_faixa_fontes(m):
-    # [(texto, cor de fundo, cor do texto, fração da barra), ...]. Saldo negativo
-    # do Não discriminado fica de fora: cada status se divide entre as fontes positivas.
-    total = m["total_investimento"]
-    fontes = _fontes_por_fase(m)
-    if total <= 0:
-        return []
-    segmentos = []
-    for indice_valor, indice_cor, cor_texto, total_status in ((4, 2, BRANCO, m["total_contratado"]),
-                                                              (5, 3, NAVY, m["total_a_contratar"])):
-        positivos = sum(max(f[indice_valor], 0) for f in fontes)
-        for fonte in fontes:
-            valor = fonte[indice_valor]
-            if valor > 0 and positivos > 0 and total_status > 0:
-                fracao = total_status / total * valor / positivos
-                segmentos.append((_texto_segmento_faixa(fonte[1], valor, 17.6 * fracao), fonte[indice_cor], cor_texto,
-                                  fracao))
-    return segmentos
+def _linhas_recursos_a_contratar(m):
+    # Na ordem do print; fonte sem valor no recorte não aparece
+    linhas = []
+    for valor, rotulo in ((m["a_contratar_financiamento"], "Financiamento"), (m["a_contratar_ogu"], "OGU"),
+                          (m["a_contratar_estadual"], "Recurso Estadual")):
+        if abreviar_moeda(valor) != "-":
+            linhas.append(f"{abreviar_moeda(valor)} · {rotulo}")
+    return linhas
 
 
-def _texto_segmento_faixa(chave, valor, largura_pol):
-    # Largura estimada pra fonte de 13 pt; a mesma decisão vale pro PPTX e pro HTML
-    for texto in (f"{ROTULOS_FAIXA_FONTES[chave]} · {abreviar_moeda(valor)}", abreviar_moeda(valor)):
-        if len(texto) * 0.095 + 0.2 <= largura_pol:
+def _desenhar_recursos_a_contratar(s, m, y, tam_valor, alt_valor):
+    if abreviar_moeda(m["total_a_contratar"]) == "-":
+        return
+    x, largura = X_RECURSOS_A_CONTRATAR, LARG_RECURSOS_A_CONTRATAR
+    add_text(s, x, y, largura, 0.5, ROTULO_RECURSOS_A_CONTRATAR, 18, CINZA_TEXTO, negrito=True,
+              alinhar=PP_ALIGN.RIGHT)
+    add_text(s, x, y + 0.35, largura, alt_valor + 0.1, abreviar_moeda(m["total_a_contratar"]), tam_valor, LARANJA,
+              negrito=True, alinhar=PP_ALIGN.RIGHT)
+    y_linha = y + 0.35 + alt_valor
+    for linha in _linhas_recursos_a_contratar(m):
+        add_text(s, x, y_linha, largura, ALT_LINHA_RECURSOS, linha, 22, LARANJA, negrito=True,
+                  alinhar=PP_ALIGN.RIGHT, ancorar=MSO_ANCHOR.MIDDLE)
+        y_linha += ALT_LINHA_RECURSOS
+
+
+def _texto_barra_termo(longo, curto, valor, largura_pol):
+    # Texto do segmento da barra; encurta se não couber (recortes com poucos
+    # contratos) e some se o valor for zero. A mesma decisão vale pro PPTX e o HTML.
+    moeda = abreviar_moeda(valor)
+    if moeda == "-":
+        return ""
+    for texto in (f"{longo} · {moeda}", f"{curto} · {moeda}", moeda):
+        if len(texto) * 0.135 + 0.3 <= largura_pol:
             return texto
     return ""
 
 
-def _fontes_legenda_faixa(m):
-    # (rótulo, cor) só das fontes que têm segmento na faixa
-    return [(ROTULOS_FAIXA_FONTES[f[1]], f[2]) for f in _fontes_por_fase(m) if f[4] > 0 or f[5] > 0]
-
-
-def _desenhar_legenda_faixa(s, m, y):
-    x = 18.5
-    for rotulo, cheia in reversed(_fontes_legenda_faixa(m)):
-        largura = len(rotulo) * 0.1 + 0.3
-        x -= largura
-        add_text(s, x, y, largura, 0.3, rotulo, 13, CINZA_TEXTO, ancorar=MSO_ANCHOR.MIDDLE)
-        x -= 0.22
-        add_rect(s, x, y + 0.07, 0.16, 0.16, fill=cheia)
-        x -= 0.2
-
-
-def _desenhar_faixa_fontes(s, m, y):
-    x = 0.9
-    for texto, fundo, cor_texto, fracao in _segmentos_faixa_fontes(m):
-        largura = 17.6 * fracao
-        add_rect(s, x, y, largura, ALT_FAIXA_FONTES, fill=fundo)
-        if texto:
-            add_text(s, x + 0.05, y, largura - 0.05, ALT_FAIXA_FONTES, texto, 13, cor_texto, negrito=True,
-                      ancorar=MSO_ANCHOR.MIDDLE)
-        x += largura
+def _barra_termo_compromisso(m):
+    # ((texto, percentual, fração da barra) do firmado, (idem) do não firmado)
+    total = m["total_investimento"]
+    fc = m["total_contratado"] / total if total else 0
+    return (
+        (_texto_barra_termo("TERMO DE COMPROMISSO FIRMADO", "T.C. FIRMADO", m["total_contratado"], LARG_BARRA_VISAO_GERAL * fc),
+         pct(m["total_contratado"], total), fc),
+        (_texto_barra_termo("TERMO DE COMPROMISSO NÃO FIRMADO", "T.C. NÃO FIRMADO", m["total_a_contratar"],
+                            LARG_BARRA_VISAO_GERAL * (1 - fc)),
+         pct(m["total_a_contratar"], total), 1 - fc),
+    )
 
 
 def _desenhar_panorama(s, m, y, compacto=False):
     # Investimento total, barra contratado x a contratar e cards de status. A
-    # versão compacta é a do slide Visão Geral, abaixo do quadro por fase.
+    # versão compacta é a do slide Visão Geral, abaixo do quadro por fase, com
+    # o bloco Recursos a Contratar e a barra em termos de Termo de Compromisso.
     tam_valor, alt_valor = (44, 0.85) if compacto else (60, 1.2)
     add_text(s, 0.9, y, 10, 0.5, "INVESTIMENTO TOTAL DA CARTEIRA", 18 if compacto else 16, CINZA_TEXTO, negrito=True)
     add_text(s, 0.9, y + 0.35, 10, alt_valor + 0.1, abreviar_moeda(m["total_investimento"]), tam_valor, VERDE,
               negrito=True)
-    if compacto and abreviar_moeda(m["a_contratar_financiamento"]) != "-":
-        # Destaque pedido pelo usuário em 06/11/2026; some se o recorte não tiver esse valor
-        add_text(s, 10.5, y, 8.0, 0.5, ROTULO_DESTAQUE_FINANCIAMENTO, 18, CINZA_TEXTO, negrito=True,
-                  alinhar=PP_ALIGN.RIGHT)
-        add_text(s, 10.5, y + 0.35, 8.0, alt_valor + 0.1, abreviar_moeda(m["a_contratar_financiamento"]), tam_valor,
-                  COR_FINANCIAMENTO, negrito=True, alinhar=PP_ALIGN.RIGHT)
-    y_texto = y + 0.35 + alt_valor
-    add_text(s, 0.9, y_texto, 10, 0.4, f"{m['qtd_acoes']} ações do PAC acompanhadas pelo Estado da Bahia",
-              16 if compacto else 14, CINZA_TEXTO)
-
-    # barra empilhada contratado x a contratar
-    y_barra = y_texto + 0.85
-    add_text(s, 0.9, y_barra - 0.45, 6, 0.35, "CONTRATADO  x  A CONTRATAR", 17, NAVY, negrito=True)
     if compacto:
-        _desenhar_legenda_faixa(s, m, y_barra - 0.4)
-        _desenhar_faixa_fontes(s, m, y_barra)
-        y_barra += ALT_FAIXA_FONTES + FOLGA_FAIXA_FONTES
-    largura_barra = 17.6 if compacto else 17.0
+        _desenhar_recursos_a_contratar(s, m, y, tam_valor, alt_valor)
+        y_barra = y + ALT_TOPO_VISAO_GERAL
+    else:
+        y_texto = y + 0.35 + alt_valor
+        add_text(s, 0.9, y_texto, 10, 0.4, f"{m['qtd_acoes']} ações do PAC acompanhadas pelo Estado da Bahia", 14,
+                  CINZA_TEXTO)
+        # barra empilhada contratado x a contratar
+        y_barra = y_texto + 0.85
+        add_text(s, 0.9, y_barra - 0.45, 6, 0.35, "T.C. FIRMADO  x  T.C. NÃO FIRMADO", 17, NAVY, negrito=True)
+    largura_barra = LARG_BARRA_VISAO_GERAL if compacto else 17.0
     x0 = 0.9
     frac_contratado = m["total_contratado"] / m["total_investimento"] if m["total_investimento"] else 0
-    add_rect(s, x0, y_barra, largura_barra * frac_contratado, 0.9, fill=VERDE)
-    add_rect(s, x0 + largura_barra * frac_contratado, y_barra, largura_barra * (1 - frac_contratado), 0.9,
-              fill=LARANJA)
-    add_text(s, x0 + 0.15, y_barra + 0.1, 6, 0.35, f"CONTRATADO · {abreviar_moeda(m['total_contratado'])}", 17,
-              BRANCO, negrito=True)
-    add_text(s, x0 + 0.15, y_barra + 0.5, 6, 0.3, pct(m["total_contratado"], m["total_investimento"]), 15,
-              BRANCO)
-    x_txt2 = x0 + largura_barra * frac_contratado + 0.15
-    add_text(s, x_txt2, y_barra + 0.1, 7, 0.35, f"A CONTRATAR · {abreviar_moeda(m['total_a_contratar'])}", 17,
-              BRANCO, negrito=True)
-    add_text(s, x_txt2, y_barra + 0.5, 7, 0.3, pct(m["total_a_contratar"], m["total_investimento"]), 15,
-              BRANCO)
+    largura_1 = largura_barra * frac_contratado
+    add_rect(s, x0, y_barra, largura_1, 0.9, fill=VERDE)
+    add_rect(s, x0 + largura_1, y_barra, largura_barra * (1 - frac_contratado), 0.9, fill=LARANJA)
+    if compacto:
+        (texto_1, pct_1, _), (texto_2, pct_2, frac_2) = _barra_termo_compromisso(m)
+        larg_texto_1, larg_texto_2 = largura_1 - 0.2, largura_barra * frac_2 - 0.2
+    else:
+        texto_1, pct_1 = f"T.C. FIRMADO · {abreviar_moeda(m['total_contratado'])}", pct(m["total_contratado"], m["total_investimento"])
+        texto_2, pct_2 = f"T.C. NÃO FIRMADO · {abreviar_moeda(m['total_a_contratar'])}", pct(m["total_a_contratar"], m["total_investimento"])
+        larg_texto_1, larg_texto_2 = 6, 7
+    for x_texto, largura_texto, texto, percentual in ((x0 + 0.15, larg_texto_1, texto_1, pct_1),
+                                                      (x0 + largura_1 + 0.15, larg_texto_2, texto_2, pct_2)):
+        if texto:
+            add_text(s, x_texto, y_barra + 0.1, largura_texto, 0.35, texto, 17, BRANCO, negrito=True)
+            add_text(s, x_texto, y_barra + 0.5, largura_texto, 0.3, percentual, 15, BRANCO)
 
     # contadores por status
     y_cards = y_barra + (1.1 if compacto else 1.5)
@@ -698,7 +690,7 @@ def slide_2_composicao_origem(prs, m):
 
 # Textos e linhas do slide de fases — compartilhados entre PPTX e HTML pra
 # os dois saírem com exatamente os mesmos rótulos e números.
-LEGENDA_FASES = "tom forte = CONTRATADO · tom claro = A CONTRATAR"
+LEGENDA_FASES = "tom forte = T.C. FIRMADO · tom claro = T.C. NÃO FIRMADO"
 
 
 def _fontes_por_fase(m):
@@ -712,7 +704,7 @@ def _fontes_por_fase(m):
          m["contratado_financiamento"], m["a_contratar_financiamento"]),
         ("RECURSO ESTADUAL (Contrapartida + Complementar)", "estadual", COR_ESTADUAL, COR_ESTADUAL_CLARO,
          m["contratado_estadual"], m["a_contratar_estadual"]),
-        ("NÃO DISCRIMINADO (contratado sem fonte informada)", "nao_discriminado", COR_NAO_DISCRIMINADO,
+        ("NÃO DISCRIMINADO (T.C. firmado sem fonte informada)", "nao_discriminado", COR_NAO_DISCRIMINADO,
          pac.clarear_hex(COR_NAO_DISCRIMINADO).lstrip("#"), nd, 0.0),
     ]
 
@@ -724,7 +716,7 @@ def _parcelas(m):
     return [
         ("PARCELA FEDERAL (OGU)", m["total_parcela_federal"], AZUL),
         ("PARCELA ESTADUAL (Financiamento + Contrapartida + Complementar)*", m["total_parcela_estadual"], LARANJA),
-        ("NÃO DISCRIMINADO (contratado sem fonte informada)", nd, COR_NAO_DISCRIMINADO),
+        ("NÃO DISCRIMINADO (T.C. firmado sem fonte informada)", nd, COR_NAO_DISCRIMINADO),
     ]
 
 
@@ -755,15 +747,15 @@ def _slide_execucao(m):
 
 
 def _nota_nao_discriminado(m, com_remissao=True):
-    return ("* Não discriminado: valor contratado sem detalhamento por fonte de recurso na base, "
+    return ("* Não discriminado: valor com T.C. firmado sem detalhamento por fonte de recurso na base, "
             "mostrado como categoria própria para a composição somar o investimento total."
             + (f" Ver slide {_slide_execucao(m)}." if com_remissao and _slide_execucao(m) else ""))
 
 
 def _cabecalho_tabela(s, y):
-    add_text(s, X_COL_CONTRATADO, y, LARG_COL_CONTRATADO, 0.28, "CONTRATADO", 11, CINZA_TEXTO, negrito=True,
+    add_text(s, X_COL_CONTRATADO, y, LARG_COL_CONTRATADO, 0.28, "T.C. FIRMADO", 11, CINZA_TEXTO, negrito=True,
               alinhar=PP_ALIGN.RIGHT, ancorar=MSO_ANCHOR.MIDDLE)
-    add_text(s, X_COL_A_CONTRATAR, y, LARG_COL_A_CONTRATAR, 0.28, "A CONTRATAR", 11, CINZA_TEXTO, negrito=True,
+    add_text(s, X_COL_A_CONTRATAR, y, LARG_COL_A_CONTRATAR, 0.28, "T.C. NÃO FIRMADO", 11, CINZA_TEXTO, negrito=True,
               ancorar=MSO_ANCHOR.MIDDLE)
     add_text(s, X_COL_TOTAL, y, LARG_COL_TOTAL, 0.28, "TOTAL", 11, CINZA_TEXTO, negrito=True,
               ancorar=MSO_ANCHOR.MIDDLE)
@@ -821,7 +813,7 @@ def _linha_tabela(s, nivel, y, rotulo, c_val, a_val, base, cheia, clara, altura=
 # contratar (claro). Mesmos números de m["fonte_fase"]. Sem os cards do
 # slide 2 — 4 fases x 3 fontes não cabem com eles.
 # ---------------------------------------------------------------------------
-LEGENDA_COMPOSICAO_FASE = "cinza escuro / tom forte = CONTRATADO · cinza claro / tom claro = A CONTRATAR"
+LEGENDA_COMPOSICAO_FASE = "cinza escuro / tom forte = T.C. FIRMADO · cinza claro / tom claro = T.C. NÃO FIRMADO"
 CINZA_FASE_CONTRATADO = "5B6576"
 CINZA_FASE_A_CONTRATAR = "C3C8D0"
 
@@ -846,7 +838,7 @@ def slide_status_fase_origem(prs, m):
     # contratado, tom claro = a contratar; a fase é só o rótulo.
     s = novo_slide(prs, "STATUS POR FASE E ORIGEM DO RECURSO")
     y = 1.55
-    add_text(s, 0.9, y, 9.0, 0.4, "INVESTIMENTO POR FONTE E FASE (contratado + a contratar)*", 17, CINZA_TEXTO,
+    add_text(s, 0.9, y, 10.6, 0.4, "INVESTIMENTO POR FONTE E FASE (T.C. firmado + T.C. não firmado)*", 17, CINZA_TEXTO,
               negrito=True)
     add_text(s, 9.9, y, 8.6, 0.4, LEGENDA_FASES, 12, CINZA_TEXTO, alinhar=PP_ALIGN.RIGHT,
               ancorar=MSO_ANCHOR.MIDDLE)
@@ -944,7 +936,7 @@ def _slides_tabela_eixo(prs, m, tema, rotulo_secao, legenda, grupos):
     for i, pagina in enumerate(paginas, 1):
         s = novo_slide(prs, _tema_paginado(tema, i, len(paginas)))
         y = 1.55
-        add_text(s, 0.9, y, 9.0, 0.4, rotulo_secao, 17, CINZA_TEXTO, negrito=True)
+        add_text(s, 0.9, y, 10.6, 0.4, rotulo_secao, 17, CINZA_TEXTO, negrito=True)
         add_text(s, 9.9, y, 8.6, 0.4, legenda, 12, CINZA_TEXTO, alinhar=PP_ALIGN.RIGHT, ancorar=MSO_ANCHOR.MIDDLE)
         y = _desenhar_grupos(s, _cabecalho_tabela(s, y + 0.5), pagina, m["total_investimento"])
         add_text(s, 0.9, y + 0.05, 17.6, 0.5, _nota_eixos(m, grupos), 12, CINZA_TEXTO)
@@ -959,18 +951,18 @@ def _slides_tabela_eixo(prs, m, tema, rotulo_secao, legenda, grupos):
 # as duas situações aparece nas duas. O que não couber continua no slide
 # seguinte, sem repetir o gráfico.
 # ---------------------------------------------------------------------------
-ROTULO_GRAFICO_FASE = "INVESTIMENTO TOTAL, POR FASE E FONTE (contratado + a contratar)*"
+ROTULO_GRAFICO_FASE = "INVESTIMENTO TOTAL, POR FASE E FONTE (T.C. firmado + T.C. não firmado)*"
 COLUNAS_FONTES_OBJETOS = ["OGU (APOIADO)", "FINANCIAMENTO", "RECURSO ESTADUAL", "NÃO DISCRIMINADO*", "TOTAL"]
 LARGURAS_OBJETOS = [4.6, 2.6, 2.6, 2.6, 2.6, 2.6]
 # (título da 1ª coluna, índice em (contratado, a contratar), cor do cabeçalho =
 # a da barra Contratado x A Contratar do panorama)
-BLOCOS_OBJETOS = [("OBJETO A CONTRATAR", 1, LARANJA), ("OBJETO CONTRATADO", 0, VERDE)]
+BLOCOS_OBJETOS = [("OBJETO COM T.C. NÃO FIRMADO", 1, LARANJA), ("OBJETO COM T.C. FIRMADO", 0, VERDE)]
 ALT_LINHA_OBJETOS = 0.36
 ESPACO_BLOCO = 0.25
 Y_INICIO_FASE = 1.4
 Y_APOS_GRAFICO = 4.05
 Y_LIMITE_TABELAS = 10.2   # abaixo disso, só a nota e o rodapé
-ROTULO_GRAFICO_ORIGEM = "INVESTIMENTO TOTAL, POR FONTE (contratado + a contratar)"
+ROTULO_GRAFICO_ORIGEM = "INVESTIMENTO TOTAL, POR FONTE (T.C. firmado + T.C. não firmado)"
 # (altura da linha do total, (fonte do rótulo, fonte dos valores), o mesmo pras fontes)
 MEDIDAS_GRAFICO_FASE = (ALT_NIVEL_1, (19, 16), ALT_NIVEL_2, (14, 13))
 AMPLIADO_ORIGEM = (0.9, (22, 18), 0.8, (18, 16))
@@ -1056,13 +1048,13 @@ def _desenhar_grafico_fase(s, m, y, grafico, rotulo_secao=ROTULO_GRAFICO_FASE, l
     rotulo, c_val, a_val, fontes = grafico
     alt_1, tam_1, alt_2, tam_2 = medidas
     if legenda:
-        add_text(s, 0.9, y, 9.0, 0.4, rotulo_secao, 17, CINZA_TEXTO, negrito=True)
+        add_text(s, 0.9, y, 10.6, 0.4, rotulo_secao, 17, CINZA_TEXTO, negrito=True)
         add_text(s, 9.9, y, 8.6, 0.4, legenda, 12, CINZA_TEXTO, alinhar=PP_ALIGN.RIGHT, ancorar=MSO_ANCHOR.MIDDLE)
     else:
         add_text(s, 0.9, y, 17.6, 0.4, rotulo_secao, 17, CINZA_TEXTO, negrito=True)
     y += 0.42
-    for x_valor, titulo in ((X_GRAFICO_TOTAL, "TOTAL"), (X_GRAFICO_CONTRATADO, "CONTRATADO"),
-                            (X_GRAFICO_A_CONTRATAR, "A CONTRATAR")):
+    for x_valor, titulo in ((X_GRAFICO_TOTAL, "TOTAL"), (X_GRAFICO_CONTRATADO, "T.C. FIRMADO"),
+                            (X_GRAFICO_A_CONTRATAR, "T.C. NÃO FIRMADO")):
         add_text(s, x_valor, y, LARG_GRAFICO_VALOR, 0.28, titulo, 11, CINZA_TEXTO, negrito=True,
                   ancorar=MSO_ANCHOR.MIDDLE)
     add_rect(s, 0.9, y + 0.32, 17.6, 0.012, fill=CINZA_BORDA)
@@ -1093,30 +1085,30 @@ def slide_composicao_fase(prs, m):
 
 def slide_eixo_fonte(prs, m):
     _slides_tabela_eixo(prs, m, "INVESTIMENTO POR EIXO E FONTE",
-                        "INVESTIMENTO TOTAL, POR EIXO E FONTE (contratado + a contratar)*", LEGENDA_EIXO_FONTE,
+                        "INVESTIMENTO TOTAL, POR EIXO E FONTE (T.C. firmado + T.C. não firmado)*", LEGENDA_EIXO_FONTE,
                         _grupos_eixo_fonte(m))
 
 
 def slide_fonte_eixo(prs, m):
     _slides_tabela_eixo(prs, m, "INVESTIMENTO POR FONTE E EIXO",
-                        "INVESTIMENTO TOTAL, POR FONTE E EIXO (contratado + a contratar)*", LEGENDA_FASES,
+                        "INVESTIMENTO TOTAL, POR FONTE E EIXO (T.C. firmado + T.C. não firmado)*", LEGENDA_FASES,
                         _grupos_fonte_eixo(m))
 
 
 def slide_3_execucao_contratado(prs, m):
-    s = novo_slide(prs, "EXECUÇÃO DO CONTRATADO, POR FONTE")
-    add_text(s, 0.9, 1.5, 10, 0.4, "TOTAL JÁ CONTRATADO", 17, CINZA_TEXTO, negrito=True)
+    s = novo_slide(prs, "EXECUÇÃO DO T.C. FIRMADO, POR FONTE")
+    add_text(s, 0.9, 1.5, 10, 0.4, "TOTAL COM T.C. FIRMADO", 17, CINZA_TEXTO, negrito=True)
     add_text(s, 0.9, 1.85, 9, 1.0, abreviar_moeda(m["total_contratado"]), 44, VERDE, negrito=True)
     add_text(s, 10.2, 2.15, 8.8, 0.7,
               f"Detalhamento por fonte disponível para {pct(m['total_contratado']*m['cobertura_detalhamento_pct'], m['total_contratado'])} "
-              "do valor contratado.", 15, CINZA_TEXTO)
+              "do valor com T.C. firmado.", 15, CINZA_TEXTO)
 
     y = 3.3
     total_c = m["total_contratado"]
     segmentos = [
-        ("APOIADO (OGU) CONTRATADO", m["contratado_ogu"], COR_OGU),
-        ("FINANCIAMENTO CONTRATADO", m["contratado_financiamento"], COR_FINANCIAMENTO),
-        ("RECURSO ESTADUAL CONTRATADO", m["contratado_estadual"], COR_ESTADUAL),
+        ("APOIADO (OGU) - T.C. FIRMADO", m["contratado_ogu"], COR_OGU),
+        ("FINANCIAMENTO - T.C. FIRMADO", m["contratado_financiamento"], COR_FINANCIAMENTO),
+        ("RECURSO ESTADUAL - T.C. FIRMADO", m["contratado_estadual"], COR_ESTADUAL),
         ("NÃO DISCRIMINADO", m["contratado_nao_discriminado"], COR_NAO_DISCRIMINADO),
     ]
     for rotulo, valor, c in segmentos:
@@ -1132,8 +1124,8 @@ def slide_3_execucao_contratado(prs, m):
 
 
 def slide_4_a_contratar(prs, m):
-    s = novo_slide(prs, "O QUE AINDA PRECISA SER CONTRATADO")
-    add_text(s, 0.9, 1.5, 12, 0.4, "VALOR TOTAL A CONTRATAR", 17, CINZA_TEXTO, negrito=True)
+    s = novo_slide(prs, "RECURSOS COM T.C. NÃO FIRMADO")
+    add_text(s, 0.9, 1.5, 12, 0.4, "VALOR TOTAL COM T.C. NÃO FIRMADO", 17, CINZA_TEXTO, negrito=True)
     add_text(s, 0.9, 1.85, 12, 1.3, abreviar_moeda(m["total_a_contratar"]), 58, LARANJA, negrito=True)
     add_text(s, 0.9, 3.1, 17.6, 0.4, pct(m["total_a_contratar"], m["total_investimento"]) +
               " do investimento total da carteira ainda não tem instrumento assinado", 15, CINZA_TEXTO)
@@ -1150,7 +1142,7 @@ def slide_4_a_contratar(prs, m):
                           tam_rotulo=14, largura_valor=2.5, tam_valor=14)
         y2 += 0.95
 
-    add_text(s, 9.9, y, 8.6, 0.35, "POR EIXO (top 5 em valor a contratar)", 17, NAVY, negrito=True)
+    add_text(s, 9.9, y, 8.6, 0.35, "POR EIXO (top 5 em valor com T.C. não firmado)", 17, NAVY, negrito=True)
     por_eixo_ord = m["por_eixo"].sort_values("A_CONTRATAR", ascending=False).head(5)
     y3 = y + 0.6
     for eixo, linha in por_eixo_ord.iterrows():
@@ -1162,13 +1154,13 @@ def slide_4_a_contratar(prs, m):
 
 def slide_5_tabela_resumo_fonte(prs, m):
     s = novo_slide(prs, "TABELA-RESUMO POR FONTE")
-    cabecalho = ["FONTE", "CONTRATADO", "A CONTRATAR", "TOTAL", "% DO TOTAL"]
+    cabecalho = ["FONTE", "T.C. FIRMADO", "T.C. NÃO FIRMADO", "TOTAL", "% DO TOTAL"]
     total_geral = m["total_investimento"]
     linhas_dados = [
         ("OGU (Apoiado)", m["contratado_ogu"], m["a_contratar_ogu"]),
         ("Financiamento", m["contratado_financiamento"], m["a_contratar_financiamento"]),
         ("Recurso Estadual", m["contratado_estadual"], m["a_contratar_estadual"]),
-        ("Não discriminado (contratado)", m["contratado_nao_discriminado"], 0.0),
+        ("Não discriminado (T.C. firmado)", m["contratado_nao_discriminado"], 0.0),
     ]
     linhas = []
     for nome, c_val, a_val in linhas_dados:
@@ -1189,7 +1181,7 @@ def slide_5_tabela_resumo_fonte(prs, m):
                   larguras=[6.2, 3.0, 3.0, 3.0, 3.0],
                   tam_fonte=16, linha_bold_indices={4, 5, 6})
     add_text(s, 0.9, 7.9, 17, 0.4,
-              "\"Não discriminado\" = contratado sem detalhamento por fonte preenchido na base"
+              "\"Não discriminado\" = T.C. firmado sem detalhamento por fonte preenchido na base"
               + (f" (ver slide {_slide_execucao(m)})." if _slide_execucao(m) else "."),
               13, CINZA_TEXTO)
     return s
@@ -1203,7 +1195,7 @@ def slide_5_tabela_resumo_fonte(prs, m):
 # coluna própria pra fechar com o investimento total.
 # ---------------------------------------------------------------------------
 TEMA_QUADRO_RESUMO = "QUADRO RESUMO DE INVESTIMENTOS POR FASE"
-SUBTITULO_QUADRO_RESUMO = "INVESTIMENTO POR FASE E FONTE (contratado + a contratar)*"
+SUBTITULO_QUADRO_RESUMO = "INVESTIMENTO POR FASE E FONTE (T.C. firmado + T.C. não firmado)*"
 LEGENDA_QUADRO_RESUMO = "Valores expressos em reais (R$)"
 LEGENDA_QUADRO_ABREVIADA = "Valores expressos em reais (Mi = milhões · Bi = bilhões)"
 CABECALHO_QUADRO_RESUMO = ["FASE", "OGU (APOIADO)", "FINANCIAMENTO", "CONTRAPARTIDA + COMPLEMENTAR",
@@ -1245,7 +1237,7 @@ def _linhas_quadro_resumo(m, formatar=_reais_inteiros):
 def _desenhar_quadro_resumo(s, m, y, alt_linha=0.7, folga_tabela=0.6, formatar=_reais_inteiros,
                             legenda=LEGENDA_QUADRO_RESUMO, tam_tabela=16, tam_nota=12):
     # Subtítulo, legenda, tabela e nota; devolve o y logo abaixo da nota
-    add_text(s, 0.9, y, 9.0, 0.4, SUBTITULO_QUADRO_RESUMO, 17, CINZA_TEXTO, negrito=True)
+    add_text(s, 0.9, y, 10.6, 0.4, SUBTITULO_QUADRO_RESUMO, 17, CINZA_TEXTO, negrito=True)
     add_text(s, 9.9, y, 8.6, 0.4, legenda, tam_nota, CINZA_TEXTO, alinhar=PP_ALIGN.RIGHT,
               ancorar=MSO_ANCHOR.MIDDLE)
     linhas = _linhas_quadro_resumo(m, formatar)
@@ -1274,7 +1266,7 @@ def slide_visao_geral(prs, m):
 
 def slide_6_por_eixo(prs, m):
     s = novo_slide(prs, "DETALHE POR EIXO DO PAC")
-    cabecalho = ["EIXO", "Nº AÇÕES", "INVESTIMENTO", "CONTRATADO", "A CONTRATAR"]
+    cabecalho = ["EIXO", "Nº AÇÕES", "INVESTIMENTO", "T.C. FIRMADO", "T.C. NÃO FIRMADO"]
     linhas = []
     for eixo, linha in m["por_eixo"].iterrows():
         linhas.append([eixo, int(linha["QTD"]), abreviar_moeda(linha["INVESTIMENTO"]),
@@ -1285,8 +1277,8 @@ def slide_6_por_eixo(prs, m):
 
 
 def slide_7_top10(prs, m):
-    s = novo_slide(prs, "MAIORES AÇÕES A CONTRATAR")
-    cabecalho = ["AÇÃO", "MUNICÍPIO", "A CONTRATAR", "STATUS", "FASE"]
+    s = novo_slide(prs, "MAIORES AÇÕES COM T.C. NÃO FIRMADO")
+    cabecalho = ["AÇÃO", "MUNICÍPIO", "T.C. NÃO FIRMADO", "STATUS", "FASE"]
     linhas = []
     top10 = m["top10_a_contratar"]
     for _, r in top10.iterrows():
@@ -1300,7 +1292,7 @@ def slide_7_top10(prs, m):
         add_pendencia_tag(s, 0.9, 8.75, w=2.6)
         add_text(s, 3.7, 8.75, 14.5, 0.5,
                   f"{len(concluidas_com_saldo)} ação(ões) nesta lista aparece(m) como Concluída/Inaugurada mas "
-                  "ainda com saldo a contratar na base — verificar cadastro antes de divulgar.",
+                  "ainda com T.C. não firmado na base — verificar cadastro antes de divulgar.",
                   14, VERMELHO)
     return s
 
@@ -1315,7 +1307,7 @@ def slide_8_pendencias(prs, m):
         ("PRAZO DE PENDÊNCIA/TAREFA VENCIDO", m["qtd_prazo_pendencia_vencido"], None,
           "tarefas com prazo já ultrapassado"),
         ("SEM CATEGORIA DE ORIGEM DO RECURSO", m["qtd_sem_detalhamento"], None,
-          "impede identificar a fonte do valor contratado"),
+          "impede identificar a fonte do valor com T.C. firmado"),
     ]
     largura_card = 4.1
     espaco = 0.3
@@ -1335,10 +1327,10 @@ def slide_8_pendencias(prs, m):
 def slide_9_sintese(prs, m):
     s = novo_slide(prs, "SÍNTESE E PLEITO")
     mensagens = [
-        (abreviar_moeda(m["total_a_contratar"]), "ainda precisam ser contratados para concluir a carteira do PAC-BA"),
+        (abreviar_moeda(m["total_a_contratar"]), "ainda estão com T.C. não firmado na carteira do PAC-BA"),
         (abreviar_moeda(m["a_contratar_parcela_federal"]), "desse valor dependem de fonte Federal (OGU)"),
         (f"{m['gestao_federal_qtd']}", "ações sob execução direta de órgãos federais na carteira"),
-        (abreviar_moeda(m["valor_clausula_vigente"]), f"já contratados têm cláusula suspensiva vigente "
+        (abreviar_moeda(m["valor_clausula_vigente"]), f"com T.C. firmado têm cláusula suspensiva vigente "
           f"({m['qtd_clausula_vigente']} ações) — recurso condicionado"),
     ]
     y = 1.9
@@ -1362,7 +1354,7 @@ def gerar_xlsx_apoio(m, caminho_saida):
          "A_CONTRATAR": m["a_contratar_financiamento"]},
         {"FONTE": "Recurso Estadual", "CONTRATADO": m["contratado_estadual"],
          "A_CONTRATAR": m["a_contratar_estadual"]},
-        {"FONTE": "Não discriminado (contratado)", "CONTRATADO": m["contratado_nao_discriminado"],
+        {"FONTE": "Não discriminado (T.C. firmado)", "CONTRATADO": m["contratado_nao_discriminado"],
          "A_CONTRATAR": 0.0},
     ])
     resumo_fonte["TOTAL"] = resumo_fonte["CONTRATADO"] + resumo_fonte["A_CONTRATAR"]
@@ -1408,7 +1400,7 @@ def _html_segmentos_barra(c_val, a_val, base, cheia, clara):
     # Contratado + a contratar em relação à base; segmento com valor nunca some
     fc, fa = _fracoes_barra(c_val, a_val, base)
     return "".join(f'<div class="barra-fill" style="width:{f * 100:.4f}%;min-width:3px;background:#{c}" title="{t}"></div>'
-                   for f, c, t in ((fc, cheia, "Contratado"), (fa, clara, "A contratar")) if f > 0)
+                   for f, c, t in ((fc, cheia, "T.C. firmado"), (fa, clara, "T.C. não firmado")) if f > 0)
 
 
 def _html_linha_tabela(rotulo, c_val, a_val, base, cheia, clara):
@@ -1448,16 +1440,16 @@ def _html_grafico_fase(m, grafico, rotulo_secao=ROTULO_GRAFICO_FASE, legenda=Non
     return f'''<div class="rotulo-secao" style="display:flex;justify-content:space-between;align-items:baseline">
         <span>{_html_esc(rotulo_secao)}</span>{html_legenda}
       </div>
-      <div class="grafico-fase-linha gf-cabecalho"><div></div><div></div><div>TOTAL</div><div>CONTRATADO</div><div>A CONTRATAR</div></div>
+      <div class="grafico-fase-linha gf-cabecalho"><div></div><div></div><div>TOTAL</div><div>T.C. FIRMADO</div><div>T.C. NÃO FIRMADO</div></div>
       {_html_linha_grafico_fase(1, rotulo, c_val, a_val, m["total_investimento"], CINZA_FASE_CONTRATADO, CINZA_FASE_A_CONTRATAR)}
       {"".join(_html_linha_grafico_fase(2, r, c, a, c_val + a_val, cheia, clara) for r, c, a, cheia, clara in fontes)}'''
 
 
 def _html_cabecalho_tabela():
     return ('<div class="barra-linha cabecalho-tabela"><div class="barra-rotulo" style="width:340px"></div>'
-            '<div class="barra-col-valor col-contratado">CONTRATADO</div>'
+            '<div class="barra-col-valor col-contratado">T.C. FIRMADO</div>'
             '<div class="barra-trilho" style="background:none;height:auto"></div>'
-            '<div class="barra-col-valor">A CONTRATAR</div><div class="barra-col-valor">TOTAL</div></div>')
+            '<div class="barra-col-valor">T.C. NÃO FIRMADO</div><div class="barra-col-valor">TOTAL</div></div>')
 
 
 def _html_tabela(cabecalho, linhas, linhas_bold=(), cor_cabecalho=None):
@@ -1509,24 +1501,25 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         ("PARALISADO", m["qtd_paralisado"], "C62828"),
     ]
     frac_contratado = (m["total_contratado"] / total_investimento * 100) if total_investimento else 0
+    cartoes_status_html = f'''<div class="cartoes-grade">
+        {"".join(f'<div class="cartao-status"><div class="cs-barra" style="background:#{c}"></div><div class="cs-num" style="color:#{c}">{qtd}</div><div class="cs-rotulo">{_html_esc(rot)}</div></div>' for rot, qtd, c in cards_status if qtd > 0)}
+      </div>'''
     panorama_html = f'''
       <div class="rotulo-secao">INVESTIMENTO TOTAL DA CARTEIRA</div>
       <div class="valor-principal" style="color:#2E7D32">{_html_esc(abreviar_moeda(total_investimento))}</div>
       <div class="texto-secundario">{m["qtd_acoes"]} ações do PAC acompanhadas pelo Estado da Bahia</div>
-      <div class="rotulo-secao" style="margin-top:28px">CONTRATADO&nbsp;&nbsp;x&nbsp;&nbsp;A CONTRATAR</div>
+      <div class="rotulo-secao" style="margin-top:28px">T.C. FIRMADO&nbsp;&nbsp;x&nbsp;&nbsp;T.C. NÃO FIRMADO</div>
       <div class="barra-empilhada">
         <div class="barra-empilhada-seg" style="width:{frac_contratado:.2f}%;background:#2E7D32">
-          <div class="be-titulo">CONTRATADO · {_html_esc(abreviar_moeda(m["total_contratado"]))}</div>
+          <div class="be-titulo">T.C. FIRMADO · {_html_esc(abreviar_moeda(m["total_contratado"]))}</div>
           <div class="be-sub">{_html_esc(pct(m["total_contratado"], total_investimento))}</div>
         </div>
         <div class="barra-empilhada-seg" style="width:{100 - frac_contratado:.2f}%;background:#E68A00">
-          <div class="be-titulo">A CONTRATAR · {_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
+          <div class="be-titulo">T.C. NÃO FIRMADO · {_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
           <div class="be-sub">{_html_esc(pct(m["total_a_contratar"], total_investimento))}</div>
         </div>
       </div>
-      <div class="cartoes-grade">
-        {"".join(f'<div class="cartao-status"><div class="cs-barra" style="background:#{c}"></div><div class="cs-num" style="color:#{c}">{qtd}</div><div class="cs-rotulo">{_html_esc(rot)}</div></div>' for rot, qtd, c in cards_status if qtd > 0)}
-      </div>
+      {cartoes_status_html}
     '''
     slide1 = _html_cabecalho_rodape("PANORAMA DA CARTEIRA", panorama_html)
 
@@ -1564,7 +1557,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         </div>''')
     slide2b = _html_cabecalho_rodape("STATUS POR FASE E ORIGEM DO RECURSO", f'''
       <div class="rotulo-secao" style="display:flex;justify-content:space-between;align-items:baseline">
-        <span>INVESTIMENTO POR FONTE E FASE (contratado + a contratar)*</span>
+        <span>INVESTIMENTO POR FONTE E FASE (T.C. firmado + T.C. não firmado)*</span>
         <span style="font-size:13px;font-weight:400;color:#5B6576;text-transform:none">{_html_esc(LEGENDA_FASES)}</span>
       </div>
       <div class="bloco-barras tabela-fases">{_html_cabecalho_tabela()}{"".join(blocos_fase)}</div>
@@ -1588,27 +1581,27 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         return saida
 
     slides_eixo_fonte = _html_slides_eixo("INVESTIMENTO POR EIXO E FONTE",
-                                          "INVESTIMENTO TOTAL, POR EIXO E FONTE (contratado + a contratar)*",
+                                          "INVESTIMENTO TOTAL, POR EIXO E FONTE (T.C. firmado + T.C. não firmado)*",
                                           LEGENDA_EIXO_FONTE, _grupos_eixo_fonte(m))
     slides_fonte_eixo = _html_slides_eixo("INVESTIMENTO POR FONTE E EIXO",
-                                          "INVESTIMENTO TOTAL, POR FONTE E EIXO (contratado + a contratar)*",
+                                          "INVESTIMENTO TOTAL, POR FONTE E EIXO (T.C. firmado + T.C. não firmado)*",
                                           LEGENDA_FASES, _grupos_fonte_eixo(m))
 
     # --- slide 3 ---
     total_contratado = m["total_contratado"]
-    slide3 = _html_cabecalho_rodape("EXECUÇÃO DO CONTRATADO, POR FONTE", f'''
+    slide3 = _html_cabecalho_rodape("EXECUÇÃO DO T.C. FIRMADO, POR FONTE", f'''
       <div class="duas-colunas-desiguais">
         <div>
-          <div class="rotulo-secao">TOTAL JÁ CONTRATADO</div>
+          <div class="rotulo-secao">TOTAL COM T.C. FIRMADO</div>
           <div class="valor-principal" style="color:#2E7D32">{_html_esc(abreviar_moeda(total_contratado))}</div>
         </div>
         <div class="texto-secundario" style="align-self:center">Detalhamento por fonte disponível para
-        {_html_esc(pct(total_contratado * m["cobertura_detalhamento_pct"], total_contratado))} do valor contratado.</div>
+        {_html_esc(pct(total_contratado * m["cobertura_detalhamento_pct"], total_contratado))} do valor com T.C. firmado.</div>
       </div>
       <div class="bloco-barras" style="margin-top:20px">
-        {_html_barra("APOIADO (OGU) CONTRATADO", m["contratado_ogu"], total_contratado, COR_OGU, 340)}
-        {_html_barra("FINANCIAMENTO CONTRATADO", m["contratado_financiamento"], total_contratado, COR_FINANCIAMENTO, 340)}
-        {_html_barra("RECURSO ESTADUAL CONTRATADO", m["contratado_estadual"], total_contratado, COR_ESTADUAL, 340)}
+        {_html_barra("APOIADO (OGU) - T.C. FIRMADO", m["contratado_ogu"], total_contratado, COR_OGU, 340)}
+        {_html_barra("FINANCIAMENTO - T.C. FIRMADO", m["contratado_financiamento"], total_contratado, COR_FINANCIAMENTO, 340)}
+        {_html_barra("RECURSO ESTADUAL - T.C. FIRMADO", m["contratado_estadual"], total_contratado, COR_ESTADUAL, 340)}
         {_html_barra("NÃO DISCRIMINADO", m["contratado_nao_discriminado"], total_contratado, COR_NAO_DISCRIMINADO, 340)}
       </div>
       <div class="caixa-pendencia">⚠ PENDÊNCIA — {m['qtd_sem_detalhamento']} ação sem nenhuma categoria de origem
@@ -1618,8 +1611,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 
     # --- slide 4 ---
     por_eixo_ord = m["por_eixo"].sort_values("A_CONTRATAR", ascending=False).head(5)
-    slide4 = _html_cabecalho_rodape("O QUE AINDA PRECISA SER CONTRATADO", f'''
-      <div class="rotulo-secao">VALOR TOTAL A CONTRATAR</div>
+    slide4 = _html_cabecalho_rodape("RECURSOS COM T.C. NÃO FIRMADO", f'''
+      <div class="rotulo-secao">VALOR TOTAL COM T.C. NÃO FIRMADO</div>
       <div class="valor-principal" style="color:#E68A00">{_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
       <div class="texto-secundario">{_html_esc(pct(m["total_a_contratar"], total_investimento))} do investimento
       total da carteira ainda não tem instrumento assinado</div>
@@ -1633,7 +1626,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
           </div>
         </div>
         <div>
-          <div class="rotulo-secao" style="margin-bottom:14px">POR EIXO (top 5 em valor a contratar)</div>
+          <div class="rotulo-secao" style="margin-bottom:14px">POR EIXO (top 5 em valor com T.C. não firmado)</div>
           <div class="bloco-barras">
             {"".join(_html_barra(eixo, float(linha["A_CONTRATAR"]), m["total_a_contratar"], "2F7F92", 230) for eixo, linha in por_eixo_ord.iterrows())}
           </div>
@@ -1647,7 +1640,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         ("OGU (Apoiado)", m["contratado_ogu"], m["a_contratar_ogu"]),
         ("Financiamento", m["contratado_financiamento"], m["a_contratar_financiamento"]),
         ("Recurso Estadual", m["contratado_estadual"], m["a_contratar_estadual"]),
-        ("Não discriminado (contratado)", m["contratado_nao_discriminado"], 0.0),
+        ("Não discriminado (T.C. firmado)", m["contratado_nao_discriminado"], 0.0),
     ]:
         tot = c_val + a_val
         linhas5.append([nome, abreviar_moeda(c_val), abreviar_moeda(a_val), abreviar_moeda(tot),
@@ -1662,8 +1655,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     linhas5.append(["TOTAL GERAL", abreviar_moeda(m["total_contratado"]), abreviar_moeda(m["total_a_contratar"]),
                      abreviar_moeda(total_investimento), "100,0%"])
     slide5 = _html_cabecalho_rodape("TABELA-RESUMO POR FONTE", f'''
-      {_html_tabela(["FONTE", "CONTRATADO", "A CONTRATAR", "TOTAL", "% DO TOTAL"], linhas5, linhas_bold={4, 5, 6})}
-      <div class="nota-rodape">"Não discriminado" = contratado sem detalhamento por fonte preenchido na base{f" (ver slide {_slide_execucao(m)})." if _slide_execucao(m) else "."}</div>
+      {_html_tabela(["FONTE", "T.C. FIRMADO", "T.C. NÃO FIRMADO", "TOTAL", "% DO TOTAL"], linhas5, linhas_bold={4, 5, 6})}
+      <div class="nota-rodape">"Não discriminado" = T.C. firmado sem detalhamento por fonte preenchido na base{f" (ver slide {_slide_execucao(m)})." if _slide_execucao(m) else "."}</div>
     ''')
 
     # --- quadro resumo por fase ---
@@ -1681,24 +1674,28 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     slide_quadro = _html_cabecalho_rodape(TEMA_QUADRO_RESUMO, _html_quadro(_reais_inteiros, LEGENDA_QUADRO_RESUMO))
 
     # --- visão geral: quadro em cima, panorama embaixo (versão compacta via CSS) ---
-    rotulo_barra = 'CONTRATADO&nbsp;&nbsp;x&nbsp;&nbsp;A CONTRATAR</div>'
-    assert panorama_html.count(rotulo_barra) == 1
-    legenda_faixa = "".join(f'<i style="background:#{cheia}"></i>{_html_esc(rotulo)}'
-                            for rotulo, cheia in _fontes_legenda_faixa(m))
-    faixa_fontes = "".join(
-        f'<div style="width:{fracao * 100:.4f}%;background:#{fundo};color:#{cor_texto}">{_html_esc(texto)}</div>'
-        for texto, fundo, cor_texto, fracao in _segmentos_faixa_fontes(m))
-    panorama_com_faixa = panorama_html.replace(
-        rotulo_barra,
-        f'<span class="legenda-faixa">{legenda_faixa}</span>{rotulo_barra}<div class="faixa-fontes">{faixa_fontes}</div>')
-    valor_destaque = abreviar_moeda(m["a_contratar_financiamento"])
-    destaque_financiamento = "" if valor_destaque == "-" else (
-        f'<div class="destaque-financiamento"><div class="rotulo-secao">{_html_esc(ROTULO_DESTAQUE_FINANCIAMENTO)}</div>'
-        f'<div class="valor-principal" style="color:#{COR_FINANCIAMENTO}">{_html_esc(valor_destaque)}</div></div>')
-    slide_visao_geral_html = _html_cabecalho_rodape(
-        "VISÃO GERAL DA CARTEIRA",
-        f'<div class="visao-geral">{_html_quadro(_mi_bi_2_casas, LEGENDA_QUADRO_ABREVIADA)}'
-        f'{destaque_financiamento}{panorama_com_faixa}</div>')
+    recursos_a_contratar = "" if abreviar_moeda(m["total_a_contratar"]) == "-" else f'''<div class="vg-recursos">
+          <div class="rotulo-secao">{_html_esc(ROTULO_RECURSOS_A_CONTRATAR)}</div>
+          <div class="valor-principal" style="color:#{LARANJA}">{_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
+          {"".join(f'<div class="vg-recurso-linha">{_html_esc(linha)}</div>' for linha in _linhas_recursos_a_contratar(m))}
+        </div>'''
+    segmentos_barra = "".join(
+        f'''<div class="barra-empilhada-seg" style="width:{fracao * 100:.2f}%;background:#{cor_seg}">
+          {f'<div class="be-titulo">{_html_esc(texto)}</div><div class="be-sub">{_html_esc(percentual)}</div>' if texto else ""}
+        </div>'''
+        for (texto, percentual, fracao), cor_seg in zip(_barra_termo_compromisso(m), (VERDE, LARANJA)) if fracao > 0)
+    slide_visao_geral_html = _html_cabecalho_rodape("VISÃO GERAL DA CARTEIRA", f'''<div class="visao-geral">
+      {_html_quadro(_mi_bi_2_casas, LEGENDA_QUADRO_ABREVIADA)}
+      <div class="vg-topo">
+        <div>
+          <div class="rotulo-secao">INVESTIMENTO TOTAL DA CARTEIRA</div>
+          <div class="valor-principal" style="color:#{VERDE}">{_html_esc(abreviar_moeda(total_investimento))}</div>
+        </div>
+        {recursos_a_contratar}
+      </div>
+      <div class="barra-empilhada">{segmentos_barra}</div>
+      {cartoes_status_html}
+    </div>''')
 
     # --- slide 6 ---
     linhas6 = []
@@ -1706,7 +1703,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         linhas6.append([eixo, int(linha["QTD"]), abreviar_moeda(linha["INVESTIMENTO"]),
                          abreviar_moeda(linha["CONTRATADO"]), abreviar_moeda(linha["A_CONTRATAR"])])
     slide6 = _html_cabecalho_rodape("DETALHE POR EIXO DO PAC",
-        _html_tabela(["EIXO", "Nº AÇÕES", "INVESTIMENTO", "CONTRATADO", "A CONTRATAR"], linhas6))
+        _html_tabela(["EIXO", "Nº AÇÕES", "INVESTIMENTO", "T.C. FIRMADO", "T.C. NÃO FIRMADO"], linhas6))
 
     # --- slide 7 ---
     top10 = m["top10_a_contratar"]
@@ -1718,10 +1715,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     aviso7 = ""
     if len(concluidas_com_saldo) > 0:
         aviso7 = (f'<div class="caixa-pendencia">⚠ PENDÊNCIA — {len(concluidas_com_saldo)} ação(ões) nesta '
-                  "lista aparece(m) como Concluída/Inaugurada mas ainda com saldo a contratar na base — "
+                  "lista aparece(m) como Concluída/Inaugurada mas ainda com T.C. não firmado na base — "
                   "verificar cadastro antes de divulgar.</div>")
-    slide7 = _html_cabecalho_rodape("MAIORES AÇÕES A CONTRATAR",
-        _html_tabela(["AÇÃO", "MUNICÍPIO", "A CONTRATAR", "STATUS", "FASE"], linhas7) + aviso7)
+    slide7 = _html_cabecalho_rodape("MAIORES AÇÕES COM T.C. NÃO FIRMADO",
+        _html_tabela(["AÇÃO", "MUNICÍPIO", "T.C. NÃO FIRMADO", "STATUS", "FASE"], linhas7) + aviso7)
 
     # --- slide 8 ---
     cards8 = [
@@ -1732,7 +1729,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         ("PRAZO DE PENDÊNCIA/TAREFA VENCIDO", m["qtd_prazo_pendencia_vencido"], None,
          "tarefas com prazo já ultrapassado"),
         ("SEM CATEGORIA DE ORIGEM DO RECURSO", m["qtd_sem_detalhamento"], None,
-         "impede identificar a fonte do valor contratado"),
+         "impede identificar a fonte do valor com T.C. firmado"),
     ]
     slide8 = _html_cabecalho_rodape("PENDÊNCIAS QUE CONDICIONAM A CONTRATAÇÃO", f'''
       <div class="cartoes-pendencia">
@@ -1748,11 +1745,11 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 
     # --- slide 9 ---
     mensagens9 = [
-        (abreviar_moeda(m["total_a_contratar"]), "ainda precisam ser contratados para concluir a carteira do PAC-BA"),
+        (abreviar_moeda(m["total_a_contratar"]), "ainda estão com T.C. não firmado na carteira do PAC-BA"),
         (abreviar_moeda(m["a_contratar_parcela_federal"]), "desse valor dependem de fonte Federal (OGU)"),
         (f"{m['gestao_federal_qtd']}", "ações sob execução direta de órgãos federais na carteira"),
         (abreviar_moeda(m["valor_clausula_vigente"]),
-         f"já contratados têm cláusula suspensiva vigente ({m['qtd_clausula_vigente']} ações) — recurso condicionado"),
+         f"com T.C. firmado têm cláusula suspensiva vigente ({m['qtd_clausula_vigente']} ações) — recurso condicionado"),
     ]
     slide9 = _html_cabecalho_rodape("SÍNTESE E PLEITO", f'''
       <div class="lista-sintese">
@@ -1802,7 +1799,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .compacto > .barra-linha .barra-trilho { height:24px; }
     .compacto .nivel-2 .barra-linha { margin-bottom:3px; }
     .compacto .nivel-2 .barra-trilho { height:15px; }
-    .grafico-fase-linha { display:grid; grid-template-columns:400px 1fr 195px 185px 115px; column-gap:14px;
+    .grafico-fase-linha { display:grid; grid-template-columns:400px 1fr 175px 175px 145px; column-gap:14px;
       align-items:center; color:#5B6576; font-size:14px; margin-bottom:2px; }
     .grafico-fase-linha .barra-trilho { flex:none; height:13px; }
     .grafico-fase-linha.nivel-1 { font-size:17px; margin-bottom:4px; }
@@ -1828,14 +1825,11 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .visao-geral table.pac-tabela th { padding:7px 14px; font-size:14px; }
     .visao-geral table.pac-tabela td { padding:5px 14px; }
     .visao-geral .valor-principal { font-size:44px; margin-top:0; line-height:1.1; }
-    .visao-geral .texto-secundario { font-size:14px; margin:2px 0 10px; }
-    .visao-geral .barra-empilhada { height:64px; margin-top:2px; }
-    .destaque-financiamento { float:right; text-align:right; }
-    .faixa-fontes { display:flex; height:32px; clear:both; }
-    .faixa-fontes > div { display:flex; align-items:center; padding-left:6px; font-size:13px; font-weight:700;
-      white-space:nowrap; overflow:hidden; }
-    .legenda-faixa { float:right; font-size:13px; font-weight:400; color:#5B6576; text-transform:none; }
-    .legenda-faixa i { display:inline-block; width:11px; height:11px; margin:0 5px 0 14px; }
+    .visao-geral .barra-empilhada { height:64px; margin-top:6px; }
+    .vg-topo { display:flex; justify-content:space-between; }
+    .vg-recursos { text-align:right; }
+    .vg-recurso-linha { font-size:22px; font-weight:700; color:#E68A00; line-height:1.3; }
+    .visao-geral .barra-empilhada-seg { white-space:nowrap; overflow:hidden; }
     .visao-geral .barra-empilhada-seg { padding:8px 16px; }
     .visao-geral .be-titulo { font-size:16px; }
     .visao-geral .be-sub { font-size:14px; margin-top:2px; }
@@ -1936,12 +1930,12 @@ SLIDES_APRESENTACAO = [
     {"chave": "STATUS_FASE", "titulo": "Status por Fase e Origem do Recurso", "layout": "barras"},
     {"chave": "EIXO_FONTE", "titulo": "Investimento por Eixo e Fonte", "layout": "barras"},
     {"chave": "FONTE_EIXO", "titulo": "Investimento por Fonte e Eixo", "layout": "barras"},
-    {"chave": "EXECUCAO", "titulo": "Execução do Contratado, por Fonte", "layout": "barras"},
-    {"chave": "A_CONTRATAR", "titulo": "O que Ainda Precisa ser Contratado", "layout": "barras"},
+    {"chave": "EXECUCAO", "titulo": "Execução do T.C. Firmado, por Fonte", "layout": "barras"},
+    {"chave": "A_CONTRATAR", "titulo": "Recursos com T.C. Não Firmado", "layout": "barras"},
     {"chave": "TABELA_RESUMO", "titulo": "Tabela-Resumo por Fonte", "layout": "tabela"},
     {"chave": "QUADRO_FASE", "titulo": "Quadro Resumo de Investimentos por Fase", "layout": "tabela"},
     {"chave": "DETALHE_EIXO", "titulo": "Detalhe por Eixo do PAC", "layout": "tabela"},
-    {"chave": "MAIORES_ACOES", "titulo": "Maiores Ações a Contratar", "layout": "tabela"},
+    {"chave": "MAIORES_ACOES", "titulo": "Maiores Ações com T.C. Não Firmado", "layout": "tabela"},
     {"chave": "PENDENCIAS", "titulo": "Pendências que Condicionam a Contratação", "layout": "cards_tabela"},
     {"chave": "SINTESE", "titulo": "Síntese e Pleito", "layout": "texto"},
 ]
