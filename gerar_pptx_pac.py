@@ -1508,31 +1508,16 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     cards_status = [
         ("CONCLUÍDO / INAUGURADO", m["qtd_concluido"], "2E7D32"),
         ("EM OBRAS / ANDAMENTO", m["qtd_andamento"], "0B5CAD"),
-        ("SELEÇÃO / PREPARATÓRIA / LICITAÇÃO", m["qtd_preparatoria"], "E68A00"),
+        ("SELEÇÃO / PREPARATÓRIA / LICITAÇÃO", m["qtd_preparatoria"], AZUL_CLARO_MARCA),
         ("PARALISADO", m["qtd_paralisado"], "C62828"),
     ]
     frac_contratado = (m["total_contratado"] / total_investimento * 100) if total_investimento else 0
     cartoes_status_html = f'''<div class="cartoes-grade">
         {"".join(f'<div class="cartao-status"><div class="cs-barra" style="background:#{c}"></div><div class="cs-num" style="color:#{c}">{qtd}</div><div class="cs-rotulo">{_html_esc(rot)}</div></div>' for rot, qtd, c in cards_status if qtd > 0)}
       </div>'''
-    panorama_html = f'''
-      <div class="rotulo-secao">INVESTIMENTO TOTAL DA CARTEIRA</div>
-      <div class="valor-principal" style="color:#0B1F3F">{_html_esc(abreviar_moeda(total_investimento))}</div>
-      <div class="texto-secundario">{m["qtd_acoes"]} ações do PAC acompanhadas pelo Estado da Bahia</div>
-      <div class="rotulo-secao" style="margin-top:28px">TERMO DE COMPROMISSO:</div>
-      <div class="barra-empilhada">
-        <div class="barra-empilhada-seg" style="width:{frac_contratado:.2f}%;background:#2E7D32">
-          <div class="be-titulo">T.C. FIRMADO · {_html_esc(abreviar_moeda(m["total_contratado"]))}</div>
-          <div class="be-sub">{_html_esc(pct(m["total_contratado"], total_investimento))}</div>
-        </div>
-        <div class="barra-empilhada-seg" style="width:{100 - frac_contratado:.2f}%;background:#E68A00">
-          <div class="be-titulo">T.C. NÃO FIRMADO · {_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
-          <div class="be-sub">{_html_esc(pct(m["total_a_contratar"], total_investimento))}</div>
-        </div>
-      </div>
-      {cartoes_status_html}
-    '''
-    slide1 = _html_cabecalho_rodape("PANORAMA DA CARTEIRA", panorama_html)
+    # panorama_html/slide1 são montados mais abaixo, depois de _html_quadro()
+    # e do bloco de T.C. não firmado por fonte (R$12,5Bi) — página única com
+    # a Visão Geral, pedido do usuário em 08/11/2026.
 
     # --- slide 2 ---
     slide2 = _html_cabecalho_rodape("COMPOSIÇÃO POR ORIGEM DO RECURSO", f'''
@@ -1718,29 +1703,64 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 
     slide_quadro = _html_cabecalho_rodape(TEMA_QUADRO_RESUMO, _html_quadro(_reais_inteiros, LEGENDA_QUADRO_RESUMO))
 
-    # --- visão geral: quadro em cima, panorama embaixo (versão compacta via CSS) ---
+    # --- panorama + visão geral: página única (pedido do usuário em
+    # 08/11/2026; antes eram 2 páginas com investimento total, barra e cards
+    # duplicados — agora o valor de T.C. não firmado por fonte e a tabela de
+    # investimento por fase entram na página do Panorama) ---
     recursos_a_contratar = "" if abreviar_moeda(m["total_a_contratar"]) == "-" else f'''<div class="vg-recursos">
           <div class="rotulo-secao">{_html_esc(ROTULO_RECURSOS_A_CONTRATAR)}</div>
           <div class="valor-principal" style="color:#{LARANJA}">{_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
-          {"".join(f'<div class="vg-recurso-linha">{_html_esc(linha)}</div>' for linha in _linhas_recursos_a_contratar(m))}
+          <div class="linha-icone-detalhamento">
+            <span class="label-detalhamento">Detalhamento por fonte</span>
+            <button type="button" class="btn-icone-detalhamento" title="Ver detalhamento por fonte"
+                    onclick="alternarDetalhamento(this, 'detalhe-fontes-recurso')">+</button>
+          </div>
+          <div class="detalhamento-fontes oculto" id="detalhe-fontes-recurso">
+            {"".join(f'<div class="vg-recurso-linha">{_html_esc(linha)}</div>' for linha in _linhas_recursos_a_contratar(m))}
+          </div>
         </div>'''
-    segmentos_barra = "".join(
-        f'''<div class="barra-empilhada-seg" style="width:{fracao * 100:.2f}%;background:#{cor_seg}">
-          {f'<div class="be-titulo">{_html_esc(texto)}</div><div class="be-sub">{_html_esc(percentual)}</div>' if texto else ""}
-        </div>'''
-        for (texto, percentual, fracao), cor_seg in zip(_barra_termo_compromisso(m), (VERDE, LARANJA)) if fracao > 0)
-    slide_visao_geral_html = _html_cabecalho_rodape("VISÃO GERAL DA CARTEIRA", f'''<div class="visao-geral">
-      {_html_quadro(_mi_bi_2_casas, LEGENDA_QUADRO_ABREVIADA)}
+    panorama_html = f'''<div class="visao-geral">
       <div class="vg-topo">
         <div>
           <div class="rotulo-secao">INVESTIMENTO TOTAL DA CARTEIRA</div>
-          <div class="valor-principal" style="color:#{NAVY}">{_html_esc(abreviar_moeda(total_investimento))}</div>
+          <div class="valor-principal" style="color:#0B1F3F">{_html_esc(abreviar_moeda(total_investimento))}</div>
+          <div class="texto-secundario">{m["qtd_acoes"]} ações do PAC acompanhadas pelo Estado da Bahia</div>
         </div>
         {recursos_a_contratar}
       </div>
-      <div class="barra-empilhada">{segmentos_barra}</div>
+      <div class="rotulo-secao" style="margin-top:14px">TERMO DE COMPROMISSO:</div>
+      <div class="barra-empilhada">
+        <div class="barra-empilhada-seg" style="width:{frac_contratado:.2f}%;background:#2E7D32">
+          <div class="be-titulo">T.C. FIRMADO · {_html_esc(abreviar_moeda(m["total_contratado"]))}</div>
+          <div class="be-sub">{_html_esc(pct(m["total_contratado"], total_investimento))}</div>
+        </div>
+        <div class="barra-empilhada-seg" style="width:{100 - frac_contratado:.2f}%;background:#E68A00">
+          <div class="be-titulo">T.C. NÃO FIRMADO · {_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
+          <div class="be-sub">{_html_esc(pct(m["total_a_contratar"], total_investimento))}</div>
+        </div>
+      </div>
       {cartoes_status_html}
-    </div>''')
+      <div style="margin-top:40px">
+        <div class="rotulo-secao" style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px">
+          <span style="display:flex;align-items:center;gap:10px">INVESTIMENTO POR FASE E FONTE
+            <button type="button" class="btn-icone-detalhamento" title="Ver tabela de investimento por fase"
+                    onclick="alternarDetalhamento(this, 'detalhe-tabela-fase')">+</button>
+          </span>
+          <span style="font-size:13px;font-weight:400;color:#5B6576;text-transform:none">{_html_esc(LEGENDA_QUADRO_ABREVIADA)}</span>
+        </div>
+        <div class="oculto" id="detalhe-tabela-fase">
+          {_html_tabela([c + "*" if c == "NÃO DISCRIMINADO" else c for c in CABECALHO_QUADRO_RESUMO],
+                        _linhas_quadro_resumo(m, _mi_bi_2_casas),
+                        linhas_bold={len(_linhas_quadro_resumo(m, _mi_bi_2_casas)) - 1})}
+          <div class="nota-rodape">{_html_esc(_nota_nao_discriminado(m, com_remissao=False))}</div>
+        </div>
+      </div>
+    </div>'''
+    # slide-continua: a página tem conteúdo variável (botões de detalhamento),
+    # então a altura precisa se ajustar em vez de ficar fixa e sobrepor o
+    # rodapé quando os detalhamentos estão abertos — pedido do usuário em
+    # 08/11/2026.
+    slide1 = _html_cabecalho_rodape("PANORAMA DA CARTEIRA", panorama_html, classe_extra="slide-continua")
 
     # --- slide 6 ---
     linhas6 = []
@@ -1870,7 +1890,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .visao-geral table.pac-tabela { font-size:15px; margin-top:0; }
     .visao-geral table.pac-tabela th { padding:7px 14px; font-size:14px; }
     .visao-geral table.pac-tabela td { padding:5px 14px; }
-    .visao-geral .valor-principal { font-size:44px; margin-top:0; line-height:1.1; }
+    .visao-geral .valor-principal { font-size:66px; margin-top:0; line-height:1.1; }
     .visao-geral .barra-empilhada { height:64px; margin-top:6px; }
     .vg-topo { display:flex; justify-content:space-between; }
     .vg-recursos { text-align:right; }
@@ -1931,6 +1951,19 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .detalhamento-fase { margin-top:18px; }
     .separador-fase { border:none; border-top:1px solid #D8DCE3; margin:28px 0 24px; }
 
+    /* Panorama + Visão Geral: botões de detalhamento (em ícone) do valor de
+       T.C. não firmado por fonte e da tabela de investimento por fase —
+       pedido do usuário em 08/11/2026. */
+    .detalhamento-fontes { margin-top:10px; }
+    .vg-recursos .linha-icone-detalhamento, .vg-recursos .detalhamento-fontes { text-align:right; }
+    .linha-icone-detalhamento { display:flex; align-items:center; gap:10px; margin-top:10px; }
+    .vg-recursos .linha-icone-detalhamento { justify-content:flex-end; }
+    .label-detalhamento { font-size:13px; font-weight:700; color:#5B6576; text-transform:uppercase; }
+    .btn-icone-detalhamento { width:28px; height:28px; border-radius:50%; border:1px solid #D8DCE3;
+      background:#F2F4F7; color:#0B1F3F; font-size:17px; font-weight:700; line-height:1; cursor:pointer;
+      display:inline-flex; align-items:center; justify-content:center; padding:0; font-family:inherit; flex-shrink:0; }
+    .btn-icone-detalhamento:hover { background:#E6E9EE; }
+
     /* Impressão: um slide por folha A4 paisagem. Os tamanhos são em px
        fixos pensados para 1480px de largura, então em vez de deixar o
        max-width:100% espremer (e cortar) o conteúdo na largura do papel,
@@ -1946,7 +1979,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     '''
 
     # só os slides escolhidos, numerados na ordem
-    por_chave = {"PANORAMA": [slide1], "VISAO_GERAL": [slide_visao_geral_html], "COMP_ORIGEM": [slide2], "COMP_FASE": slides_composicao_fase,
+    por_chave = {"PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": slides_composicao_fase,
                  "STATUS_FASE": [slide2b],
                  "EIXO_FONTE": slides_eixo_fonte, "FONTE_EIXO": slides_fonte_eixo, "EXECUCAO": [slide3],
                  "A_CONTRATAR": [slide4], "TABELA_RESUMO": [slide5], "QUADRO_FASE": [slide_quadro],
@@ -1970,7 +2003,13 @@ function alternarDetalhamento(botao, idAlvo) {{
   if (!alvo) return;
   var vaiAbrir = alvo.classList.contains('oculto');
   alvo.classList.toggle('oculto', !vaiAbrir);
-  botao.textContent = vaiAbrir ? 'Ocultar detalhamento por objeto ▴' : 'Ver detalhamento por objeto ▾';
+  if (botao.classList.contains('btn-icone-detalhamento')) {{
+    botao.textContent = vaiAbrir ? '–' : '+';
+    botao.title = botao.title.indexOf('Ver') === 0 ? botao.title.replace('Ver', 'Ocultar')
+                                                    : botao.title.replace('Ocultar', 'Ver');
+  }} else {{
+    botao.textContent = vaiAbrir ? 'Ocultar detalhamento por objeto ▴' : 'Ver detalhamento por objeto ▾';
+  }}
 }}
 </script>
 </body>
@@ -2018,7 +2057,9 @@ def _paginas_por_chave_html(m):
     # "COMPOSIÇÃO POR FASE" vira uma única página contínua com as 4 fases
     # juntas (sem split de tabela) em vez de obedecer à paginação pensada
     # pro tamanho fixo do PPTX — pedido do usuário em 07/11/2026.
-    return dict(_paginas_por_chave(m), COMP_FASE=1)
+    # VISAO_GERAL foi incorporada à página do PANORAMA — pedido do usuário
+    # em 08/11/2026 — então não ocupa página própria no HTML.
+    return dict(_paginas_por_chave(m), COMP_FASE=1, VISAO_GERAL=0)
 
 
 def _preparar_plano(m, secoes, contagem_paginas=None):
