@@ -73,6 +73,10 @@ VERDE = "2E7D32"
 LARANJA = "E68A00"
 VERMELHO = "C62828"
 TEAL = "2F7F92"
+
+# Link do design/mockup no Canva — mostrado no rodapé de cada slide do HTML,
+# à esquerda da numeração de página (pedido do usuário em 08/11/2026).
+LINK_CANVA = "https://canva.link/fzb6x2nxe2tqb2w"
 CINZA_TEXTO = "5B6576"
 CINZA_CLARO = "F2F4F7"
 CINZA_BORDA = "D8DCE3"
@@ -1482,7 +1486,7 @@ def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, reco
       <div class="conteudo">{conteudo_html}</div>
       <div class="rodape">
         <span>Fonte: {_html_esc(nome_planilha)} · posição em {_html_esc(posicao)}{(" · Filtros: " + _html_esc(recorte)) if recorte else ""}</span>
-        <span>{pagina}/{total_paginas}</span>
+        <span><a href="{LINK_CANVA}" target="_blank" rel="noopener">{LINK_CANVA}</a>&nbsp;&nbsp;&nbsp;{pagina}/{total_paginas}</span>
       </div>
     </section>'''
 
@@ -1730,7 +1734,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       <div class="vg-topo">
         <div>
           <div class="rotulo-secao">INVESTIMENTO TOTAL DA CARTEIRA</div>
-          <div class="valor-principal" style="color:#{VERDE}">{_html_esc(abreviar_moeda(total_investimento))}</div>
+          <div class="valor-principal" style="color:#{NAVY}">{_html_esc(abreviar_moeda(total_investimento))}</div>
         </div>
         {recursos_a_contratar}
       </div>
@@ -1814,6 +1818,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .conteudo { padding: 28px 40px; }
     .rodape { position:absolute; bottom:14px; left:40px; right:40px; display:flex; justify-content:space-between;
       font-size:12px; color:#5B6576; }
+    .rodape a { color:#5B6576; }
     .rotulo-secao { font-size:18px; font-weight:700; color:#5B6576; text-transform:uppercase; }
     .valor-principal { font-size:68px; font-weight:900; margin-top:6px; }
     .texto-secundario { font-size:17px; color:#5B6576; margin-top:6px; }

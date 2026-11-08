@@ -12,7 +12,17 @@
       "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_termo_compromisso.html\")",
       "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_cor_investimento_total.html\")",
       "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_fonte_barra_panorama.html\")",
-      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_fonte_barra_panorama2.html\")"
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_fonte_barra_panorama2.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_cor_investimento_visaogeral.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_link_canva.html\")",
+      "Bash(python -X utf8 \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\gerar_pdf_origem_coluna.py\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\acoes_sem_tc_origem_coluna.pdf\")",
+      "Bash(python -X utf8 \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\gerar_pdf_origem_coluna_3fases_a4.py\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\acoes_sem_tc_origem_3fases_A4.pdf\")",
+      "Bash(python -X utf8 \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\gerar_pdf_origem_fora_captacao_sem_concluida.py\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\acoes_sem_tc_fora_captacao_sem_concluida_origem_A4.pdf\")",
+      "Bash(git fetch *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
