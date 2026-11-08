@@ -14300,7 +14300,9 @@ def montar_html_painel(df_base):
     // Resolve com a lista de chaves escolhidas, ou com null quando a pessoa
     // cancela (aí a geração inteira é abortada, sem abrir o "Salvar como").
     // opcoes (usado pela apresentação; sem ele, é a janela do relatório):
-    // api, titulo, rotuloConfirmar, semColunas, unidade/unidades, contador.
+    // api, titulo, rotuloConfirmar, semColunas, unidade/unidades, contador,
+    // formato (repassado pra api, ex.: "html" esconde slides que só existem
+    // mesclados no HTML).
     opcoes = opcoes || {};
     var unidade = opcoes.unidade || "página";
     var unidades = opcoes.unidades || "páginas";
@@ -14314,7 +14316,8 @@ def montar_html_painel(df_base):
 
       var lista;
       try {
-        lista = await chamarAPI(opcoes.api || "listar_paginas_relatorio", filtros);
+        var argsApi = opcoes.formato !== undefined ? [filtros, opcoes.formato] : [filtros];
+        lista = await chamarAPI(opcoes.api || "listar_paginas_relatorio", ...argsApi);
       } catch (erro) {
         alert("Não foi possível montar a lista de páginas:" + NL + NL + erro);
         resolve(null);
@@ -14865,7 +14868,7 @@ def montar_html_painel(df_base):
   // filtros e topo do dashboard, mesmo padrão do par btnGerar/
   // previewGerarTopo acima) — com os filtros ativos no painel e a mesma
   // janela de seleção do relatório (aqui, de slides), sem passo de qualidade.
-  function escolherSlides(filtros, rotuloConfirmar) {
+  function escolherSlides(filtros, rotuloConfirmar, formato) {
     return mostrarJanelaPaginas(filtros, {
       api: "listar_slides_apresentacao",
       titulo: "Selecione os slides da apresentação",
@@ -14874,6 +14877,7 @@ def montar_html_painel(df_base):
       unidade: "slide",
       unidades: "slides",
       contador: "selecionados",
+      formato: formato,
     });
   }
   var AVISO_RECORTE_VAZIO = "Nenhum registro encontrado para os filtros selecionados. A apresentação não será gerada.";
@@ -14885,7 +14889,7 @@ def montar_html_painel(df_base):
 
   async function gerarApresentacaoFinanceira() {
     var filtros = montarFiltrosAtuais();
-    var secoes = await escolherSlides(filtros, "GERAR PPTX");
+    var secoes = await escolherSlides(filtros, "GERAR PPTX", "pptx");
     if (secoes === null) return;
     botoesGerarPPTX.forEach(function (b) { b.disabled = true; b.textContent = "Gerando..."; });
     try {
@@ -14914,7 +14918,7 @@ def montar_html_painel(df_base):
 
   async function verApresentacaoHtml() {
     var filtros = montarFiltrosAtuais();
-    var secoes = await escolherSlides(filtros, "VER APRESENTAÇÃO");
+    var secoes = await escolherSlides(filtros, "VER APRESENTAÇÃO", "html");
     if (secoes === null) return;
     botoesVerHTML.forEach(function (b) { b.disabled = true; b.textContent = "Gerando..."; });
     try {
@@ -15331,10 +15335,15 @@ def _construir_pptx_analise_financeira_bytes(filtros=None, secoes=None):
     return conteudo
 
 
-def _api_listar_slides_apresentacao(filtros=None):
+def _api_listar_slides_apresentacao(filtros=None, formato=None):
     # Alimenta a janela de seleção de slides (mesma do relatório gerencial).
+    # "Visão Geral da Carteira" foi mesclada no Panorama só no HTML (ela
+    # continua existindo como slide próprio no PPTX), então o painel só
+    # esconde essa opção quando formato="html" — pedido do usuário em
+    # 08/11/2026.
     try:
-        return {"ok": True, "secoes": _modulo_apresentacao().listar_slides(_df_analise_financeira(filtros))}
+        return {"ok": True,
+                "secoes": _modulo_apresentacao().listar_slides(_df_analise_financeira(filtros), formato)}
     except RecorteVazioErro:
         return {"ok": False, "vazio": True}
     except Exception as erro:
@@ -15505,8 +15514,8 @@ def abrir_interface_filtros(df_base):
                 traceback.print_exc()
                 return {"ok": False, "erro": str(erro)}
 
-        def listar_slides_apresentacao(self, filtros=None):
-            return _api_listar_slides_apresentacao(filtros)
+        def listar_slides_apresentacao(self, filtros=None, formato=None):
+            return _api_listar_slides_apresentacao(filtros, formato)
 
         def gerar_pptx_analise_financeira(self, filtros=None, secoes=None):
             # Botão "ANÁLISE FINANCEIRA (PPTX)" no modo desktop — mesmo

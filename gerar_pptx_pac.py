@@ -1408,11 +1408,14 @@ def _html_segmentos_barra(c_val, a_val, base, cheia, clara):
 
 
 def _html_linha_tabela(rotulo, c_val, a_val, base, cheia, clara):
-    # Igual ao PPTX, ver _linha_tabela. O nível 2 só muda o estilo, via CSS .nivel-2.
+    # Igual ao PPTX, ver _linha_tabela, mas a barra segue a mesma lógica de
+    # cor do T.C. firmado/não firmado (verde/laranja) em vez da cor por fonte
+    # (cheia/clara seguem recebidos só pra manter a assinatura e o PPTX
+    # intocado) — pedido do usuário em 08/11/2026.
     return f'''<div class="barra-linha">
       <div class="barra-rotulo" style="width:340px">{_html_esc(rotulo)}</div>
       <div class="barra-col-valor col-contratado">{_html_esc(abreviar_moeda(c_val))}</div>
-      <div class="barra-trilho">{_html_segmentos_barra(c_val, a_val, base, cheia, clara)}</div>
+      <div class="barra-trilho">{_html_segmentos_barra(c_val, a_val, base, VERDE, LARANJA)}</div>
       <div class="barra-col-valor col-a-contratar">{_html_esc(abreviar_moeda(a_val))}</div>
       <div class="barra-col-valor">{_html_esc(abreviar_moeda(c_val + a_val))}</div>
     </div>'''
@@ -1428,11 +1431,13 @@ def _html_blocos_grupos(pagina, total):
 
 def _html_linha_grafico_fase(nivel, rotulo, c_val, a_val, base, cheia, clara):
     # Linha do gráfico dos slides por fase (igual ao PPTX, ver _linha_grafico_fase).
-    # T.C. FIRMADO/NÃO FIRMADO nas mesmas cores da Visão Geral (verde/laranja)
-    # — pedido do usuário em 08/11/2026.
+    # T.C. FIRMADO/NÃO FIRMADO nas mesmas cores da Visão Geral (verde/laranja),
+    # tanto no texto quanto na barra agora (cheia/clara seguem recebidos só
+    # pra manter a assinatura e o PPTX intocado) — pedido do usuário em
+    # 08/11/2026.
     return f'''<div class="grafico-fase-linha nivel-{nivel}">
       <div class="gf-rotulo">{_html_esc(rotulo)}</div>
-      <div class="barra-trilho">{_html_segmentos_barra(c_val, a_val, base, cheia, clara)}</div>
+      <div class="barra-trilho">{_html_segmentos_barra(c_val, a_val, base, VERDE, LARANJA)}</div>
       <div class="gf-total">{_html_esc(abreviar_moeda(c_val + a_val))}</div>
       <div style="color:#{VERDE};font-weight:700">{_html_esc(abreviar_moeda(c_val))}</div>
       <div style="color:#{LARANJA};font-weight:700">{_html_esc(abreviar_moeda(a_val))}</div>
@@ -1521,7 +1526,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 
     # --- slide 2 ---
     slide2 = _html_cabecalho_rodape("COMPOSIÇÃO POR ORIGEM DO RECURSO", f'''
-      <div class="grafico-origem">{_html_grafico_fase(m, _grafico_total_fontes(m), ROTULO_GRAFICO_ORIGEM, LEGENDA_FASES)}</div>
+      <div class="grafico-origem">{_html_grafico_fase(m, _grafico_total_fontes(m), ROTULO_GRAFICO_ORIGEM)}</div>
       <div class="tres-colunas" style="margin-top:24px">
         {"".join(f"""<div class="cartao-destaque">
           <div class="cd-rotulo">{_html_esc(rot)}</div>
@@ -1742,12 +1747,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       </div>
       {cartoes_status_html}
       <div style="margin-top:40px">
-        <div class="rotulo-secao" style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px">
-          <span style="display:flex;align-items:center;gap:10px">INVESTIMENTO POR FASE E FONTE
-            <button type="button" class="btn-icone-detalhamento" title="Ver tabela de investimento por fase"
-                    onclick="alternarDetalhamento(this, 'detalhe-tabela-fase')">+</button>
-          </span>
-          <span style="font-size:13px;font-weight:400;color:#5B6576;text-transform:none">{_html_esc(LEGENDA_QUADRO_ABREVIADA)}</span>
+        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
+          <span>INVESTIMENTO POR FASE E FONTE</span>
+          <button type="button" class="btn-icone-detalhamento" title="Ver tabela de investimento por fase"
+                  onclick="alternarDetalhamento(this, 'detalhe-tabela-fase')">+</button>
         </div>
         <div class="oculto" id="detalhe-tabela-fase">
           {_html_tabela([c + "*" if c == "NÃO DISCRIMINADO" else c for c in CABECALHO_QUADRO_RESUMO],
@@ -1871,6 +1874,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .grafico-fase-linha .barra-trilho { flex:none; height:13px; }
     .grafico-fase-linha.nivel-1 { font-size:17px; margin-bottom:4px; }
     .grafico-fase-linha.nivel-1 .barra-trilho { height:20px; }
+    .grafico-fase-linha > div:nth-child(3), .grafico-fase-linha > div:nth-child(4),
+    .grafico-fase-linha > div:nth-child(5) { text-align:right; }
     .gf-rotulo { font-weight:700; color:#0B1F3F; font-size:14px; padding-left:28px; }
     .nivel-1 .gf-rotulo { font-size:19px; padding-left:0; }
     .gf-total { font-weight:700; color:#0B1F3F; }
@@ -1895,7 +1900,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .visao-geral .barra-empilhada { height:64px; margin-top:6px; }
     .vg-topo { display:flex; justify-content:space-between; }
     .vg-recursos { text-align:right; }
-    .vg-recurso-linha { font-size:22px; font-weight:700; color:#E68A00; line-height:1.3; }
+    .vg-recurso-linha { font-size:22px; font-weight:700; color:#E68A00; line-height:1.3; text-align:right; }
     .visao-geral .barra-empilhada-seg { white-space:nowrap; overflow:hidden; }
     .visao-geral .barra-empilhada-seg { padding:8px 16px; }
     .visao-geral .be-titulo { font-size:16px; }
@@ -2131,9 +2136,14 @@ def _preparar_plano(m, secoes, contagem_paginas=None):
     return escolhidas
 
 
-def listar_slides(df):
-    paginas = _paginas_por_chave(calcular_metricas(df))
-    return [dict(s, paginas=paginas.get(s["chave"], 1), marcada=True) for s in SLIDES_APRESENTACAO]
+def listar_slides(df, formato=None):
+    # "Visão Geral da Carteira" foi mesclada no Panorama só no HTML (no PPTX
+    # ela continua um slide próprio) — some do catálogo só quando o painel
+    # pede a lista pra montar o HTML — pedido do usuário em 08/11/2026.
+    m = calcular_metricas(df)
+    paginas = _paginas_por_chave_html(m) if formato == "html" else _paginas_por_chave(m)
+    catalogo = [s for s in SLIDES_APRESENTACAO if not (formato == "html" and s["chave"] == "VISAO_GERAL")]
+    return [dict(s, paginas=paginas.get(s["chave"], 1), marcada=True) for s in catalogo]
 
 
 # ---------------------------------------------------------------------------
