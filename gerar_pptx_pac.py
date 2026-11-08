@@ -1538,16 +1538,12 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       apresentação — a base não distingue dívida do Estado com aval federal de financiamento federal direto.</div>
     ''')
 
-    # --- slide único de "Composição por Fase": as 4 fases juntas numa página
-    # contínua (sem o split por limite de altura do PPTX), cada uma com seu
-    # gráfico e o detalhamento por objeto atrás de um botão, iniciando oculto
-    # — pedido do usuário em 07/11/2026 (antes era 1 slide por fase). Sem
-    # título por fase (o nome da fase já aparece em negrito na linha do
-    # gráfico) e com o subtítulo "INVESTIMENTO TOTAL, POR FASE E FONTE..."
-    # uma única vez no topo da página — pedido do usuário em 08/11/2026.
-    blocos_fases_html = [f'''<div class="rotulo-secao" style="display:flex;justify-content:space-between;align-items:baseline">
-        <span>{_html_esc(ROTULO_GRAFICO_FASE)}</span>
-      </div>''']
+    # --- Composição por Fase: as 4 fases juntas, atrás de um único botão de
+    # detalhamento na página do Panorama (mesma lógica do botão de
+    # "Investimento por Fase e Fonte") — pedido do usuário em 08/11/2026.
+    # Antes era 1 slide por fase (07/11/2026), depois virou página própria
+    # com as 4 juntas; agora é mais um bloco dentro do Panorama.
+    blocos_fases_html = []
     for idx_fase, (fase, (rotulo_f, c_f, a_f, fontes_f)) in enumerate(zip(m["fases_ordem"], _fases_por_fonte(m)), 1):
         grafico = (rotulo_f, c_f, a_f, fontes_f)
         blocos = []
@@ -1579,8 +1575,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         <div class="grafico-fase-bloco">{_html_grafico_fase(m, grafico, rotulo_secao="")}</div>
         {detalhamento_html}
       </div>''')
-    slides_composicao_fase = [_html_cabecalho_rodape("COMPOSIÇÃO POR FASE", "".join(blocos_fases_html),
-                                                      classe_extra="slide-continua")]
+    composicao_fase_html = "".join(blocos_fases_html)
 
     # --- slide 4 (novo): status por fase e origem do recurso ---
     blocos_fase = []
@@ -1757,6 +1752,16 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
                         _linhas_quadro_resumo(m, _mi_bi_2_casas),
                         linhas_bold={len(_linhas_quadro_resumo(m, _mi_bi_2_casas)) - 1})}
           <div class="nota-rodape">{_html_esc(_nota_nao_discriminado(m, com_remissao=False))}</div>
+        </div>
+      </div>
+      <div style="margin-top:40px">
+        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
+          <span>COMPOSIÇÃO POR FASE</span>
+          <button type="button" class="btn-icone-detalhamento" title="Ver composição por fase"
+                  onclick="alternarDetalhamento(this, 'detalhe-composicao-fase')">+</button>
+        </div>
+        <div class="oculto" id="detalhe-composicao-fase">
+          {composicao_fase_html}
         </div>
       </div>
     </div>'''
@@ -2009,7 +2014,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     '''
 
     # só os slides escolhidos, numerados na ordem
-    por_chave = {"PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": slides_composicao_fase,
+    por_chave = {"PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": [],
                  "STATUS_FASE": [slide2b],
                  "EIXO_FONTE": slides_eixo_fonte, "FONTE_EIXO": slides_fonte_eixo, "EXECUCAO": [slide3],
                  "A_CONTRATAR": [slide4], "TABELA_RESUMO": [slide5], "QUADRO_FASE": [slide_quadro],
@@ -2112,13 +2117,10 @@ def _paginas_por_chave(m):
 
 
 def _paginas_por_chave_html(m):
-    # No HTML não há limite físico de página como no PPTX, então
-    # "COMPOSIÇÃO POR FASE" vira uma única página contínua com as 4 fases
-    # juntas (sem split de tabela) em vez de obedecer à paginação pensada
-    # pro tamanho fixo do PPTX — pedido do usuário em 07/11/2026.
-    # VISAO_GERAL foi incorporada à página do PANORAMA — pedido do usuário
-    # em 08/11/2026 — então não ocupa página própria no HTML.
-    return dict(_paginas_por_chave(m), COMP_FASE=1, VISAO_GERAL=0)
+    # VISAO_GERAL e COMP_FASE foram incorporadas à página do PANORAMA —
+    # pedido do usuário em 08/11/2026 — então não ocupam página própria no
+    # HTML (continuam existindo como slides do PPTX).
+    return dict(_paginas_por_chave(m), COMP_FASE=0, VISAO_GERAL=0)
 
 
 def _preparar_plano(m, secoes, contagem_paginas=None):
@@ -2136,13 +2138,19 @@ def _preparar_plano(m, secoes, contagem_paginas=None):
     return escolhidas
 
 
+SLIDES_MESCLADOS_NO_PANORAMA_HTML = {"VISAO_GERAL", "COMP_FASE"}
+
+
 def listar_slides(df, formato=None):
-    # "Visão Geral da Carteira" foi mesclada no Panorama só no HTML (no PPTX
-    # ela continua um slide próprio) — some do catálogo só quando o painel
-    # pede a lista pra montar o HTML — pedido do usuário em 08/11/2026.
+    # "Visão Geral da Carteira" e "Composição por Fase" foram mescladas no
+    # Panorama só no HTML (no PPTX continuam slides próprios) — somem do
+    # catálogo só quando o painel pede a lista pra montar o HTML, porque
+    # marcar/desmarcar essas opções não teria efeito nenhum nesse formato
+    # — pedido do usuário em 08/11/2026.
     m = calcular_metricas(df)
     paginas = _paginas_por_chave_html(m) if formato == "html" else _paginas_por_chave(m)
-    catalogo = [s for s in SLIDES_APRESENTACAO if not (formato == "html" and s["chave"] == "VISAO_GERAL")]
+    catalogo = [s for s in SLIDES_APRESENTACAO
+                if not (formato == "html" and s["chave"] in SLIDES_MESCLADOS_NO_PANORAMA_HTML)]
     return [dict(s, paginas=paginas.get(s["chave"], 1), marcada=True) for s in catalogo]
 
 
