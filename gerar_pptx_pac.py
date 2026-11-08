@@ -2005,9 +2005,16 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       .bloco-fonte-fase, .barra-linha, .pac-tabela tr {
         break-inside:avoid; page-break-inside:avoid;
       }
-      /* Gráfico completo de uma fase (TOTAL + linhas por fonte) não pode ser
-         separado entre páginas — pedido do usuário em 08/11/2026. */
-      .grafico-fase-bloco { break-inside:avoid; page-break-inside:avoid; }
+      /* Gráfico completo de uma fase (TOTAL + linhas por fonte) e cada
+         tabela de detalhamento por objeto não podem ser separados entre
+         páginas — pedido do usuário em 08/11/2026. A fase inteira (gráfico +
+         detalhamento) também evita quebrar, pra ela nunca ficar sozinha no
+         rodapé de uma folha com o resto empurrado pra próxima — se não
+         couber de jeito nenhum numa página, as regras acima garantem que ao
+         menos a quebra cai numa borda limpa (entre gráfico e tabela, ou
+         entre tabelas), nunca no meio de uma — pedido do usuário em
+         08/11/2026. */
+      .grafico-fase-bloco, .pac-tabela, .composicao-fase { break-inside:avoid; page-break-inside:avoid; }
       .rotulo-secao { break-after:avoid; page-break-after:avoid; }
       .btn-gerar-pdf { display:none !important; }
     }
