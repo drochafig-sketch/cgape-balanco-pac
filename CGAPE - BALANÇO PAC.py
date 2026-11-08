@@ -9941,8 +9941,35 @@ def montar_html_painel(df_base):
     background: var(--cor-fundo);
     cursor: pointer;
     text-align: left;
+    position: relative;
     transition: border-color var(--transicao-rapida), background var(--transicao-rapida);
   }
+  /* Setas de reordenar (só na apresentação HTML, pedido do usuário em
+     08/11/2026) — ficam sobre o canto do cartão, sem atrapalhar o clique de
+     marcar/desmarcar (por isso o stopPropagation no onclick delas). */
+  .pagina-card-ordem {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 1;
+  }
+  .pagina-card-ordem-btn {
+    width: 22px;
+    height: 18px;
+    padding: 0;
+    font-size: 10px;
+    line-height: 1;
+    border: 1px solid var(--cor-card-elevado);
+    border-radius: 4px;
+    background: var(--cor-fundo-elevado, #fff);
+    color: var(--cor-texto-secundario);
+    cursor: pointer;
+  }
+  .pagina-card-ordem-btn:hover:not(:disabled) { border-color: var(--cor-acento-teal); }
+  .pagina-card-ordem-btn:disabled { opacity: 0.3; cursor: default; }
   .pagina-card:hover { border-color: var(--cor-acento-teal); }
   .pagina-card.marcada {
     border-color: var(--cor-acento-teal);
@@ -14345,9 +14372,16 @@ def montar_html_painel(df_base):
         document.getElementById("paginas-confirmar").disabled = n === 0;
       }
 
+      function trocarOrdem(indiceA, indiceB) {
+        var tmp = lista.secoes[indiceA];
+        lista.secoes[indiceA] = lista.secoes[indiceB];
+        lista.secoes[indiceB] = tmp;
+        desenhar();
+      }
+
       function desenhar() {
         grade.innerHTML = "";
-        lista.secoes.forEach(function (sec) {
+        lista.secoes.forEach(function (sec, indice) {
           var card = document.createElement("div");
           card.className = "pagina-card" + (marcadas[sec.chave] ? " marcada" : "");
           card.innerHTML =
@@ -14368,6 +14402,27 @@ def montar_html_painel(df_base):
             card.classList.toggle("marcada", marcadas[sec.chave]);
             atualizarContador();
           };
+          if (opcoes.permitirReordenar) {
+            var ordem = document.createElement("div");
+            ordem.className = "pagina-card-ordem";
+            var btnCima = document.createElement("button");
+            btnCima.type = "button";
+            btnCima.className = "pagina-card-ordem-btn";
+            btnCima.textContent = "▲";
+            btnCima.title = "Mover pra cima na ordem da apresentação";
+            btnCima.disabled = indice === 0;
+            btnCima.onclick = function (ev) { ev.stopPropagation(); trocarOrdem(indice, indice - 1); };
+            var btnBaixo = document.createElement("button");
+            btnBaixo.type = "button";
+            btnBaixo.className = "pagina-card-ordem-btn";
+            btnBaixo.textContent = "▼";
+            btnBaixo.title = "Mover pra baixo na ordem da apresentação";
+            btnBaixo.disabled = indice === lista.secoes.length - 1;
+            btnBaixo.onclick = function (ev) { ev.stopPropagation(); trocarOrdem(indice, indice + 1); };
+            ordem.appendChild(btnCima);
+            ordem.appendChild(btnBaixo);
+            card.appendChild(ordem);
+          }
           grade.appendChild(card);
         });
         atualizarContador();
@@ -14878,6 +14933,11 @@ def montar_html_painel(df_base):
       unidades: "slides",
       contador: "selecionados",
       formato: formato,
+      // Reordenar só faz sentido pro HTML: é o único formato onde dá pra
+      // intercalar a apresentação Canva (site externo) entre as seções do
+      // dash — o PPTX mantém a ordem fixa do catálogo — pedido do usuário
+      // em 08/11/2026.
+      permitirReordenar: formato === "html",
     });
   }
   var AVISO_RECORTE_VAZIO = "Nenhum registro encontrado para os filtros selecionados. A apresentação não será gerada.";

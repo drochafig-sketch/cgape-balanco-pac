@@ -34,8 +34,11 @@ Escopo e definições decididas com o usuário em 01/11/2026 (ver conversa):
 Saída: ANALISE_FINANCEIRA_PAC.pptx e APOIO_ANALISE_FINANCEIRA_PAC.xlsx, na
 mesma pasta deste script.
 """
+import base64
 import importlib.util
+import io
 import os
+import re
 import sys
 from datetime import date
 
@@ -77,6 +80,57 @@ TEAL = "2F7F92"
 # Link do design/mockup no Canva — mostrado no rodapé de cada slide do HTML,
 # à esquerda da numeração de página (pedido do usuário em 08/11/2026).
 LINK_CANVA = "https://sea-lion-m85670.my.canva.site/"
+
+# Páginas extras do HTML com as páginas do site do Canva exportadas como
+# imagem (o Canva bloqueia ser embutido via iframe — tentativa anterior
+# abandonada em 08/11/2026), uma por arquivo nesta pasta, pra poder
+# intercalar com as seções do dash no painel de seleção/ordenação. O nome
+# do arquivo é o número da página no Canva (ex.: "12.jpg"), não
+# necessariamente sequencial, pois nem toda página precisa ser exportada.
+# Não existe no catálogo do PPTX (SLIDES_APRESENTACAO) — pedido do usuário
+# em 08/11/2026.
+PASTA_SLIDES_CANVA = os.path.join(PASTA_BASE, "APRESENTAÇÃO - CGAPE")
+_RE_ARQUIVO_SLIDE_CANVA = re.compile(r"^(\d+)\.(jpe?g|png)$", re.IGNORECASE)
+
+
+def _chave_canva(numero):
+    return f"CANVA_{numero}"
+
+
+def _paginas_canva_disponiveis():
+    if not os.path.isdir(PASTA_SLIDES_CANVA):
+        return []
+    paginas = []
+    for nome in os.listdir(PASTA_SLIDES_CANVA):
+        m = _RE_ARQUIVO_SLIDE_CANVA.match(nome)
+        if m:
+            paginas.append((int(m.group(1)), nome))
+    paginas.sort()
+    return paginas
+
+
+def _data_uri_imagem(caminho):
+    # Reduz/recomprime antes de embutir em base64 — o Canva exporta em
+    # qualidade alta (1920x1080, até ~1,8 MB por página), o que deixaria o
+    # HTML pesado demais pra compartilhar; se o Pillow não conseguir abrir
+    # por algum motivo, usa o arquivo original sem mexer.
+    with open(caminho, "rb") as f:
+        dados_originais = f.read()
+    mime = "image/png" if caminho.lower().endswith(".png") else "image/jpeg"
+    dados = dados_originais
+    try:
+        from PIL import Image
+        imagem = Image.open(io.BytesIO(dados_originais))
+        if imagem.width > 1600:
+            nova_altura = round(imagem.height * 1600 / imagem.width)
+            imagem = imagem.resize((1600, nova_altura), Image.LANCZOS)
+        buffer = io.BytesIO()
+        imagem.convert("RGB").save(buffer, format="JPEG", quality=82, optimize=True)
+        dados = buffer.getvalue()
+        mime = "image/jpeg"
+    except Exception:
+        pass
+    return f"data:{mime};base64,{base64.b64encode(dados).decode('ascii')}"
 CINZA_TEXTO = "5B6576"
 CINZA_CLARO = "F2F4F7"
 CINZA_BORDA = "D8DCE3"
@@ -1498,7 +1552,14 @@ def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, reco
 
 def montar_html_apresentacao(df, filtros=None, secoes=None):
     m = calcular_metricas(df)
-    escolhidas = _preparar_plano(m, secoes, contagem_paginas=_paginas_por_chave_html(m))
+    # manter_ordem=True: o painel de seleção do HTML permite reordenar os
+    # cartões (inclusive intercalando as páginas do Canva), então a ordem
+    # final é a que vier em `secoes`, não a ordem fixa do catálogo do PPTX
+    # — pedido do usuário em 08/11/2026.
+    paginas_canva = _paginas_canva_disponiveis()
+    chaves_validas_html = {s["chave"] for s in SLIDES_APRESENTACAO} | {_chave_canva(n) for n, _ in paginas_canva}
+    escolhidas = _preparar_plano(m, secoes, contagem_paginas=_paginas_por_chave_html(m),
+                                 manter_ordem=True, chaves_validas=chaves_validas_html)
     recorte = descrever_filtros(filtros)
 
     # todo slide abaixo leva o mesmo recorte no rodapé; o número da página é
@@ -1665,45 +1726,6 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       </div>
     ''')
 
-    # --- slide 5 ---
-    linhas5 = []
-    for nome, c_val, a_val in [
-        ("OGU (Apoiado)", m["contratado_ogu"], m["a_contratar_ogu"]),
-        ("Financiamento", m["contratado_financiamento"], m["a_contratar_financiamento"]),
-        ("Recurso Estadual", m["contratado_estadual"], m["a_contratar_estadual"]),
-        ("Não discriminado (T.C. firmado)", m["contratado_nao_discriminado"], 0.0),
-    ]:
-        tot = c_val + a_val
-        linhas5.append([nome, abreviar_moeda(c_val), abreviar_moeda(a_val), abreviar_moeda(tot),
-                         pct(tot, total_investimento)])
-    linhas5.append(["SUBTOTAL FEDERAL (OGU)", abreviar_moeda(m["contratado_parcela_federal"]),
-                     abreviar_moeda(m["a_contratar_parcela_federal"]), abreviar_moeda(m["total_parcela_federal"]),
-                     pct(m["total_parcela_federal"], total_investimento)])
-    linhas5.append(["SUBTOTAL ESTADUAL (Financiamento + Contrapartida + Complementar)",
-                     abreviar_moeda(m["contratado_parcela_estadual"]),
-                     abreviar_moeda(m["a_contratar_parcela_estadual"]), abreviar_moeda(m["total_parcela_estadual"]),
-                     pct(m["total_parcela_estadual"], total_investimento)])
-    linhas5.append(["TOTAL GERAL", abreviar_moeda(m["total_contratado"]), abreviar_moeda(m["total_a_contratar"]),
-                     abreviar_moeda(total_investimento), "100,0%"])
-    slide5 = _html_cabecalho_rodape("TABELA-RESUMO POR FONTE", f'''
-      {_html_tabela(["FONTE", "T.C. FIRMADO", "T.C. NÃO FIRMADO", "TOTAL", "% DO TOTAL"], linhas5, linhas_bold={4, 5, 6})}
-      <div class="nota-rodape">"Não discriminado" = T.C. firmado sem detalhamento por fonte preenchido na base{f" (ver slide {_slide_execucao(m)})." if _slide_execucao(m) else "."}</div>
-    ''')
-
-    # --- quadro resumo por fase ---
-    def _html_quadro(formatar, legenda):
-        linhas_quadro = _linhas_quadro_resumo(m, formatar)
-        return f'''
-      <div class="rotulo-secao" style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px">
-        <span>{_html_esc(SUBTITULO_QUADRO_RESUMO)}</span>
-        <span style="font-size:13px;font-weight:400;color:#5B6576;text-transform:none">{_html_esc(legenda)}</span>
-      </div>
-      {_html_tabela(CABECALHO_QUADRO_RESUMO, linhas_quadro, linhas_bold={len(linhas_quadro) - 1})}
-      <div class="nota-rodape">{_html_esc(_nota_nao_discriminado(m, com_remissao=False))}</div>
-    '''
-
-    slide_quadro = _html_cabecalho_rodape(TEMA_QUADRO_RESUMO, _html_quadro(_reais_inteiros, LEGENDA_QUADRO_RESUMO))
-
     # --- panorama + visão geral: página única (pedido do usuário em
     # 08/11/2026; antes eram 2 páginas com investimento total, barra e cards
     # duplicados — agora o valor de T.C. não firmado por fonte e a tabela de
@@ -1769,69 +1791,6 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     # rodapé quando os detalhamentos estão abertos — pedido do usuário em
     # 08/11/2026.
     slide1 = _html_cabecalho_rodape("PANORAMA DA CARTEIRA", panorama_html, classe_extra="slide-continua")
-
-    # --- slide 6 ---
-    linhas6 = []
-    for eixo, linha in m["por_eixo"].iterrows():
-        linhas6.append([eixo, int(linha["QTD"]), abreviar_moeda(linha["INVESTIMENTO"]),
-                         abreviar_moeda(linha["CONTRATADO"]), abreviar_moeda(linha["A_CONTRATAR"])])
-    slide6 = _html_cabecalho_rodape("DETALHE POR EIXO DO PAC",
-        _html_tabela(["EIXO", "Nº AÇÕES", "INVESTIMENTO", "T.C. FIRMADO", "T.C. NÃO FIRMADO"], linhas6))
-
-    # --- slide 7 ---
-    top10 = m["top10_a_contratar"]
-    linhas7 = []
-    for _, r in top10.iterrows():
-        linhas7.append([str(r[pac.col_objeto]), str(r["MUNICIPIO"]), abreviar_moeda(r["_A_CONTRATAR"]),
-                         str(r["STATUS_TEXTO"]).title(), str(r["FASE_TEXTO"]).title()])
-    concluidas_com_saldo = top10[top10["STATUS_TEXTO"].isin(["CONCLUÍDA", "INAUGURADA"])]
-    aviso7 = ""
-    if len(concluidas_com_saldo) > 0:
-        aviso7 = (f'<div class="caixa-pendencia">⚠ PENDÊNCIA — {len(concluidas_com_saldo)} ação(ões) nesta '
-                  "lista aparece(m) como Concluída/Inaugurada mas ainda com T.C. não firmado na base — "
-                  "verificar cadastro antes de divulgar.</div>")
-    slide7 = _html_cabecalho_rodape("MAIORES AÇÕES COM T.C. NÃO FIRMADO",
-        _html_tabela(["AÇÃO", "MUNICÍPIO", "T.C. NÃO FIRMADO", "STATUS", "FASE"], linhas7) + aviso7)
-
-    # --- slide 8 ---
-    cards8 = [
-        ("CLÁUSULA SUSPENSIVA VIGENTE", m["qtd_clausula_vigente"], abreviar_moeda(m["valor_clausula_vigente"]),
-         "ações com condição contratual ainda não resolvida"),
-        ("OBRA NÃO INICIADA", m["qtd_obra_nao_iniciada"], None,
-         "mais de 40 dias desde a Emissão de O.S., sem avanço registrado"),
-        ("PRAZO DE PENDÊNCIA/TAREFA VENCIDO", m["qtd_prazo_pendencia_vencido"], None,
-         "tarefas com prazo já ultrapassado"),
-        ("SEM CATEGORIA DE ORIGEM DO RECURSO", m["qtd_sem_detalhamento"], None,
-         "impede identificar a fonte do valor com T.C. firmado"),
-    ]
-    slide8 = _html_cabecalho_rodape("PENDÊNCIAS QUE CONDICIONAM A CONTRATAÇÃO", f'''
-      <div class="cartoes-pendencia">
-        {"".join(f"""<div class="cartao-pendencia">
-          <div class="cp-num">{qtd}</div>
-          <div class="cp-acoes">ações</div>
-          {f'<div class="cp-valor">{_html_esc(valor)}</div>' if valor else ''}
-          <div class="cp-rotulo">{_html_esc(rotulo)}</div>
-          <div class="cp-desc">{_html_esc(desc)}</div>
-        </div>""" for rotulo, qtd, valor, desc in cards8)}
-      </div>
-    ''')
-
-    # --- slide 9 ---
-    mensagens9 = [
-        (abreviar_moeda(m["total_a_contratar"]), "ainda estão com T.C. não firmado na carteira do PAC-BA"),
-        (abreviar_moeda(m["a_contratar_parcela_federal"]), "desse valor dependem de fonte Federal (OGU)"),
-        (f"{m['gestao_federal_qtd']}", "ações sob execução direta de órgãos federais na carteira"),
-        (abreviar_moeda(m["valor_clausula_vigente"]),
-         f"com T.C. firmado têm cláusula suspensiva vigente ({m['qtd_clausula_vigente']} ações) — recurso condicionado"),
-    ]
-    slide9 = _html_cabecalho_rodape("SÍNTESE E PLEITO", f'''
-      <div class="lista-sintese">
-        {"".join(f'''<div class="linha-sintese">
-          <div class="ls-valor">{_html_esc(valor)}</div>
-          <div class="ls-texto">{_html_esc(texto)}</div>
-        </div>''' for valor, texto in mensagens9)}
-      </div>
-    ''')
 
     css = '''
     * { box-sizing: border-box; }
@@ -1982,6 +1941,12 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       box-shadow:0 4px 16px rgba(0,0,0,.3); font-family:inherit; }
     .btn-gerar-pdf:hover { background:#0A4E92; }
 
+    /* Página do Canva (imagem exportada) — pedido do usuário em 08/11/2026.
+       Sem cabeçalho/rodapé do dash; a imagem já vem na mesma proporção
+       16:9 do slide, então só precisa preencher a caixa. */
+    .slide-canva { display:flex; padding:0; }
+    .img-canva { width:100%; height:100%; object-fit:contain; background:#fff; }
+
     /* Impressão: um slide por folha A4 paisagem. Os tamanhos são em px
        fixos pensados para 1480px de largura, então em vez de deixar o
        max-width:100% espremer (e cortar) o conteúdo na largura do papel,
@@ -2023,9 +1988,23 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     por_chave = {"PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": [],
                  "STATUS_FASE": [slide2b],
                  "EIXO_FONTE": slides_eixo_fonte, "FONTE_EIXO": slides_fonte_eixo, "EXECUCAO": [slide3],
-                 "A_CONTRATAR": [slide4], "TABELA_RESUMO": [slide5], "QUADRO_FASE": [slide_quadro],
-                 "DETALHE_EIXO": [slide6],
-                 "MAIORES_ACOES": [slide7], "PENDENCIAS": [slide8], "SINTESE": [slide9]}
+                 "A_CONTRATAR": [slide4], "TABELA_RESUMO": [], "QUADRO_FASE": [],
+                 "DETALHE_EIXO": [],
+                 "MAIORES_ACOES": [], "PENDENCIAS": [], "SINTESE": []}
+
+    # --- páginas extras: imagens exportadas do site do Canva, uma por
+    # página, só geradas pras que realmente foram escolhidas (evita ler e
+    # recomprimir imagem de página que nem entrou na apresentação) — pedido
+    # do usuário em 08/11/2026.
+    for numero, nome_arquivo in paginas_canva:
+        chave = _chave_canva(numero)
+        if chave not in escolhidas:
+            continue
+        uri = _data_uri_imagem(os.path.join(PASTA_SLIDES_CANVA, nome_arquivo))
+        por_chave[chave] = [f'''<div class="slide slide-canva">
+      <img class="img-canva" src="{uri}" alt="Apresentação Canva — página {numero}">
+    </div>''']
+
     corpo = "".join(html_slide.replace("§PAG§", str(numero)) for numero, html_slide in enumerate(
         (h for chave in escolhidas for h in por_chave[chave]), 1))
 
@@ -2116,6 +2095,13 @@ SLIDES_APRESENTACAO = [
 ]
 
 
+# Chaves que só existem como slide/página no PPTX — no HTML, VISAO_GERAL e
+# COMP_FASE foram mescladas na página do Panorama e as demais saíram da
+# apresentação — pedido do usuário em 08/11/2026.
+SLIDES_OCULTOS_NO_HTML = {"VISAO_GERAL", "COMP_FASE", "TABELA_RESUMO", "QUADRO_FASE", "DETALHE_EIXO",
+                          "MAIORES_ACOES", "PENDENCIAS", "SINTESE"}
+
+
 def _paginas_por_chave(m):
     return {"COMP_FASE": len(_paginas_composicao_fase(m)),
             "EIXO_FONTE": len(_paginar_grupos(_grupos_eixo_fonte(m))),
@@ -2123,18 +2109,37 @@ def _paginas_por_chave(m):
 
 
 def _paginas_por_chave_html(m):
-    # VISAO_GERAL e COMP_FASE foram incorporadas à página do PANORAMA —
-    # pedido do usuário em 08/11/2026 — então não ocupam página própria no
-    # HTML (continuam existindo como slides do PPTX).
-    return dict(_paginas_por_chave(m), COMP_FASE=0, VISAO_GERAL=0)
+    # VISAO_GERAL e COMP_FASE foram incorporadas à página do PANORAMA, e
+    # TABELA_RESUMO/QUADRO_FASE/DETALHE_EIXO/MAIORES_ACOES/PENDENCIAS/SINTESE
+    # saíram do HTML (pedido do usuário em 08/11/2026) — nenhuma dessas
+    # ocupa página própria no HTML; todas continuam existindo como slides
+    # do PPTX.
+    return dict(_paginas_por_chave(m), **{chave: 0 for chave in SLIDES_OCULTOS_NO_HTML})
 
 
-def _preparar_plano(m, secoes, contagem_paginas=None):
-    # Decide quais slides entram (None/vazio = todos; chave desconhecida é
-    # ignorada) e guarda em m a numeração, usada nas remissões e nos rodapés.
-    pedidas = set(secoes or [])
-    escolhidas = [s["chave"] for s in SLIDES_APRESENTACAO if s["chave"] in pedidas]
-    escolhidas = escolhidas or [s["chave"] for s in SLIDES_APRESENTACAO]
+def _preparar_plano(m, secoes, contagem_paginas=None, manter_ordem=False, chaves_validas=None):
+    # Decide quais slides entram e em que ordem, e guarda em m a numeração,
+    # usada nas remissões e nos rodapés.
+    # manter_ordem=False (PPTX e HTML sem o painel novo): None/vazio = todos,
+    # na ordem fixa do catálogo; chave desconhecida é ignorada.
+    # manter_ordem=True (HTML, pedido do usuário em 08/11/2026): respeita a
+    # ordem de `secoes` tal como veio (o painel de seleção agora deixa
+    # reordenar os cartões, inclusive intercalando a apresentação Canva, que
+    # não existe no catálogo do PPTX) — por isso precisa de `chaves_validas`
+    # própria em vez de só olhar SLIDES_APRESENTACAO.
+    if manter_ordem:
+        validas = chaves_validas if chaves_validas is not None else {s["chave"] for s in SLIDES_APRESENTACAO}
+        vistas = set()
+        escolhidas = []
+        for chave in (secoes or []):
+            if chave in validas and chave not in vistas:
+                escolhidas.append(chave)
+                vistas.add(chave)
+        escolhidas = escolhidas or [s["chave"] for s in SLIDES_APRESENTACAO]
+    else:
+        pedidas = set(secoes or [])
+        escolhidas = [s["chave"] for s in SLIDES_APRESENTACAO if s["chave"] in pedidas]
+        escolhidas = escolhidas or [s["chave"] for s in SLIDES_APRESENTACAO]
     paginas = contagem_paginas if contagem_paginas is not None else _paginas_por_chave(m)
     m["num_slide"], proximo = {}, 1
     for chave in escolhidas:
@@ -2144,19 +2149,28 @@ def _preparar_plano(m, secoes, contagem_paginas=None):
     return escolhidas
 
 
-SLIDES_MESCLADOS_NO_PANORAMA_HTML = {"VISAO_GERAL", "COMP_FASE"}
-
-
 def listar_slides(df, formato=None):
     # "Visão Geral da Carteira" e "Composição por Fase" foram mescladas no
-    # Panorama só no HTML (no PPTX continuam slides próprios) — somem do
-    # catálogo só quando o painel pede a lista pra montar o HTML, porque
-    # marcar/desmarcar essas opções não teria efeito nenhum nesse formato
-    # — pedido do usuário em 08/11/2026.
+    # Panorama, e as páginas de tabela/listas que seguem (Tabela-Resumo,
+    # Quadro Resumo por Fase, Detalhe por Eixo, Maiores Ações, Pendências,
+    # Síntese) saíram do HTML — ambas só valem pro HTML, no PPTX tudo
+    # continua existindo como slide próprio. Somem do catálogo só quando o
+    # painel pede a lista pra montar o HTML, porque marcar/desmarcar essas
+    # opções não teria efeito nenhum nesse formato — pedido do usuário em
+    # 08/11/2026.
     m = calcular_metricas(df)
     paginas = _paginas_por_chave_html(m) if formato == "html" else _paginas_por_chave(m)
     catalogo = [s for s in SLIDES_APRESENTACAO
-                if not (formato == "html" and s["chave"] in SLIDES_MESCLADOS_NO_PANORAMA_HTML)]
+                if not (formato == "html" and s["chave"] in SLIDES_OCULTOS_NO_HTML)]
+    if formato == "html":
+        # Uma página do catálogo por imagem do Canva disponível em
+        # PASTA_SLIDES_CANVA — só existe no HTML (não dá pra desenhar numa
+        # slide de PowerPoint algo que não faz parte do painel). Entram no
+        # fim da lista por padrão, mas o painel deixa reordenar pra
+        # intercalar com as seções do dash — pedido do usuário em
+        # 08/11/2026.
+        catalogo = catalogo + [{"chave": _chave_canva(numero), "titulo": f"Canva — página {numero}",
+                                "layout": "texto"} for numero, _ in _paginas_canva_disponiveis()]
     return [dict(s, paginas=paginas.get(s["chave"], 1), marcada=True) for s in catalogo]
 
 
