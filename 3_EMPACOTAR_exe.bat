@@ -66,6 +66,8 @@ REM Code da Ficha Cadastral.
 REM --collect-all clr_loader / pythonnet: dependencias do backend
 REM WebView2 do pywebview (--hidden-import clr, logo abaixo, precisa
 REM dessas duas pra funcionar de verdade, nao so pra importar sem erro).
+REM --collect-all pptx: o python-pptx (botao Analise Financeira) carrega o
+REM template default.pptx e outros arquivos de dados do proprio pacote.
 call "%VENV%\python.exe" -m PyInstaller ^
     --onefile ^
     --noconsole ^
@@ -75,6 +77,7 @@ call "%VENV%\python.exe" -m PyInstaller ^
     --collect-all webview ^
     --collect-all clr_loader ^
     --collect-all pythonnet ^
+    --collect-all pptx ^
     --collect-submodules reportlab.graphics.barcode ^
     --hidden-import "clr" ^
     --distpath "%PASTA%dist" ^

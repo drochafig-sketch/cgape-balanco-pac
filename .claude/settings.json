@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_logo_capa_dobro.pdf\")",
+      "Bash(python -X utf8 -c ' *)",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_logo_cabecalho_dobro.pdf\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_logo_cabecalho_dobro2.pdf\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_composicao_fase_unica.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_cores_detalhamento_fase.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_alinhamento_nao_firmado.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_sem_titulo_fase.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_termo_compromisso.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_cor_investimento_total.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_fonte_barra_panorama.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\teste_fonte_barra_panorama2.html\")"
+    ]
+  }
+}

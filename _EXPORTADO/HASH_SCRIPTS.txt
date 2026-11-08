@@ -61,3 +61,48 @@ CertUtil: -hashfile : comando concluído com êxito.
 SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\verificar_ambiente.py:
 90503b99d958c1d9a2707722132a5bf2ef68b138f6aef1df3be7b4d02fa4cda9
 CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\CGAPE - BALANÇO PAC.py:
+4742fe4666db77daa07531cee28e3b19b162e56d6d73182aa597f93321bfb26b
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\gerar_pptx_pac.py:
+00af2fd0e94a47e84ce8c71a78ada77c7c07ead5f6499078bdf11e8c350228b7
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\mapa_mental_html.py:
+e988c283416030713fbf1369421cb4f2f51cb985078efb2f394ad6e1a9a7038f
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\servidor_web.py:
+b97af97738950224f5c1e5d1f251c3a7e3cb74cc91b417b082a51b69fb0746d7
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\verificar_ambiente.py:
+90503b99d958c1d9a2707722132a5bf2ef68b138f6aef1df3be7b4d02fa4cda9
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\CGAPE - BALANÇO PAC.py:
+137102ce7010f45dd28e46ab01a1b6297be60e25e4f78508104d8d9eac85716c
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\gerar_pptx_pac.py:
+102a4250a7a4ffb1d8370650a35ba2bc797577dcaa3e2a741cded7fd7045d445
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\mapa_mental_html.py:
+e988c283416030713fbf1369421cb4f2f51cb985078efb2f394ad6e1a9a7038f
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\servidor_web.py:
+6d4e1102b37692d344b737d5b06cd396e8aa8fdda792e7cadb5a21434c34e32e
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\verificar_ambiente.py:
+90503b99d958c1d9a2707722132a5bf2ef68b138f6aef1df3be7b4d02fa4cda9
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\CGAPE - BALANÇO PAC.py:
+7183fb9f1b36b93edd14733a5f47d5df440c3b446010dbb8a47159d0d7d0b8f7
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\gerar_pptx_pac.py:
+ab450ca1da2873cbdbb218284a87df3d9405ea7b4f594e0f7d56835c3bb2468b
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\mapa_mental_html.py:
+e988c283416030713fbf1369421cb4f2f51cb985078efb2f394ad6e1a9a7038f
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\servidor_web.py:
+6d4e1102b37692d344b737d5b06cd396e8aa8fdda792e7cadb5a21434c34e32e
+CertUtil: -hashfile : comando concluído com êxito.
+SHA256 hash de X:\COAPI\NOTAS TÉCNICAS COAPI\2024-2026\PANORAMA\2026\Superados\venv\verificar_ambiente.py:
+90503b99d958c1d9a2707722132a5bf2ef68b138f6aef1df3be7b4d02fa4cda9
+CertUtil: -hashfile : comando concluído com êxito.
