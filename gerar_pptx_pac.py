@@ -542,7 +542,7 @@ def calcular_metricas(df):
 # Topo do slide Visão Geral (print do usuário em 06/11/2026): investimento total
 # à esquerda; à direita, Recursos a Contratar aberto por fonte. A barra passa a
 # falar em Termo de Compromisso, que é o que define contratado x a contratar.
-ROTULO_RECURSOS_A_CONTRATAR = "T.C. NÃO FIRMADO"
+ROTULO_RECURSOS_A_CONTRATAR = "TERMO DE COMPROMISSO NÃO FIRMADO"
 X_RECURSOS_A_CONTRATAR = 13.2
 LARG_RECURSOS_A_CONTRATAR = 5.3
 ALT_LINHA_RECURSOS = 0.42
@@ -1729,7 +1729,6 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         </div>
         {recursos_a_contratar}
       </div>
-      <div class="rotulo-secao" style="margin-top:14px">TERMO DE COMPROMISSO:</div>
       <div class="barra-empilhada">
         <div class="barra-empilhada-seg" style="width:{frac_contratado:.2f}%;background:#2E7D32">
           <div class="be-titulo">T.C. FIRMADO · {_html_esc(abreviar_moeda(m["total_contratado"]))}</div>
@@ -1910,7 +1909,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .visao-geral .barra-empilhada-seg { padding:8px 16px; }
     .visao-geral .be-titulo { font-size:16px; }
     .visao-geral .be-sub { font-size:14px; margin-top:2px; }
-    .visao-geral .cartoes-grade { margin-top:12px; }
+    .visao-geral .cartoes-grade { margin-top:28px; }
     .visao-geral .cs-barra { height:6px; }
     .visao-geral .cs-num { font-size:28px; padding:2px 16px 0; }
     .visao-geral .cs-rotulo { font-size:13px; padding:0 16px 5px; }
