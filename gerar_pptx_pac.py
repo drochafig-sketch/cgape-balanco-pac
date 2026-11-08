@@ -1571,7 +1571,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         blocos_fases_html.append(f'''
       <div class="composicao-fase">
         {separador}
-        {_html_grafico_fase(m, grafico, rotulo_secao="")}{detalhamento_html}
+        <div class="grafico-fase-bloco">{_html_grafico_fase(m, grafico, rotulo_secao="")}</div>
+        {detalhamento_html}
       </div>''')
     slides_composicao_fase = [_html_cabecalho_rodape("COMPOSIÇÃO POR FASE", "".join(blocos_fases_html),
                                                       classe_extra="slide-continua")]
@@ -1964,6 +1965,14 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       display:inline-flex; align-items:center; justify-content:center; padding:0; font-family:inherit; flex-shrink:0; }
     .btn-icone-detalhamento:hover { background:#E6E9EE; }
 
+    /* Botão flutuante "Gerar PDF" — expande todos os detalhamentos ocultos
+       antes de chamar a impressão do navegador — pedido do usuário em
+       08/11/2026. */
+    .btn-gerar-pdf { position:fixed; top:18px; right:24px; z-index:1000; padding:13px 24px; font-size:15px;
+      font-weight:700; color:#fff; background:#0B5CAD; border:none; border-radius:8px; cursor:pointer;
+      box-shadow:0 4px 16px rgba(0,0,0,.3); font-family:inherit; }
+    .btn-gerar-pdf:hover { background:#0A4E92; }
+
     /* Impressão: um slide por folha A4 paisagem. Os tamanhos são em px
        fixos pensados para 1480px de largura, então em vez de deixar o
        max-width:100% espremer (e cortar) o conteúdo na largura do papel,
@@ -1975,6 +1984,22 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       .slide { width:1480px; max-width:none; zoom:0.705; margin:0; box-shadow:none; border-radius:0;
         break-after:page; page-break-after:always; break-inside:avoid; page-break-inside:avoid; }
       .slide:last-of-type { break-after:auto; page-break-after:auto; }
+      /* Slides de altura variável (Panorama e Composição por Fase) podem
+         ficar maiores que uma folha quando os detalhamentos são expandidos
+         pelo botão "Gerar PDF" — sem isso, break-inside:avoid força o
+         navegador a inserir uma página em branco antes deles. Em vez disso,
+         evita-se cortar apenas as peças menores (cartões, linhas de gráfico,
+         linhas de tabela) — pedido do usuário em 08/11/2026. */
+      .slide-continua { break-inside:auto; page-break-inside:auto; }
+      .cartao-status, .cartao-destaque, .cartao-pendencia, .grafico-fase-linha,
+      .bloco-fonte-fase, .barra-linha, .pac-tabela tr {
+        break-inside:avoid; page-break-inside:avoid;
+      }
+      /* Gráfico completo de uma fase (TOTAL + linhas por fonte) não pode ser
+         separado entre páginas — pedido do usuário em 08/11/2026. */
+      .grafico-fase-bloco { break-inside:avoid; page-break-inside:avoid; }
+      .rotulo-secao { break-after:avoid; page-break-after:avoid; }
+      .btn-gerar-pdf { display:none !important; }
     }
     '''
 
@@ -1996,6 +2021,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 <style>{css}</style>
 </head>
 <body>
+<button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()">Gerar PDF</button>
 {corpo}
 <script>
 function alternarDetalhamento(botao, idAlvo) {{
@@ -2010,6 +2036,34 @@ function alternarDetalhamento(botao, idAlvo) {{
   }} else {{
     botao.textContent = vaiAbrir ? 'Ocultar detalhamento por objeto ▴' : 'Ver detalhamento por objeto ▾';
   }}
+}}
+
+function gerarPdfCompleto() {{
+  // Expande todo detalhamento oculto para sair no PDF e devolve ao estado
+  // anterior depois que a caixa de impressão do navegador é fechada.
+  var ocultos = Array.prototype.slice.call(document.querySelectorAll('.oculto'));
+  ocultos.forEach(function (el) {{ el.classList.remove('oculto'); }});
+  document.querySelectorAll('.btn-detalhamento').forEach(function (b) {{
+    b.textContent = 'Ocultar detalhamento por objeto ▴';
+  }});
+  document.querySelectorAll('.btn-icone-detalhamento').forEach(function (b) {{
+    b.textContent = '–';
+    if (b.title.indexOf('Ver') === 0) b.title = b.title.replace('Ver', 'Ocultar');
+  }});
+
+  function restaurar() {{
+    ocultos.forEach(function (el) {{ el.classList.add('oculto'); }});
+    document.querySelectorAll('.btn-detalhamento').forEach(function (b) {{
+      b.textContent = 'Ver detalhamento por objeto ▾';
+    }});
+    document.querySelectorAll('.btn-icone-detalhamento').forEach(function (b) {{
+      b.textContent = '+';
+      if (b.title.indexOf('Ocultar') === 0) b.title = b.title.replace('Ocultar', 'Ver');
+    }});
+    window.removeEventListener('afterprint', restaurar);
+  }}
+  window.addEventListener('afterprint', restaurar);
+  window.print();
 }}
 </script>
 </body>
