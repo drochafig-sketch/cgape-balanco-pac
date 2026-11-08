@@ -76,7 +76,7 @@ TEAL = "2F7F92"
 
 # Link do design/mockup no Canva — mostrado no rodapé de cada slide do HTML,
 # à esquerda da numeração de página (pedido do usuário em 08/11/2026).
-LINK_CANVA = "https://canva.link/fzb6x2nxe2tqb2w"
+LINK_CANVA = "https://sea-lion-m85670.my.canva.site/"
 CINZA_TEXTO = "5B6576"
 CINZA_CLARO = "F2F4F7"
 CINZA_BORDA = "D8DCE3"
