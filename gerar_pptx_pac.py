@@ -55,7 +55,15 @@ from pptx.enum.shapes import MSO_SHAPE
 # explicitamente por parâmetro em cada função) pra não precisar reescrever a
 # assinatura de toda função que já usa "pac.xxx" só por causa disso.
 # ---------------------------------------------------------------------------
-PASTA_BASE = os.path.dirname(os.path.abspath(__file__))
+# No .exe (PyInstaller --onefile), __file__ aponta pra pasta TEMPORÁRIA onde
+# o executável se descompacta, não pra pasta dele — a "APRESENTAÇÃO - CGAPE"
+# (páginas do Canva) e o resto dos arquivos de apoio ficam AO LADO do .exe,
+# mesmo critério do PASTA_BASE do script principal. Sem isso, o .exe não
+# achava as páginas do Canva (bug corrigido em 09/11/2026).
+if getattr(sys, "frozen", False):
+    PASTA_BASE = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    PASTA_BASE = os.path.dirname(os.path.abspath(__file__))
 pac = None
 
 
@@ -286,6 +294,17 @@ def add_tag_estimativa(slide, x, y, texto="ESTIMATIVA"):
 # ---------------------------------------------------------------------------
 # Slide base: cabeçalho navy + rodapé — igual em todo slide
 # ---------------------------------------------------------------------------
+def texto_base_atualizada():
+    # Linha "Base atualizada em" logo abaixo de "COORDENAÇÃO..." no cabeçalho
+    # do PPTX e do HTML (pedido do usuário em 09/11/2026). Data/hora de
+    # pac.ultima_atualizacao: o "Modificado em" que o Excel grava na própria
+    # planilha ao salvar (não a data do arquivo no disco) — a mesma usada no PDF.
+    data = getattr(pac, "ultima_atualizacao", None)
+    if data is None:
+        return ""
+    return f"Base atualizada em: {data.strftime('%d/%m/%Y')} às {data.strftime('%Hh%M')}"
+
+
 def novo_slide(prs, tema):
     slide = prs.slides.add_slide(prs.slide_layouts[6])  # layout em branco
     # numeração sequencial: depende de quais slides foram escolhidos no painel
@@ -297,10 +316,15 @@ def novo_slide(prs, tema):
 
     # faixa do cabeçalho
     add_rect(slide, 0, 0, LARGURA_IN, 1.1, fill=NAVY)
-    add_text(slide, 0.56, 0.22, 12.5, 0.5, f"PAC - {tema}", 26, BRANCO, negrito=True,
+    # Título e subtítulo subiram um pouco pra caber a linha "Base atualizada
+    # em" dentro da mesma faixa de 1,1" — o conteúdo dos slides não se mexe.
+    add_text(slide, 0.56, 0.1, 12.5, 0.5, f"PAC - {tema}", 26, BRANCO, negrito=True,
               ancorar=MSO_ANCHOR.MIDDLE)
-    add_text(slide, 0.56, 0.74, 12.5, 0.3, "COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS",
+    add_text(slide, 0.56, 0.6, 12.5, 0.24, "COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS",
               12, AZUL_CLARO_TEXTO, negrito=True)
+    base_atualizada = texto_base_atualizada()
+    if base_atualizada:
+        add_text(slide, 0.56, 0.84, 12.5, 0.2, base_atualizada, 10, AZUL_CLARO_TEXTO)
     add_text(slide, LARGURA_IN - 5.0, 0.18, 4.44, 0.35, "GOVERNO DO ESTADO DA BAHIA", 15,
               AZUL_CLARO_MARCA, negrito=True, alinhar=PP_ALIGN.RIGHT)
     add_text(slide, LARGURA_IN - 5.0, 0.56, 4.44, 0.35, "CASA CIVIL", 15, AZUL_CLARO_MARCA,
@@ -441,11 +465,38 @@ def rotulo_fase(fase):
 # ---------------------------------------------------------------------------
 def calcular_metricas(df):
     _sincronizar_cores_com_painel()
-    contratado = df[pac.col_valor_contratado]
-    apoiado_aj = df[pac.col_apoiado_ajustado]
-    financiamento_aj = df[pac.col_financiamento_ajustado]
-    contrapartida_aj = df[pac.col_contrapartida_ajustado]
-    complementar_aj = df[pac.col_complementar_ajustado]
+    # Regra única do Termo de Compromisso (decisão do usuário em 09/11/2026):
+    # T.C. FIRMADO x NÃO FIRMADO vem só de SINALIZACAO_TC (coluna do TC/CT
+    # FINANCIAMENTO preenchida = firmado; vazia, "-" ou "0" = não firmado — ver
+    # pac.classificar_termo_compromisso). Toda a apresentação chama o lado
+    # "contratado" de T.C. FIRMADO e o "a contratar" de T.C. NÃO FIRMADO, então
+    # o valor de cada ação vai INTEIRO pro lado da sua sinalização. Ação com TC
+    # firmado mas VALOR CONTRATADO zerado na planilha entra no lado firmado com
+    # o valor planejado de cada fonte (o mesmo que o painel já usa como valor
+    # dela) — os totais não mudam, só o lado em que o valor aparece.
+    tc_firmado = df["SINALIZACAO_TC"].eq("SIM")
+
+    def _firmado(serie):
+        return serie.where(tc_firmado, 0.0)
+
+    def _nao_firmado(serie):
+        return serie.where(~tc_firmado, 0.0)
+
+    apoiado_plan = df[pac.col_apoiado_ajustado]
+    financiamento_plan = df[pac.col_financiamento_ajustado]
+    contrapartida_plan = df[pac.col_contrapartida_ajustado]
+    complementar_plan = df[pac.col_complementar_ajustado]
+    plan_linha = apoiado_plan + financiamento_plan + contrapartida_plan + complementar_plan
+
+    contratado = df[pac.col_valor_contratado] + _firmado(plan_linha)
+    contratado_ogu_linha = df[pac.col_apoiado_contratado] + _firmado(apoiado_plan)
+    contratado_fin_linha = df[pac.col_financiamento_contratado] + _firmado(financiamento_plan)
+    contratado_est_linha = (df[pac.col_contrapartida_contratado] + df[pac.col_complementar_contratado]
+                            + _firmado(contrapartida_plan + complementar_plan))
+    apoiado_aj = _nao_firmado(apoiado_plan)
+    financiamento_aj = _nao_firmado(financiamento_plan)
+    contrapartida_aj = _nao_firmado(contrapartida_plan)
+    complementar_aj = _nao_firmado(complementar_plan)
     a_contratar_linha = apoiado_aj + financiamento_aj + contrapartida_aj + complementar_aj
     investimento_linha = contratado + a_contratar_linha
 
@@ -462,11 +513,9 @@ def calcular_metricas(df):
     m["a_contratar_estadual"] = float((contrapartida_aj + complementar_aj).sum())
 
     # detalhamento do contratado (colunas novas)
-    m["contratado_ogu"] = float(df[pac.col_apoiado_contratado].sum())
-    m["contratado_financiamento"] = float(df[pac.col_financiamento_contratado].sum())
-    m["contratado_estadual"] = float(
-        (df[pac.col_contrapartida_contratado] + df[pac.col_complementar_contratado]).sum()
-    )
+    m["contratado_ogu"] = float(contratado_ogu_linha.sum())
+    m["contratado_financiamento"] = float(contratado_fin_linha.sum())
+    m["contratado_estadual"] = float(contratado_est_linha.sum())
     # fonte x fase x (contratado, a contratar) — mesmas colunas e mesmo
     # critério da linha de detalhe do slide 2 (contratado detalhado por fonte
     # / a contratar ajustado por fonte), só que agrupadas pela FASE da ação;
@@ -477,10 +526,9 @@ def calcular_metricas(df):
     fase = df["FASE_TEXTO"].fillna("NÃO INFORMADA")
     presentes = set(fase)
     valores_fonte = {
-        "ogu": (df[pac.col_apoiado_contratado], apoiado_aj),
-        "financiamento": (df[pac.col_financiamento_contratado], financiamento_aj),
-        "estadual": (df[pac.col_contrapartida_contratado] + df[pac.col_complementar_contratado],
-                     contrapartida_aj + complementar_aj),
+        "ogu": (contratado_ogu_linha, apoiado_aj),
+        "financiamento": (contratado_fin_linha, financiamento_aj),
+        "estadual": (contratado_est_linha, contrapartida_aj + complementar_aj),
     }
     conhecidas = [f for f, _ in FASES_ORIGEM]
     m["fases_ordem"] = [f for f in conhecidas if f in presentes] + sorted(presentes - set(conhecidas))
@@ -575,6 +623,7 @@ def calcular_metricas(df):
     m["qtd_prazo_pendencia_vencido"] = 0
     m["qtd_sem_detalhamento"] = 0
     hoje = pac.agora_bahia().date()
+    _calcular_clausulas(df, m, investimento_linha, eixo, hoje)
     for _, row in df.iterrows():
         alertas = pac._campos_alerta_qualidade(row, hoje)
         motivos = set(alertas.values())
@@ -588,6 +637,85 @@ def calcular_metricas(df):
     m["gestao_federal_qtd"] = int((df["GESTAO"] == "GESTÃO FEDERAL").sum())
 
     return m
+
+
+# ---------------------------------------------------------------------------
+# Cláusulas suspensivas — seção própria do HTML, em cards agrupados por eixo
+# (pedido do usuário em 10/11/2026). Entra em card toda ação cuja cláusula
+# ainda não foi totalmente retirada (Cláusula Vigente, Retirada Parcial ou
+# qualquer outra situação nova que a planilha venha a ter); Retirada Total e
+# NÃO DEFINIDA só aparecem na contagem do topo.
+# ---------------------------------------------------------------------------
+SITUACOES_CLAUSULA_SEM_CARD = {"RETIRADA TOTAL", "NÃO DEFINIDA"}
+DIAS_ALERTA_VIGENCIA = 90
+
+
+def _texto_celula(valor):
+    if valor is None:
+        return ""
+    try:
+        import pandas as pd
+        if pd.isna(valor):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    texto = str(valor).strip()
+    return "" if texto.upper() in ("NAN", "NAT", "-") else texto
+
+
+def _data_celula(valor):
+    try:
+        import pandas as pd
+        data = pd.to_datetime(valor, errors="coerce", dayfirst=True)
+        return None if pd.isna(data) else data.date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _calcular_clausulas(df, m, investimento_linha, eixo, hoje):
+    situacao = df["SITUACAO_CLAUSULA_SUSPENSIVA"].fillna("NÃO DEFINIDA").astype(str)
+    situacao_up = situacao.str.upper()
+    m["qtd_clausula_retirada_total"] = int((situacao_up == "RETIRADA TOTAL").sum())
+    m["qtd_clausula_nao_definida"] = int((situacao_up == "NÃO DEFINIDA").sum())
+
+    acoes = []
+    for idx in df.index[~situacao_up.isin(SITUACOES_CLAUSULA_SEM_CARD)]:
+        linha = df.loc[idx]
+        vigencia = _data_celula(linha.get(pac.col_vigencia))
+        dias = (vigencia - hoje).days if vigencia else None
+        if dias is None:
+            prazo = "sem_data"
+        elif dias < 0:
+            prazo = "vencida"
+        elif dias <= DIAS_ALERTA_VIGENCIA:
+            prazo = "proxima"
+        else:
+            prazo = "no_prazo"
+        acoes.append({
+            "eixo": eixo.loc[idx],
+            "objeto": _texto_celula(linha.get(pac.col_objeto)) or "NÃO INFORMADO",
+            "municipio": _texto_celula(linha.get(pac.col_municipio)),
+            "situacao": situacao.loc[idx],
+            "status": _texto_celula(linha.get("STATUS_TEXTO")),
+            "fase": _texto_celula(linha.get("FASE_TEXTO")),
+            "orgao": _texto_celula(linha.get(pac.col_orgao)),
+            "motivo": _texto_celula(linha.get(pac.col_motivo_clausula_suspensiva)),
+            "valor": float(investimento_linha.loc[idx]),
+            "vigencia": vigencia,
+            "dias": dias,
+            "prazo": prazo,
+        })
+
+    grupos = {}
+    for acao in acoes:
+        grupos.setdefault(acao["eixo"], []).append(acao)
+    for lista in grupos.values():
+        lista.sort(key=lambda a: (a["vigencia"] is None, a["vigencia"] or hoje, -a["valor"]))
+    m["clausulas_por_eixo"] = sorted(grupos.items(), key=lambda g: (-sum(a["valor"] for a in g[1]), g[0]))
+    m["clausulas_qtd"] = len(acoes)
+    m["clausulas_valor"] = float(sum(a["valor"] for a in acoes))
+    m["clausulas_prazo"] = {k: sum(1 for a in acoes if a["prazo"] == k)
+                            for k in ("vencida", "proxima", "no_prazo", "sem_data")}
 
 
 # ---------------------------------------------------------------------------
@@ -769,13 +897,15 @@ def _fontes_por_fase(m):
 
 def _parcelas(m):
     # Cards do slide 2: Federal x Estadual x Não discriminado (pedido do
-    # usuário em 03/11/2026) — os três somam o investimento total.
-    nd = _fontes_por_fase(m)[-1][4]
-    return [
+    # usuário em 03/11/2026) — os três somam o investimento total. Card
+    # zerado no recorte não aparece (pedido do usuário em 09/11/2026).
+    nd = next(f[4] for f in _fontes_por_fase(m) if f[1] == "nao_discriminado")
+    cards = [
         ("PARCELA FEDERAL (OGU)", m["total_parcela_federal"], AZUL),
         ("PARCELA ESTADUAL (Financiamento + Contrapartida + Complementar)*", m["total_parcela_estadual"], LARANJA),
         ("NÃO DISCRIMINADO (T.C. firmado sem fonte informada)", nd, COR_NAO_DISCRIMINADO),
     ]
+    return [c for c in cards if abs(c[1]) >= 0.5]
 
 
 # Geometria dos slides de composição com 2 níveis (fase x fonte), em pol:
@@ -805,6 +935,10 @@ def _slide_execucao(m):
 
 
 def _nota_nao_discriminado(m, com_remissao=True):
+    # Sem Não discriminado no recorte, a categoria some dos detalhamentos e a
+    # nota que a explica também (pedido do usuário em 09/11/2026)
+    if not any(abs(c) >= 0.5 for c, _ in m["fonte_fase"]["nao_discriminado"].values()):
+        return ""
     return ("* Não discriminado: valor com T.C. firmado sem detalhamento por fonte de recurso na base, "
             "mostrado como categoria própria para a composição somar o investimento total."
             + (f" Ver slide {_slide_execucao(m)}." if com_remissao and _slide_execucao(m) else ""))
@@ -902,6 +1036,8 @@ def slide_status_fase_origem(prs, m):
               ancorar=MSO_ANCHOR.MIDDLE)
     y = _cabecalho_tabela(s, y + 0.5)
     for rotulo, chave, cheia, clara, c_val, a_val in _fontes_por_fase(m):
+        if not _linha_com_valor(c_val, a_val):
+            continue
         _linha_tabela(s, 1, y, rotulo, c_val, a_val, m["total_investimento"], cheia, clara)
         y += AVANCO_NIVEL_1
         for f in m["fases_ordem"]:
@@ -929,6 +1065,24 @@ CAPACIDADE_TABELA_EIXO = 7.2   # altura útil de um slide (pol); vale pro HTML t
 
 def _linha_com_valor(c_val, a_val):
     return abs(c_val) + abs(a_val) >= 0.5
+
+
+# Fonte de recurso totalmente zerada num detalhamento some dele — linha de
+# gráfico, barra, card ou coluna de tabela — em vez de aparecer só com "-"
+# (pedido do usuário em 09/11/2026). Vale pro PPTX e pro HTML.
+def _sem_colunas_zeradas(cabecalho, linhas, larguras=None):
+    # Tira as colunas do meio (a 1ª é o rótulo, a última o TOTAL) em que toda
+    # linha, inclusive a de total, está zerada ("-"). Com `larguras`, a largura
+    # das colunas que saem é redistribuída nas que ficam, mesma largura total.
+    n = len(cabecalho)
+    manter = [i for i in range(n)
+              if i in (0, n - 1) or any(str(linha[i]).strip() not in ("-", "") for linha in linhas)]
+    cab = [cabecalho[i] for i in manter]
+    lin = [[linha[i] for i in manter] for linha in linhas]
+    if larguras is None:
+        return cab, lin
+    fator = sum(larguras) / sum(larguras[i] for i in manter)
+    return cab, lin, [larguras[i] * fator for i in manter]
 
 
 def _grupos_eixo_fonte(m):
@@ -970,7 +1124,7 @@ def _tema_paginado(tema, i, n):
 
 
 def _nota_eixos(m, grupos):
-    nota = _nota_nao_discriminado(m) + " Linhas sem valor são omitidas."
+    nota = (_nota_nao_discriminado(m) + " Linhas sem valor são omitidas.").strip()
     if any(linha[1] < 0 for grupo in grupos for linha in grupo[5]):
         nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
     return nota
@@ -1045,12 +1199,35 @@ def _linhas_objetos(m, fase, indice):
             for rotulo, valores in objetos + [("TOTAL", totais)]]
 
 
+def _tabela_objetos(m, fase, titulo, indice):
+    # (cabeçalho, linhas) da tabela de objetos, sem as fontes zeradas nela
+    return _sem_colunas_zeradas([titulo] + COLUNAS_FONTES_OBJETOS, _linhas_objetos(m, fase, indice))
+
+
+def _nota_objetos(m, fase, cabecalhos):
+    # Nota do Não discriminado só quando a coluna dele ficou em alguma tabela
+    if not any("NÃO DISCRIMINADO*" in cab for cab in cabecalhos):
+        return ""
+    nota = _nota_nao_discriminado(m)
+    if any(fontes["nao_discriminado"][0] <= -0.5 for fontes in m["fase_objeto"][fase].values()):
+        nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
+    return nota
+
+
+def _larguras_objetos(cabecalho):
+    # 1ª coluna fixa; o resto da largura (17,6") dividido igual entre as fontes que ficaram + TOTAL
+    resto = sum(LARGURAS_OBJETOS) - LARGURAS_OBJETOS[0]
+    return [LARGURAS_OBJETOS[0]] + [resto / (len(cabecalho) - 1)] * (len(cabecalho) - 1)
+
+
 def _paginar_blocos_objetos(blocos):
+    # blocos: [(cabeçalho, linhas, cor), ...] (cabeçalho já sem as colunas zeradas)
     # [[(cabeçalho, linhas, tem_total, cor), ...], ...]: uma tabela só começa num slide
     # se couber um pedaço útil, e a linha de TOTAL nunca fica sozinha no seguinte
     paginas = [[]]
     livre = Y_LIMITE_TABELAS - Y_APOS_GRAFICO
-    for titulo, linhas, cor_bloco in blocos:
+    for cabecalho_tabela, linhas, cor_bloco in blocos:
+        titulo = cabecalho_tabela[0]
         resto, continuacao = list(linhas), False
         while resto:
             cabem = int(livre / ALT_LINHA_OBJETOS + 1e-9) - 1   # -1 do cabeçalho
@@ -1060,7 +1237,7 @@ def _paginar_blocos_objetos(blocos):
                 continue
             n = cabem - 1 if len(resto) - cabem == 1 else min(cabem, len(resto))
             parte, resto = resto[:n], resto[n:]
-            cabecalho = [titulo + (" (cont.)" if continuacao else "")] + COLUNAS_FONTES_OBJETOS
+            cabecalho = [titulo + (" (cont.)" if continuacao else "")] + cabecalho_tabela[1:]
             paginas[-1].append((cabecalho, parte, not resto, cor_bloco))
             livre -= ALT_LINHA_OBJETOS * (len(parte) + 1) + ESPACO_BLOCO
             continuacao = True
@@ -1071,18 +1248,34 @@ def _paginas_composicao_fase(m):
     # [(tema do slide, (fase, c, a, fontes) só no 1º slide da fase, blocos, nota), ...]
     saida = []
     for fase, grafico in zip(m["fases_ordem"], _fases_por_fonte(m)):
-        paginas = _paginar_blocos_objetos([(titulo, _linhas_objetos(m, fase, i), c) for titulo, i, c in BLOCOS_OBJETOS])
-        nota = _nota_nao_discriminado(m)
-        if any(fontes["nao_discriminado"][0] <= -0.5 for fontes in m["fase_objeto"][fase].values()):
-            nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
+        tabelas = [(*_tabela_objetos(m, fase, titulo, i), c) for titulo, i, c in BLOCOS_OBJETOS]
+        tabelas = [t for t in tabelas if t[1]]
+        paginas = _paginar_blocos_objetos(tabelas)
+        nota = _nota_objetos(m, fase, [cab for cab, _, _ in tabelas])
         for i, pagina in enumerate(paginas, 1):
             tema = _tema_paginado(f"COMPOSIÇÃO POR FASE - {grafico[0].upper()}", i, len(paginas))
             saida.append((tema, grafico if i == 1 else None, pagina, nota))
     return saida
 
 
-def _linha_grafico_fase(s, nivel, y, rotulo, c_val, a_val, base, cheia, clara, altura, tam_rotulo, tam_valor):
+def _linha_grafico_fase(s, nivel, y, rotulo, c_val, a_val, base, cheia, clara, altura, tam_rotulo, tam_valor,
+                        ordem_tc=False):
     x = 0.9 if nivel == 1 else 1.35
+    if ordem_tc:
+        # Composição por Fase (pedido do usuário em 09/11/2026): T.C. FIRMADO |
+        # barra | T.C. NÃO FIRMADO | TOTAL, nas mesmas posições das tabelas de
+        # status/eixo (ver _linha_tabela)
+        add_text(s, x, y, X_COL_CONTRATADO - 0.1 - x, altura, rotulo, tam_rotulo, NAVY, negrito=True,
+                  ancorar=MSO_ANCHOR.MIDDLE)
+        add_text(s, X_COL_CONTRATADO, y, LARG_COL_CONTRATADO, altura, abreviar_moeda(c_val), tam_valor, CINZA_TEXTO,
+                  alinhar=PP_ALIGN.RIGHT, ancorar=MSO_ANCHOR.MIDDLE)
+        _desenhar_barra_proporcional(s, X_BARRA_TABELA, y + altura * 0.18, LARG_BARRA_TABELA, altura * 0.64,
+                                     c_val, a_val, base, cheia, clara)
+        add_text(s, X_COL_A_CONTRATAR, y, LARG_COL_A_CONTRATAR, altura, abreviar_moeda(a_val), tam_valor, CINZA_TEXTO,
+                  ancorar=MSO_ANCHOR.MIDDLE)
+        add_text(s, X_COL_TOTAL, y, LARG_COL_TOTAL, altura, abreviar_moeda(c_val + a_val), tam_valor, NAVY,
+                  negrito=True, alinhar=PP_ALIGN.RIGHT, ancorar=MSO_ANCHOR.MIDDLE)
+        return
     add_text(s, x, y, X_BARRA_GRAFICO - 0.1 - x, altura, rotulo, tam_rotulo, NAVY, negrito=True,
               ancorar=MSO_ANCHOR.MIDDLE)
     _desenhar_barra_proporcional(s, X_BARRA_GRAFICO, y + altura * 0.18, LARG_BARRA_GRAFICO, altura * 0.64, c_val, a_val,
@@ -1101,8 +1294,10 @@ def _grafico_total_fontes(m):
     return ("Total da carteira", sum(f[1] for f in fontes), sum(f[2] for f in fontes), fontes)
 
 
-def _desenhar_grafico_fase(s, m, y, grafico, rotulo_secao=ROTULO_GRAFICO_FASE, legenda=None, medidas=MEDIDAS_GRAFICO_FASE):
-    # Devolve o y logo abaixo da última linha
+def _desenhar_grafico_fase(s, m, y, grafico, rotulo_secao=ROTULO_GRAFICO_FASE, legenda=None, medidas=MEDIDAS_GRAFICO_FASE,
+                           ordem_tc=False):
+    # Devolve o y logo abaixo da última linha. ordem_tc=True: colunas T.C.
+    # FIRMADO | barra | T.C. NÃO FIRMADO | TOTAL (Composição por Fase)
     rotulo, c_val, a_val, fontes = grafico
     alt_1, tam_1, alt_2, tam_2 = medidas
     if legenda:
@@ -1111,17 +1306,28 @@ def _desenhar_grafico_fase(s, m, y, grafico, rotulo_secao=ROTULO_GRAFICO_FASE, l
     else:
         add_text(s, 0.9, y, 17.6, 0.4, rotulo_secao, 17, CINZA_TEXTO, negrito=True)
     y += 0.42
-    for x_valor, titulo in ((X_GRAFICO_TOTAL, "TOTAL"), (X_GRAFICO_CONTRATADO, "T.C. FIRMADO"),
-                            (X_GRAFICO_A_CONTRATAR, "T.C. NÃO FIRMADO")):
-        add_text(s, x_valor, y, LARG_GRAFICO_VALOR, 0.28, titulo, 11, CINZA_TEXTO, negrito=True,
-                  ancorar=MSO_ANCHOR.MIDDLE)
+    if ordem_tc:
+        for x_valor, largura, titulo, alinhar in (
+                (X_COL_CONTRATADO, LARG_COL_CONTRATADO, "T.C. FIRMADO", PP_ALIGN.RIGHT),
+                (X_COL_A_CONTRATAR, LARG_COL_A_CONTRATAR, "T.C. NÃO FIRMADO", PP_ALIGN.LEFT),
+                (X_COL_TOTAL, LARG_COL_TOTAL, "TOTAL", PP_ALIGN.RIGHT)):
+            add_text(s, x_valor, y, largura, 0.28, titulo, 11, CINZA_TEXTO, negrito=True, alinhar=alinhar,
+                      ancorar=MSO_ANCHOR.MIDDLE)
+    else:
+        for x_valor, titulo in ((X_GRAFICO_TOTAL, "TOTAL"), (X_GRAFICO_CONTRATADO, "T.C. FIRMADO"),
+                                (X_GRAFICO_A_CONTRATAR, "T.C. NÃO FIRMADO")):
+            add_text(s, x_valor, y, LARG_GRAFICO_VALOR, 0.28, titulo, 11, CINZA_TEXTO, negrito=True,
+                      ancorar=MSO_ANCHOR.MIDDLE)
     add_rect(s, 0.9, y + 0.32, 17.6, 0.012, fill=CINZA_BORDA)
     y += 0.4
     _linha_grafico_fase(s, 1, y, rotulo, c_val, a_val, m["total_investimento"], CINZA_FASE_CONTRATADO,
-                        CINZA_FASE_A_CONTRATAR, alt_1, *tam_1)
+                        CINZA_FASE_A_CONTRATAR, alt_1, *tam_1, ordem_tc=ordem_tc)
     y += alt_1 + AVANCO_NIVEL_1 - ALT_NIVEL_1
     for rotulo_fonte, c_fonte, a_fonte, cheia, clara in fontes:
-        _linha_grafico_fase(s, 2, y, rotulo_fonte, c_fonte, a_fonte, c_val + a_val, cheia, clara, alt_2, *tam_2)
+        if not _linha_com_valor(c_fonte, a_fonte):
+            continue
+        _linha_grafico_fase(s, 2, y, rotulo_fonte, c_fonte, a_fonte, c_val + a_val, cheia, clara, alt_2, *tam_2,
+                            ordem_tc=ordem_tc)
         y += alt_2
     return y
 
@@ -1131,14 +1337,16 @@ def slide_composicao_fase(prs, m):
         s = novo_slide(prs, tema)
         y = Y_INICIO_FASE
         if grafico:
-            _desenhar_grafico_fase(s, m, y, grafico)
+            _desenhar_grafico_fase(s, m, y, grafico, ordem_tc=True)
             y = Y_APOS_GRAFICO
         for cabecalho, linhas, tem_total, cor_bloco in blocos:
             altura = ALT_LINHA_OBJETOS * (len(linhas) + 1)
-            tabela_nativa(s, 0.9, y, 17.6, altura, cabecalho, linhas, larguras=LARGURAS_OBJETOS, tam_fonte=14,
-                          linha_bold_indices={len(linhas) - 1} if tem_total else None, cor_cabecalho=cor_bloco)
+            tabela_nativa(s, 0.9, y, 17.6, altura, cabecalho, linhas, larguras=_larguras_objetos(cabecalho),
+                          tam_fonte=14, linha_bold_indices={len(linhas) - 1} if tem_total else None,
+                          cor_cabecalho=cor_bloco)
             y += altura + ESPACO_BLOCO
-        add_text(s, 0.9, y - ESPACO_BLOCO + 0.1, 17.6, 0.5, nota, 12, CINZA_TEXTO)
+        if nota:
+            add_text(s, 0.9, y - ESPACO_BLOCO + 0.1, 17.6, 0.5, nota, 12, CINZA_TEXTO)
 
 
 def slide_eixo_fonte(prs, m):
@@ -1170,6 +1378,8 @@ def slide_3_execucao_contratado(prs, m):
         ("NÃO DISCRIMINADO", m["contratado_nao_discriminado"], COR_NAO_DISCRIMINADO),
     ]
     for rotulo, valor, c in segmentos:
+        if abs(valor) < 0.5:
+            continue
         barra_horizontal(s, 0.9, y, 17.6, 0.75, rotulo, valor, total_c, c, largura_rotulo=5.4)
         y += 1.05
 
@@ -1196,6 +1406,8 @@ def slide_4_a_contratar(prs, m):
         ("Financiamento", m["a_contratar_financiamento"], COR_FINANCIAMENTO_CLARO),
         ("Recurso Estadual", m["a_contratar_estadual"], COR_ESTADUAL_CLARO),
     ]:
+        if abs(valor) < 0.5:
+            continue
         barra_horizontal(s, 0.9, y2, 8.6, 0.7, rotulo, valor, m["total_a_contratar"], c, largura_rotulo=2.9,
                           tam_rotulo=14, largura_valor=2.5, tam_valor=14)
         y2 += 0.95
@@ -1220,6 +1432,7 @@ def slide_5_tabela_resumo_fonte(prs, m):
         ("Recurso Estadual", m["contratado_estadual"], m["a_contratar_estadual"]),
         ("Não discriminado (T.C. firmado)", m["contratado_nao_discriminado"], 0.0),
     ]
+    linhas_dados = [d for d in linhas_dados if _linha_com_valor(d[1], d[2])]
     linhas = []
     for nome, c_val, a_val in linhas_dados:
         tot = c_val + a_val
@@ -1237,11 +1450,12 @@ def slide_5_tabela_resumo_fonte(prs, m):
 
     tabela_nativa(s, 0.9, 2.0, 18.2, 5.6, cabecalho, linhas,
                   larguras=[6.2, 3.0, 3.0, 3.0, 3.0],
-                  tam_fonte=16, linha_bold_indices={4, 5, 6})
-    add_text(s, 0.9, 7.9, 17, 0.4,
-              "\"Não discriminado\" = T.C. firmado sem detalhamento por fonte preenchido na base"
-              + (f" (ver slide {_slide_execucao(m)})." if _slide_execucao(m) else "."),
-              13, CINZA_TEXTO)
+                  tam_fonte=16, linha_bold_indices={len(linhas) - 3, len(linhas) - 2, len(linhas) - 1})
+    if any(d[0].startswith("Não discriminado") for d in linhas_dados):
+        add_text(s, 0.9, 7.9, 17, 0.4,
+                  "\"Não discriminado\" = T.C. firmado sem detalhamento por fonte preenchido na base"
+                  + (f" (ver slide {_slide_execucao(m)})." if _slide_execucao(m) else "."),
+                  13, CINZA_TEXTO)
     return s
 
 
@@ -1298,12 +1512,14 @@ def _desenhar_quadro_resumo(s, m, y, alt_linha=0.7, folga_tabela=0.6, formatar=_
     add_text(s, 0.9, y, 10.6, 0.4, SUBTITULO_QUADRO_RESUMO, 17, CINZA_TEXTO, negrito=True)
     add_text(s, 9.9, y, 8.6, 0.4, legenda, tam_nota, CINZA_TEXTO, alinhar=PP_ALIGN.RIGHT,
               ancorar=MSO_ANCHOR.MIDDLE)
-    linhas = _linhas_quadro_resumo(m, formatar)
+    cabecalho, linhas, larguras = _sem_colunas_zeradas(CABECALHO_QUADRO_RESUMO, _linhas_quadro_resumo(m, formatar),
+                                                       [3.2, 2.9, 3.0, 3.1, 2.4, 3.0])
     alt_tabela = alt_linha * (len(linhas) + 1)
-    tabela_nativa(s, 0.9, y + folga_tabela, 17.6, alt_tabela, CABECALHO_QUADRO_RESUMO, linhas,
-                  larguras=[3.2, 2.9, 3.0, 3.1, 2.4, 3.0], tam_fonte=tam_tabela, linha_bold_indices={len(linhas) - 1})
+    tabela_nativa(s, 0.9, y + folga_tabela, 17.6, alt_tabela, cabecalho, linhas,
+                  larguras=larguras, tam_fonte=tam_tabela, linha_bold_indices={len(linhas) - 1})
     y_nota = y + folga_tabela + alt_tabela + 0.2
-    add_text(s, 0.9, y_nota, 17.6, 0.3, _nota_nao_discriminado(m, com_remissao=False), tam_nota, CINZA_TEXTO)
+    if "NÃO DISCRIMINADO" in cabecalho:
+        add_text(s, 0.9, y_nota, 17.6, 0.3, _nota_nao_discriminado(m, com_remissao=False), tam_nota, CINZA_TEXTO)
     return y_nota + 0.3
 
 
@@ -1511,7 +1727,8 @@ def _html_grafico_fase(m, grafico, rotulo_secao=ROTULO_GRAFICO_FASE, legenda=Non
     return f'''{titulo_html}
       <div class="grafico-fase-linha gf-cabecalho"><div></div><div></div><div>TOTAL</div><div>T.C. FIRMADO</div><div>T.C. NÃO FIRMADO</div></div>
       {_html_linha_grafico_fase(1, rotulo, c_val, a_val, m["total_investimento"], CINZA_FASE_CONTRATADO, CINZA_FASE_A_CONTRATAR)}
-      {"".join(_html_linha_grafico_fase(2, r, c, a, c_val + a_val, cheia, clara) for r, c, a, cheia, clara in fontes)}'''
+      {"".join(_html_linha_grafico_fase(2, r, c, a, c_val + a_val, cheia, clara) for r, c, a, cheia, clara in fontes
+               if _linha_com_valor(c, a))}'''
 
 
 def _html_cabecalho_tabela():
@@ -1540,6 +1757,7 @@ def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, reco
       <div class="cabecalho">
         <div class="titulo">PAC - {_html_esc(tema)}</div>
         <div class="subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
+        <div class="base-atualizada">{_html_esc(texto_base_atualizada())}</div>
         <div class="governo"><div>GOVERNO DO ESTADO DA BAHIA</div><div>CASA CIVIL</div></div>
       </div>
       <div class="conteudo">{conteudo_html}</div>
@@ -1609,12 +1827,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         grafico = (rotulo_f, c_f, a_f, fontes_f)
         blocos = []
         for titulo, indice, cor in BLOCOS_OBJETOS:
-            linhas = _linhas_objetos(m, fase, indice)
+            cabecalho_obj, linhas = _tabela_objetos(m, fase, titulo, indice)
             if linhas:
-                blocos.append(([titulo] + COLUNAS_FONTES_OBJETOS, linhas, cor))
-        nota = _nota_nao_discriminado(m)
-        if any(fontes["nao_discriminado"][0] <= -0.5 for fontes in m["fase_objeto"][fase].values()):
-            nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
+                blocos.append((cabecalho_obj, linhas, cor))
+        nota = _nota_objetos(m, fase, [cab for cab, _, _ in blocos])
         id_detalhe = f"detalhe-fase-{idx_fase}"
         detalhamento_html = ""
         if blocos:
@@ -1627,13 +1843,13 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
                 onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por objeto ▾</button>
         <div class="detalhamento-fase oculto" id="{id_detalhe}">
           {tabelas_html}
-          <div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>
+          {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
         </div>'''
         separador = '<hr class="separador-fase">' if idx_fase > 1 else ""
         blocos_fases_html.append(f'''
       <div class="composicao-fase">
         {separador}
-        <div class="grafico-fase-bloco">{_html_grafico_fase(m, grafico, rotulo_secao="")}</div>
+        <div class="grafico-fase-bloco gf-ordem-tc">{_html_grafico_fase(m, grafico, rotulo_secao="")}</div>
         {detalhamento_html}
       </div>''')
     composicao_fase_html = "".join(blocos_fases_html)
@@ -1641,6 +1857,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     # --- slide 4 (novo): status por fase e origem do recurso ---
     blocos_fase = []
     for rotulo, chave, cheia, clara, c_val, a_val in _fontes_por_fase(m):
+        if not _linha_com_valor(c_val, a_val):
+            continue
         linhas_fase = "".join(_html_linha_tabela(rotulo_fase(f), *m["fonte_fase"][chave][f], c_val + a_val, cheia, clara)
                               for f in m["fases_ordem"])
         blocos_fase.append(f'''<div class="bloco-fonte-fase compacto">
@@ -1691,10 +1909,12 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         {_html_esc(pct(total_contratado * m["cobertura_detalhamento_pct"], total_contratado))} do valor com T.C. firmado.</div>
       </div>
       <div class="bloco-barras" style="margin-top:20px">
-        {_html_barra("APOIADO (OGU) - T.C. FIRMADO", m["contratado_ogu"], total_contratado, COR_OGU, 340)}
-        {_html_barra("FINANCIAMENTO - T.C. FIRMADO", m["contratado_financiamento"], total_contratado, COR_FINANCIAMENTO, 340)}
-        {_html_barra("RECURSO ESTADUAL - T.C. FIRMADO", m["contratado_estadual"], total_contratado, COR_ESTADUAL, 340)}
-        {_html_barra("NÃO DISCRIMINADO", m["contratado_nao_discriminado"], total_contratado, COR_NAO_DISCRIMINADO, 340)}
+        {"".join(_html_barra(rot, valor, total_contratado, cor_b, 340) for rot, valor, cor_b in (
+            ("APOIADO (OGU) - T.C. FIRMADO", m["contratado_ogu"], COR_OGU),
+            ("FINANCIAMENTO - T.C. FIRMADO", m["contratado_financiamento"], COR_FINANCIAMENTO),
+            ("RECURSO ESTADUAL - T.C. FIRMADO", m["contratado_estadual"], COR_ESTADUAL),
+            ("NÃO DISCRIMINADO", m["contratado_nao_discriminado"], COR_NAO_DISCRIMINADO),
+        ) if abs(valor) >= 0.5)}
       </div>
       <div class="caixa-pendencia">⚠ PENDÊNCIA — {m['qtd_sem_detalhamento']} ação sem nenhuma categoria de origem
       preenchida e mais ações com divergência entre Valor Contratado e o detalhamento — já sinalizadas no
@@ -1712,9 +1932,11 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         <div>
           <div class="rotulo-secao" style="margin-bottom:14px">POR FONTE</div>
           <div class="bloco-barras">
-            {_html_barra("OGU (Apoiado)", m["a_contratar_ogu"], m["total_a_contratar"], COR_OGU_CLARO, 170)}
-            {_html_barra("Financiamento", m["a_contratar_financiamento"], m["total_a_contratar"], COR_FINANCIAMENTO_CLARO, 170)}
-            {_html_barra("Recurso Estadual", m["a_contratar_estadual"], m["total_a_contratar"], COR_ESTADUAL_CLARO, 170)}
+            {"".join(_html_barra(rot, valor, m["total_a_contratar"], cor_b, 170) for rot, valor, cor_b in (
+                ("OGU (Apoiado)", m["a_contratar_ogu"], COR_OGU_CLARO),
+                ("Financiamento", m["a_contratar_financiamento"], COR_FINANCIAMENTO_CLARO),
+                ("Recurso Estadual", m["a_contratar_estadual"], COR_ESTADUAL_CLARO),
+            ) if abs(valor) >= 0.5)}
           </div>
         </div>
         <div>
@@ -1725,6 +1947,110 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         </div>
       </div>
     ''')
+
+    # --- cláusulas suspensivas: cards por ação, agrupados por eixo (pedido do
+    # usuário em 10/11/2026) — ver _calcular_clausulas ---
+    cores_prazo = {"vencida": VERMELHO, "proxima": LARANJA, "no_prazo": VERDE, "sem_data": COR_NAO_DISCRIMINADO}
+
+    def _texto_prazo(acao):
+        dias = acao["dias"]
+        if dias is None:
+            return "sem data"
+        if dias < 0:
+            return f"vencida há {-dias} dia{'s' if dias != -1 else ''}"
+        if dias == 0:
+            return "vence hoje"
+        return f"vence em {dias} dia{'s' if dias != 1 else ''}"
+
+    def _bloco_vigencia(acao, cor_p):
+        # Vigência em destaque (pedido do usuário em 10/11/2026): faixa
+        # própria com a data grande e o prazo restante num selo colorido.
+        data = acao["vigencia"].strftime("%d/%m/%Y") if acao["vigencia"] else "Não informada"
+        return f'''<div class="cl-vig" style="border-color:#{cor_p};background:#{cor_p}14">
+              <div><div class="cl-vig-rotulo">Vigência da cláusula</div>
+                <div class="cl-vig-data" style="color:#{cor_p}">{_html_esc(data)}</div></div>
+              <span class="cl-vig-selo" style="background:#{cor_p}">{_html_esc(_texto_prazo(acao))}</span>
+            </div>'''
+
+    def _card_clausula(acao):
+        cor_p = cores_prazo[acao["prazo"]]
+        chips = "".join(f'<span class="cl-chip">{_html_esc(t)}</span>'
+                        for t in (acao["situacao"], acao["fase"], acao["status"]) if t)
+        motivo = (f'<div class="cl-motivo-rotulo">Motivo / pendência</div>'
+                  f'<div class="cl-motivo" title="{_html_esc(acao["motivo"])}">{_html_esc(acao["motivo"])}</div>'
+                  if acao["motivo"] else '<div class="cl-motivo cl-sem-motivo">Motivo não informado na planilha</div>')
+        return f'''<div class="cl-card">
+          <div class="cl-faixa" style="background:#{cor_p}"></div>
+          <div class="cl-corpo">
+            <div class="cl-topo">
+              <div>
+                <div class="cl-objeto">{_html_esc(acao["objeto"])}</div>
+                <div class="cl-municipio">{_html_esc(acao["municipio"] or "Município não informado")}</div>
+              </div>
+              <div class="cl-valor">{_html_esc(abreviar_moeda(acao["valor"]))}</div>
+            </div>
+            <div class="cl-chips">{chips}</div>
+            {_bloco_vigencia(acao, cor_p)}
+            {motivo}
+          </div>
+        </div>'''
+
+    prazos = m["clausulas_prazo"]
+    kpis_clausula = [
+        ("CLÁUSULA SUSPENSIVA NÃO RETIRADA", str(m["clausulas_qtd"]),
+         f'{abreviar_moeda(m["clausulas_valor"])} em investimento', NAVY),
+        ("VIGÊNCIA VENCIDA", str(prazos["vencida"]), "ações com prazo já expirado", VERMELHO),
+        (f"VENCE EM ATÉ {DIAS_ALERTA_VIGENCIA} DIAS", str(prazos["proxima"]), "ações que pedem prioridade", LARANJA),
+        ("CLÁUSULA RETIRADA (TOTAL)", str(m["qtd_clausula_retirada_total"]), "ações já liberadas", VERDE),
+    ]
+    kpis_html = "".join(f'''<div class="cartao-status"><div class="cs-barra" style="background:#{c}"></div>
+        <div class="cs-num" style="color:#{c}">{_html_esc(n)}</div>
+        <div class="cs-rotulo">{_html_esc(rot)}<div class="cl-kpi-sub">{_html_esc(sub)}</div></div></div>'''
+                        for rot, n, sub, c in kpis_clausula)
+    def _resumo_prazos_eixo(acoes_eixo):
+        # Mini-contagem por prazo no cabeçalho do eixo — dá pra ver a
+        # urgência mesmo com os cards recolhidos.
+        partes = []
+        for chave, rot in (("vencida", "vencida"), ("proxima", f"≤ {DIAS_ALERTA_VIGENCIA} dias"),
+                           ("no_prazo", "no prazo"), ("sem_data", "sem data")):
+            n = sum(1 for a in acoes_eixo if a["prazo"] == chave)
+            if n:
+                partes.append(f'<span class="cl-eixo-prazo" style="color:#{cores_prazo[chave]}">● {n} {rot}</span>')
+        return "".join(partes)
+
+    if m["clausulas_por_eixo"]:
+        # Cada eixo com o seu botão de detalhamento (pedido do usuário em
+        # 10/11/2026): cards recolhidos por padrão, mesmo "+" das outras
+        # seções; o "Gerar PDF" já expande tudo antes de imprimir.
+        grupos_clausula_html = "".join(f'''<div class="cl-eixo">
+          <div class="cl-eixo-cabecalho">
+            <span class="cl-eixo-titulo">
+              <button type="button" class="btn-icone-detalhamento" title="Ver detalhamento do eixo"
+                      onclick="alternarDetalhamento(this, 'detalhe-clausula-eixo-{i}')">+</button>
+              <span class="cl-eixo-nome">{_html_esc(nome_eixo)}</span>
+              {_resumo_prazos_eixo(acoes_eixo)}
+            </span>
+            <span class="cl-eixo-resumo">{len(acoes_eixo)} aç{"ões" if len(acoes_eixo) != 1 else "ão"} ·
+              {_html_esc(abreviar_moeda(sum(a["valor"] for a in acoes_eixo)))}</span>
+          </div>
+          <div class="cl-grade oculto" id="detalhe-clausula-eixo-{i}">{"".join(_card_clausula(a) for a in acoes_eixo)}</div>
+        </div>''' for i, (nome_eixo, acoes_eixo) in enumerate(m["clausulas_por_eixo"], 1))
+    else:
+        grupos_clausula_html = ('<div class="texto-secundario" style="margin-top:30px">Nenhuma ação com cláusula '
+                                'suspensiva pendente neste recorte.</div>')
+    legenda_prazo = "".join(f'<span><i style="background:#{cores_prazo[k]}"></i>{rot}</span>' for k, rot in (
+        ("vencida", "Vigência vencida"), ("proxima", f"Vence em até {DIAS_ALERTA_VIGENCIA} dias"),
+        ("no_prazo", "No prazo"), ("sem_data", "Sem data")))
+    slide_clausulas = _html_cabecalho_rodape("CLÁUSULAS SUSPENSIVAS", f'''
+      <div class="cartoes-grade cl-kpis">{kpis_html}</div>
+      <div class="cl-legenda">{legenda_prazo}</div>
+      {grupos_clausula_html}
+      <div class="nota-rodape">* Valor = investimento total da ação (T.C. firmado + não firmado). Cards ordenados
+      pela data de vigência da cláusula (mais urgente primeiro); eixos do maior para o menor valor.</div>
+    ''', classe_extra="slide-continua")
+
+    cabecalho_quadro, linhas_quadro = _sem_colunas_zeradas(CABECALHO_QUADRO_RESUMO,
+                                                           _linhas_quadro_resumo(m, _mi_bi_2_casas))
 
     # --- panorama + visão geral: página única (pedido do usuário em
     # 08/11/2026; antes eram 2 páginas com investimento total, barra e cards
@@ -1769,10 +2095,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
                   onclick="alternarDetalhamento(this, 'detalhe-tabela-fase')">+</button>
         </div>
         <div class="oculto" id="detalhe-tabela-fase">
-          {_html_tabela([c + "*" if c == "NÃO DISCRIMINADO" else c for c in CABECALHO_QUADRO_RESUMO],
-                        _linhas_quadro_resumo(m, _mi_bi_2_casas),
-                        linhas_bold={len(_linhas_quadro_resumo(m, _mi_bi_2_casas)) - 1})}
-          <div class="nota-rodape">{_html_esc(_nota_nao_discriminado(m, com_remissao=False))}</div>
+          {_html_tabela([c + "*" if c == "NÃO DISCRIMINADO" else c for c in cabecalho_quadro],
+                        linhas_quadro, linhas_bold={len(linhas_quadro) - 1})}
+          {f'<div class="nota-rodape">{_html_esc(_nota_nao_discriminado(m, com_remissao=False))}</div>'
+           if "NÃO DISCRIMINADO" in cabecalho_quadro else ""}
         </div>
       </div>
       <div style="margin-top:40px">
@@ -1794,13 +2120,32 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 
     css = '''
     * { box-sizing: border-box; }
-    body { margin:0; padding:40px 16px; background:#e9ebef; font-family:'Roboto','Segoe UI',Arial,sans-serif; }
-    .slide { width:1480px; max-width:100%; aspect-ratio:20/11.25; margin:0 auto 40px; background:#fff;
+    body { margin:0; padding:0; background:#e9ebef; font-family:'Roboto','Segoe UI',Arial,sans-serif; }
+    /* Navegação em carrossel (1 slide por vez, com ‹/›, teclado e tela
+       cheia) — mesmo recurso do projeto Relatório SSP, pedido do usuário em
+       08/11/2026. Fora da tela (display:none), o slide some; o ativo fica
+       centralizado e limitado ao viewport, preservando a proporção pelas
+       mesmas regras de width/aspect-ratio já usadas na impressão. Na
+       impressão (@media print mais abaixo) isso tudo é desfeito e todos os
+       slides voltam a aparecer, um por folha, como já funcionava antes. */
+    .slide { display:none; width:1480px; max-width:100%; aspect-ratio:20/11.25; margin:0 auto 40px; background:#fff;
       box-shadow:0 4px 24px rgba(0,0,0,.2); position:relative; overflow:hidden; border-radius:6px; }
-    .cabecalho { background:#0B1F3F; color:#fff; padding:22px 40px 14px; position:relative; }
+    .slide.ativo { display:block; position:fixed; inset:0; margin:auto; max-width:100vw; max-height:100vh; }
+    .slide-continua.ativo { max-height:100vh; overflow-y:auto; }
+    /* O rodapé fica preso ao fundo da caixa do slide (position:absolute),
+       mas no carrossel o slide-continua passa a rolar por dentro — o
+       rodapé ficaria sempre por cima do conteúdo, em vez de abaixo dele.
+       Some só na tela; a impressão continua mostrando normalmente — pedido
+       do usuário em 08/11/2026. */
+    .slide-continua.ativo .rodape { display:none; }
+    /* Espaçamentos do cabeçalho reduzidos pra caber a linha "Base atualizada
+       em" sem aumentar a altura total (o conteúdo dos slides não se mexe) —
+       pedido do usuário em 09/11/2026. */
+    .cabecalho { background:#0B1F3F; color:#fff; padding:14px 40px 8px; position:relative; }
     .cabecalho .titulo { font-size:30px; font-weight:700; }
-    .cabecalho .subtitulo { font-size:14px; font-weight:700; color:#C9D6EA; margin-top:8px; }
-    .cabecalho .governo { position:absolute; top:22px; right:40px; text-align:right; font-weight:700;
+    .cabecalho .subtitulo { font-size:14px; font-weight:700; color:#C9D6EA; margin-top:4px; }
+    .cabecalho .base-atualizada { font-size:12px; line-height:1.3; color:#C9D6EA; margin-top:3px; }
+    .cabecalho .governo { position:absolute; top:14px; right:40px; text-align:right; font-weight:700;
       font-size:17px; color:#4FA3E0; line-height:1.7; }
     .conteudo { padding: 28px 40px; }
     .rodape { position:absolute; bottom:14px; left:40px; right:40px; display:flex; justify-content:space-between;
@@ -1850,6 +2195,16 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .grafico-origem .nivel-1 .gf-rotulo { font-size:22px; }
     .grafico-origem .gf-cabecalho { font-size:12px; margin:4px 0 12px; }
     .gf-cabecalho { font-size:12px; font-weight:700; border-bottom:1px solid #D8DCE3; padding-bottom:3px; margin:4px 0 4px; }
+    /* Composição por Fase: colunas na ordem T.C. FIRMADO | gráfico | T.C. NÃO
+       FIRMADO | TOTAL, igual às tabelas de status/eixo — pedido do usuário em
+       09/11/2026. Só reordena pela grade (filhos: 1 rótulo, 2 barra, 3 total,
+       4 firmado, 5 não firmado); a Composição por Origem segue como estava. */
+    .gf-ordem-tc .grafico-fase-linha { grid-template-columns:400px 175px 1fr 175px 145px; }
+    .gf-ordem-tc .grafico-fase-linha > div:nth-child(1) { order:1; }
+    .gf-ordem-tc .grafico-fase-linha > div:nth-child(4) { order:2; text-align:right; }
+    .gf-ordem-tc .grafico-fase-linha > div:nth-child(2) { order:3; }
+    .gf-ordem-tc .grafico-fase-linha > div:nth-child(5) { order:4; text-align:left; }
+    .gf-ordem-tc .grafico-fase-linha > div:nth-child(3) { order:5; text-align:right; }
     .composicao-fase table.pac-tabela { font-size:15px; margin-top:14px; table-layout:fixed; }
     .composicao-fase table.pac-tabela th { padding:3px 14px; font-size:14px; }
     .composicao-fase table.pac-tabela td { padding:2px 14px; }
@@ -1909,6 +2264,45 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .ls-valor { font-size:34px; font-weight:900; color:#2E7D32; width:260px; flex-shrink:0; }
     .ls-texto { font-size:18px; color:#0B1F3F; }
 
+    /* Cláusulas suspensivas: cards por ação agrupados por eixo — pedido do
+       usuário em 10/11/2026. */
+    .cl-kpis { margin-top:0; }
+    .cl-kpis .cs-num { font-size:40px; padding:10px 18px 0; }
+    .cl-kpis .cs-rotulo { font-size:14px; padding:6px 18px 14px; }
+    .cl-kpi-sub { font-size:13px; font-weight:400; margin-top:3px; }
+    .cl-legenda { display:flex; gap:22px; font-size:13px; color:#5B6576; margin:18px 0 6px; }
+    .cl-legenda i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px;
+      vertical-align:-1px; }
+    .cl-eixo { margin-top:26px; }
+    .cl-eixo-cabecalho { display:flex; justify-content:space-between; align-items:baseline;
+      border-bottom:2px solid #0B1F3F; padding-bottom:6px; margin-bottom:14px; }
+    .cl-eixo-titulo { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .cl-eixo-nome { font-size:20px; font-weight:700; color:#0B1F3F; text-transform:uppercase; }
+    .cl-eixo-prazo { font-size:13px; font-weight:700; }
+    .cl-grade.oculto { display:none; }
+    .cl-vig { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:12px;
+      border:1px solid; border-left-width:4px; border-radius:8px; padding:8px 12px; }
+    .cl-vig-rotulo { font-size:11px; font-weight:700; color:#5B6576; text-transform:uppercase; }
+    .cl-vig-data { font-size:26px; font-weight:900; line-height:1.1; }
+    .cl-vig-selo { color:#fff; font-size:13px; font-weight:700; border-radius:14px; padding:5px 12px; white-space:nowrap; }
+    .cl-eixo-resumo { font-size:15px; font-weight:700; color:#5B6576; }
+    .cl-grade { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; }
+    .cl-card { display:flex; background:#fff; border:1px solid #D8DCE3; border-radius:10px; overflow:hidden; }
+    .cl-faixa { width:6px; flex-shrink:0; }
+    .cl-corpo { padding:14px 16px; flex:1; min-width:0; }
+    .cl-topo { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+    .cl-objeto { font-size:16px; font-weight:700; color:#0B1F3F; }
+    .cl-municipio { font-size:14px; color:#5B6576; margin-top:2px; }
+    .cl-valor { font-size:18px; font-weight:900; color:#0B1F3F; white-space:nowrap; }
+    .cl-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+    .cl-chip { font-size:11px; font-weight:700; color:#5B6576; background:#F2F4F7; border-radius:10px;
+      padding:3px 9px; text-transform:uppercase; }
+    .cl-vigencia { font-size:13px; font-weight:700; margin-top:10px; }
+    .cl-motivo-rotulo { font-size:11px; font-weight:700; color:#5B6576; text-transform:uppercase; margin-top:10px; }
+    .cl-motivo { font-size:13px; color:#0B1F3F; margin-top:3px; line-height:1.35; white-space:pre-line;
+      display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+    .cl-sem-motivo { color:#8C8C8C; font-style:italic; margin-top:10px; }
+
     /* Composição por Fase: página contínua (altura livre, sem recortar
        conteúdo) e detalhamento por objeto escondido atrás de um botão. */
     .slide-continua { aspect-ratio:unset; height:auto; overflow:visible; }
@@ -1940,24 +2334,51 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       font-weight:700; color:#fff; background:#0B5CAD; border:none; border-radius:8px; cursor:pointer;
       box-shadow:0 4px 16px rgba(0,0,0,.3); font-family:inherit; }
     .btn-gerar-pdf:hover { background:#0A4E92; }
+    body.tela-cheia .btn-gerar-pdf { display:none; }
+
+    /* Barra de navegação do carrossel (‹/›, contador, dica de tela cheia) —
+       mesmo recurso do projeto Relatório SSP, pedido do usuário em
+       08/11/2026. Some sozinha depois de 2,5s sem mexer o mouse. */
+    #nav-carrossel { position:fixed; left:14px; bottom:14px; z-index:1000; color:#C9D6EA; font-size:12px;
+      display:flex; gap:10px; align-items:center; user-select:none; background:rgba(11,31,63,.85);
+      padding:6px 10px; border-radius:8px; opacity:0; transition:opacity .3s; }
+    body.mostra-nav #nav-carrossel, #nav-carrossel:hover { opacity:1; }
+    #nav-carrossel button { background:rgba(255,255,255,.1); color:#fff; border:none; border-radius:6px;
+      width:30px; height:26px; cursor:pointer; font-size:14px; font-family:inherit; }
+    #nav-carrossel button:hover { background:rgba(255,255,255,.22); }
 
     /* Página do Canva (imagem exportada) — pedido do usuário em 08/11/2026.
        Sem cabeçalho/rodapé do dash; a imagem já vem na mesma proporção
-       16:9 do slide, então só precisa preencher a caixa. */
-    .slide-canva { display:flex; padding:0; }
+       16:9 do slide, então só precisa preencher a caixa. O display:flex só
+       entra junto com .ativo (mesma especificidade de ".slide.ativo", e
+       vem depois dela no CSS) — sem isso, "display:flex" sozinho tinha a
+       mesma especificidade do "display:none" padrão do carrossel e vencia
+       por ordem, deixando TODAS as páginas do Canva visíveis ao mesmo
+       tempo, sobrepostas — bug corrigido em 08/11/2026. */
+    .slide-canva.ativo { display:flex; padding:0; }
     .img-canva { width:100%; height:100%; object-fit:contain; background:#fff; }
 
-    /* Impressão: um slide por folha A4 paisagem. Os tamanhos são em px
-       fixos pensados para 1480px de largura, então em vez de deixar o
-       max-width:100% espremer (e cortar) o conteúdo na largura do papel,
-       o slide mantém os 1480px e é reduzido por inteiro com zoom
-       (277mm úteis ≈ 1047px → 1047/1480 ≈ 0,707). */
-    @page { size: A4 landscape; margin: 10mm; }
+    /* Impressão ("Gerar PDF"): página 16:9 do tamanho exato do slide, sem
+       margem, pra exibição em tela (projetor/TV) — pedido do usuário em
+       09/11/2026; antes era A4 paisagem com 10mm de margem e zoom 0,705.
+       1480 x 832,5px é 16:9 exato; a altura vai arredondada pra 833px pra
+       sobra de arredondamento nunca jogar 1px numa página em branco. Sem
+       margem, o navegador também deixa de imprimir data, título e caminho
+       do arquivo no topo/rodapé de cada página. */
+    @page { size: 1480px 833px; margin: 0; }
     @media print {
       body { padding:0; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-      .slide { width:1480px; max-width:none; zoom:0.705; margin:0; box-shadow:none; border-radius:0;
+      /* Desfaz o carrossel na impressão: o slide ativo usa position:fixed e
+         limites de viewport só pra tela — aqui tudo volta ao fluxo normal,
+         um slide por folha, como já funcionava antes do carrossel existir
+         — pedido do usuário em 08/11/2026. */
+      .slide, .slide.ativo { display:block !important; position:static !important; inset:auto !important;
+        width:1480px; max-width:none !important; max-height:none !important; zoom:1; margin:0;
+        box-shadow:none; border-radius:0;
         break-after:page; page-break-after:always; break-inside:avoid; page-break-inside:avoid; }
       .slide:last-of-type { break-after:auto; page-break-after:auto; }
+      .slide-continua.ativo { overflow:visible !important; }
+      #nav-carrossel { display:none !important; }
       /* Slides de altura variável (Panorama e Composição por Fase) podem
          ficar maiores que uma folha quando os detalhamentos são expandidos
          pelo botão "Gerar PDF" — sem isso, break-inside:avoid força o
@@ -1965,6 +2386,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
          evita-se cortar apenas as peças menores (cartões, linhas de gráfico,
          linhas de tabela) — pedido do usuário em 08/11/2026. */
       .slide-continua { break-inside:auto; page-break-inside:auto; }
+      .cl-card, .cl-eixo-cabecalho { break-inside:avoid; page-break-inside:avoid; }
+      .cl-eixo-cabecalho { break-after:avoid; page-break-after:avoid; }
+      .cl-motivo { -webkit-line-clamp:unset; display:block; }
       .cartao-status, .cartao-destaque, .cartao-pendencia, .grafico-fase-linha,
       .bloco-fonte-fase, .barra-linha, .pac-tabela tr {
         break-inside:avoid; page-break-inside:avoid;
@@ -1988,7 +2412,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     por_chave = {"PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": [],
                  "STATUS_FASE": [slide2b],
                  "EIXO_FONTE": slides_eixo_fonte, "FONTE_EIXO": slides_fonte_eixo, "EXECUCAO": [slide3],
-                 "A_CONTRATAR": [slide4], "TABELA_RESUMO": [], "QUADRO_FASE": [],
+                 "A_CONTRATAR": [slide4], "CLAUSULAS": [slide_clausulas], "TABELA_RESUMO": [], "QUADRO_FASE": [],
                  "DETALHE_EIXO": [],
                  "MAIORES_ACOES": [], "PENDENCIAS": [], "SINTESE": []}
 
@@ -2012,11 +2436,17 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Análise Financeira do PAC - Apresentação</title>
+<title>Apresentação CGAPE</title>
 <style>{css}</style>
 </head>
 <body>
 <button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()">Gerar PDF</button>
+<div id="nav-carrossel">
+  <button type="button" id="btn-slide-ant" title="Slide anterior (←)">‹</button>
+  <span id="contador-slide"></span>
+  <button type="button" id="btn-slide-prox" title="Próximo slide (→)">›</button>
+  <span>F: tela cheia</span>
+</div>
 {corpo}
 <script>
 function alternarDetalhamento(botao, idAlvo) {{
@@ -2060,6 +2490,58 @@ function gerarPdfCompleto() {{
   window.addEventListener('afterprint', restaurar);
   window.print();
 }}
+
+// Carrossel (1 slide por vez, ‹/›, teclado, tela cheia) — mesmo recurso do
+// projeto Relatório SSP, pedido do usuário em 08/11/2026.
+(function () {{
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  if (!slides.length) return;
+  var atual = Math.max(0, Math.min(slides.length - 1, (parseInt(location.hash.slice(1), 10) || 1) - 1));
+  var contador = document.getElementById('contador-slide');
+
+  function mostrar(indice) {{
+    atual = Math.max(0, Math.min(slides.length - 1, indice));
+    slides.forEach(function (s, k) {{ s.classList.toggle('ativo', k === atual); }});
+    if (contador) contador.textContent = (atual + 1) + '/' + slides.length;
+    history.replaceState(null, '', '#' + (atual + 1));
+  }}
+
+  function telaCheia() {{
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+  }}
+
+  // Esconde o botão "Gerar PDF" durante a tela cheia — pedido do usuário em
+  // 08/11/2026.
+  document.addEventListener('fullscreenchange', function () {{
+    document.body.classList.toggle('tela-cheia', !!document.fullscreenElement);
+  }});
+
+  var navTimer = null;
+  document.addEventListener('mousemove', function () {{
+    document.body.classList.add('mostra-nav');
+    clearTimeout(navTimer);
+    navTimer = setTimeout(function () {{ document.body.classList.remove('mostra-nav'); }}, 2500);
+  }});
+
+  document.addEventListener('keydown', function (e) {{
+    // Espaço/Enter ficam de fora de propósito (diferente do Relatório SSP):
+    // nos nossos slides eles ativam botões como "Ver detalhamento", e usar
+    // a mesma tecla pra também virar o slide causaria duplo efeito.
+    if (['ArrowRight', 'PageDown'].indexOf(e.key) !== -1) {{ mostrar(atual + 1); e.preventDefault(); }}
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].indexOf(e.key) !== -1) {{ mostrar(atual - 1); e.preventDefault(); }}
+    else if (e.key === 'Home') mostrar(0);
+    else if (e.key === 'End') mostrar(slides.length - 1);
+    else if (e.key === 'f' || e.key === 'F') telaCheia();
+  }});
+
+  var btnAnt = document.getElementById('btn-slide-ant');
+  var btnProx = document.getElementById('btn-slide-prox');
+  if (btnAnt) btnAnt.onclick = function () {{ mostrar(atual - 1); }};
+  if (btnProx) btnProx.onclick = function () {{ mostrar(atual + 1); }};
+
+  mostrar(atual);
+}})();
 </script>
 </body>
 </html>'''
@@ -2086,6 +2568,7 @@ SLIDES_APRESENTACAO = [
     {"chave": "FONTE_EIXO", "titulo": "Investimento por Fonte e Eixo", "layout": "barras"},
     {"chave": "EXECUCAO", "titulo": "Execução do T.C. Firmado, por Fonte", "layout": "barras"},
     {"chave": "A_CONTRATAR", "titulo": "Recursos com T.C. Não Firmado", "layout": "barras"},
+    {"chave": "CLAUSULAS", "titulo": "Cláusulas Suspensivas", "layout": "cards_tabela"},
     {"chave": "TABELA_RESUMO", "titulo": "Tabela-Resumo por Fonte", "layout": "tabela"},
     {"chave": "QUADRO_FASE", "titulo": "Quadro Resumo de Investimentos por Fase", "layout": "tabela"},
     {"chave": "DETALHE_EIXO", "titulo": "Detalhe por Eixo do PAC", "layout": "tabela"},
@@ -2094,16 +2577,26 @@ SLIDES_APRESENTACAO = [
     {"chave": "SINTESE", "titulo": "Síntese e Pleito", "layout": "texto"},
 ]
 
+# Removidas da apresentação (HTML e PPTX) a pedido do usuário em 10/11/2026.
+# As funções de desenho continuam no arquivo: para trazer alguma de volta,
+# basta tirar a chave deste conjunto.
+SLIDES_REMOVIDOS = {"COMP_ORIGEM", "STATUS_FASE", "EIXO_FONTE", "FONTE_EIXO", "EXECUCAO", "A_CONTRATAR"}
+SLIDES_APRESENTACAO = [s for s in SLIDES_APRESENTACAO if s["chave"] not in SLIDES_REMOVIDOS]
+
 
 # Chaves que só existem como slide/página no PPTX — no HTML, VISAO_GERAL e
 # COMP_FASE foram mescladas na página do Panorama e as demais saíram da
 # apresentação — pedido do usuário em 08/11/2026.
 SLIDES_OCULTOS_NO_HTML = {"VISAO_GERAL", "COMP_FASE", "TABELA_RESUMO", "QUADRO_FASE", "DETALHE_EIXO",
                           "MAIORES_ACOES", "PENDENCIAS", "SINTESE"}
+# E o contrário: seções que só existem no HTML (cards de cláusula suspensiva,
+# pedido do usuário em 10/11/2026) — não entram no PPTX nem no seu catálogo.
+SLIDES_SO_NO_HTML = {"CLAUSULAS"}
 
 
 def _paginas_por_chave(m):
-    return {"COMP_FASE": len(_paginas_composicao_fase(m)),
+    return {"CLAUSULAS": 0,
+            "COMP_FASE": len(_paginas_composicao_fase(m)),
             "EIXO_FONTE": len(_paginar_grupos(_grupos_eixo_fonte(m))),
             "FONTE_EIXO": len(_paginar_grupos(_grupos_fonte_eixo(m)))}
 
@@ -2114,7 +2607,8 @@ def _paginas_por_chave_html(m):
     # saíram do HTML (pedido do usuário em 08/11/2026) — nenhuma dessas
     # ocupa página própria no HTML; todas continuam existindo como slides
     # do PPTX.
-    return dict(_paginas_por_chave(m), **{chave: 0 for chave in SLIDES_OCULTOS_NO_HTML})
+    return dict(_paginas_por_chave(m), **{chave: 0 for chave in SLIDES_OCULTOS_NO_HTML},
+                **{chave: 1 for chave in SLIDES_SO_NO_HTML})
 
 
 def _preparar_plano(m, secoes, contagem_paginas=None, manter_ordem=False, chaves_validas=None):
@@ -2161,7 +2655,8 @@ def listar_slides(df, formato=None):
     m = calcular_metricas(df)
     paginas = _paginas_por_chave_html(m) if formato == "html" else _paginas_por_chave(m)
     catalogo = [s for s in SLIDES_APRESENTACAO
-                if not (formato == "html" and s["chave"] in SLIDES_OCULTOS_NO_HTML)]
+                if not (formato == "html" and s["chave"] in SLIDES_OCULTOS_NO_HTML)
+                and not (formato != "html" and s["chave"] in SLIDES_SO_NO_HTML)]
     if formato == "html":
         # Uma página do catálogo por imagem do Canva disponível em
         # PASTA_SLIDES_CANVA — só existe no HTML (não dá pra desenhar numa
@@ -2196,7 +2691,8 @@ def montar_apresentacao(df, filtros=None, secoes=None):
                 "DETALHE_EIXO": slide_6_por_eixo,
                 "MAIORES_ACOES": slide_7_top10, "PENDENCIAS": slide_8_pendencias, "SINTESE": slide_9_sintese}
     for chave in escolhidas:
-        desenhar[chave](prs, m)
+        if chave in desenhar:  # seções só do HTML (SLIDES_SO_NO_HTML) não têm slide
+            desenhar[chave](prs, m)
 
     return prs, m
 
@@ -2232,15 +2728,15 @@ def main():
 
     prs, m = montar_apresentacao(pac.df_original)
 
-    caminho_pptx = os.path.join(PASTA_BASE, "ANALISE_FINANCEIRA_PAC.pptx")
+    caminho_pptx = os.path.join(PASTA_BASE, "APRESENTACAO CGAPE.pptx")
     prs.save(caminho_pptx)
     print("PPTX gerado:", caminho_pptx)
 
-    caminho_xlsx = os.path.join(PASTA_BASE, "APOIO_ANALISE_FINANCEIRA_PAC.xlsx")
+    caminho_xlsx = os.path.join(PASTA_BASE, "APOIO APRESENTACAO CGAPE.xlsx")
     gerar_xlsx_apoio(m, caminho_xlsx)
     print("XLSX de apoio gerado:", caminho_xlsx)
 
-    caminho_html = os.path.join(PASTA_BASE, "ANALISE_FINANCEIRA_PAC.html")
+    caminho_html = os.path.join(PASTA_BASE, "APRESENTACAO CGAPE.html")
     with open(caminho_html, "w", encoding="utf-8") as f:
         f.write(montar_html_apresentacao(pac.df_original))
     print("HTML gerado:", caminho_html)

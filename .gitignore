@@ -23,3 +23,7 @@ _sync_coam.log
 
 # Executável gerado (55MB, regenerável — remova esta linha se quiser versioná-lo)
 *.exe
+
+# Ambiente virtual em subpasta (.venv)
+.venv/
+

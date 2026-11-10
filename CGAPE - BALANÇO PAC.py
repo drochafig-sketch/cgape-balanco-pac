@@ -1,3 +1,26 @@
+from reportlab.graphics import renderPDF
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.pdfgen import canvas as reportlab_canvas
+from reportlab.platypus import (
+    Flowable,
+    KeepTogether,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase import pdfmetrics
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.shapes import Drawing, String, Circle, Line, Path, Rect, Wedge
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.units import mm
+from reportlab.lib import colors, pagesizes
+from mapa_mental_html import montar_html_mapa_mental
 import os
 import tempfile
 import sys
@@ -36,15 +59,18 @@ def _print_seguro(*args, **kwargs):
         destino = kwargs.get("file") or sys.stdout
         if destino is None:
             return
-        texto = kwargs.get("sep", " ").join(str(a) for a in args) + kwargs.get("end", "\n")
+        texto = kwargs.get("sep", " ").join(str(a)
+                                            for a in args) + kwargs.get("end", "\n")
         try:
             destino.buffer.write(
-                texto.encode(getattr(destino, "encoding", None) or "utf-8", errors="replace")
+                texto.encode(getattr(destino, "encoding", None)
+                             or "utf-8", errors="replace")
             )
         except Exception:
             pass
     except AttributeError:
-        pass  # sys.stdout é None (modo --noconsole sem stream nenhum) — descarta
+        # sys.stdout é None (modo --noconsole sem stream nenhum) — descarta
+        pass
 
 
 print = _print_seguro
@@ -73,7 +99,6 @@ except Exception:
 # "Controle de Prazos", adaptado para a árvore Secretaria/Órgão > Eixo >
 # Objeto > Ação e para a paleta de FASE já usada no resto deste painel (ver
 # mapa_mental_html.py, montar_html_mapa_mental).
-from mapa_mental_html import montar_html_mapa_mental
 
 # Ligada pela variável de ambiente PAC_WEB_MODE=1, definida pelo servidor
 # web (servidor_web.py). Controla os pontos do código que só fazem sentido
@@ -83,28 +108,6 @@ from mapa_mental_html import montar_html_mapa_mental
 # Python rodando no host remoto.
 MODO_WEB = os.environ.get("PAC_WEB_MODE") == "1"
 
-from reportlab.lib import colors, pagesizes
-from reportlab.lib.units import mm
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.graphics.shapes import Drawing, String, Circle, Line, Path, Rect, Wedge
-from reportlab.graphics.charts.piecharts import Pie
-from reportlab.graphics.charts.barcharts import VerticalBarChart
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (
-    Flowable,
-    KeepTogether,
-    PageBreak,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
-from reportlab.pdfgen import canvas as reportlab_canvas
-from reportlab.graphics.barcode.qr import QrCodeWidget
-from reportlab.graphics import renderPDF
 
 # =====================================================
 # 1. CAMINHOS, CONFIGURAÇÕES E TIMESTAMPS
@@ -120,6 +123,7 @@ if getattr(sys, "frozen", False):
 else:
     PASTA_BASE = os.path.dirname(os.path.abspath(__file__))
 
+
 def caminho_recurso(nome_arquivo):
     return os.path.join(PASTA_BASE, nome_arquivo)
 
@@ -133,7 +137,8 @@ def _erro_fatal_inicializacao(mensagem):
     # do arquivo). No modo web isso vira um erro de inicialização visível no
     # log do servidor, em vez de uma janela travada esperando clique em
     # máquina nenhuma.
-    print(f"[PAC - Relatório Gerencial] ERRO FATAL: {mensagem}", file=sys.stderr)
+    print(
+        f"[PAC - Relatório Gerencial] ERRO FATAL: {mensagem}", file=sys.stderr)
     if tk is not None and not MODO_WEB:
         _raiz_erro = tk.Tk()
         _raiz_erro.withdraw()
@@ -141,7 +146,8 @@ def _erro_fatal_inicializacao(mensagem):
     sys.exit(1)
 
 
-arquivo_excel = caminho_recurso("PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026.xlsx")
+arquivo_excel = caminho_recurso(
+    "PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026.xlsx")
 
 # A data/hora de "atualizado em" vem das PROPRIEDADES internas do próprio
 # arquivo .xlsx (o campo "Modificado em" que o Excel grava sozinho ao
@@ -159,14 +165,16 @@ try:
     # read_only=True mantém o arquivo aberto até close() — sem fechar, a
     # planilha fica travada no Windows enquanto o app estiver aberto
     # (impedindo a sincronização de gravar uma versão nova por cima).
-    _pasta_trabalho_excel = openpyxl.load_workbook(arquivo_excel, read_only=True)
+    _pasta_trabalho_excel = openpyxl.load_workbook(
+        arquivo_excel, read_only=True)
     try:
         _propriedades_excel = _pasta_trabalho_excel.properties
     finally:
         _pasta_trabalho_excel.close()
     _modificado_utc = _propriedades_excel.modified or _propriedades_excel.created
     if _modificado_utc is None:
-        raise ValueError("planilha sem data de modificação nas propriedades internas")
+        raise ValueError(
+            "planilha sem data de modificação nas propriedades internas")
     # O Excel grava esse campo sempre em UTC (sufixo "Z" no XML interno da
     # planilha, docProps/core.xml) — o openpyxl devolve um datetime "naive"
     # (sem fuso), mas o valor em si É UTC. Sem esse ajuste de -3h, o horário
@@ -179,7 +187,8 @@ except Exception:
     # arquivo nem existir ainda — esse erro específico só vai aparecer de
     # verdade mais abaixo, onde já existe tratamento amigável pra isso),
     # cai de volta pro comportamento antigo.
-    ultima_atualizacao = datetime.fromtimestamp(os.path.getmtime(arquivo_excel))
+    ultima_atualizacao = datetime.fromtimestamp(
+        os.path.getmtime(arquivo_excel))
 ultima_atualizacao_txt = ultima_atualizacao.strftime(
     "Fonte: CASA CIVIL / CGAPE - Planilha Panorama - Atualizado em: %d/%m/%Y às %Hhs%Mmin"
 )
@@ -197,6 +206,8 @@ def agora_bahia():
     # qualquer lugar que precise do horário/data atual pra EXIBIR pro
     # usuário ou COMPARAR com prazos (situação "atrasada"/"em dia").
     return datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=3)
+
+
 MESES_PT = {
     1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
     5: "maio", 6: "junho", 7: "julho", 8: "agosto",
@@ -206,14 +217,19 @@ data_capa_txt = f"{ultima_atualizacao.day} de {MESES_PT[ultima_atualizacao.month
 timestamp = ultima_atualizacao.strftime("%Y.%m.%d_%Hhs%Mm")
 
 nome_arquivo_pdf = f"RELATORIO GERENCIAL PAC_{timestamp}.pdf"
-nome_arquivo_pptx_analise_financeira = f"ANALISE FINANCEIRA PAC_{timestamp}.pptx"
+# Apresentação renomeada de "Análise Financeira do PAC" para "Apresentação
+# CGAPE" (pedido do usuário em 09/11/2026) — só o que aparece pro usuário
+# (botões, título, nomes de arquivo); nomes internos de função/rota ficaram.
+nome_arquivo_pptx_analise_financeira = f"APRESENTACAO CGAPE_{timestamp}.pptx"
+NOME_ARQUIVO_HTML_APRESENTACAO = "APRESENTACAO CGAPE.html"
 PASTA_DOWNLOADS_PADRAO = os.path.join(os.path.expanduser("~"), "Downloads")
 
 # Geometria da Página - A3 PAISAGEM
-PAGINA = (841.8897637795277 * 16 / 9, 841.8897637795277)  # 16:9 — mesma altura da A3 paisagem anterior, largura recalculada
+# 16:9 — mesma altura da A3 paisagem anterior, largura recalculada
+PAGINA = (841.8897637795277 * 16 / 9, 841.8897637795277)
 MARGEM_ESQ = 30
 MARGEM_DIR = 30
-MARGEM_SUP = 58  
+MARGEM_SUP = 58
 MARGEM_INF = 42
 
 LARGURA_UTIL = PAGINA[0] - (MARGEM_ESQ + MARGEM_DIR)
@@ -280,6 +296,7 @@ col_contrapartida_contratado = "CONTRAPARTIDA CONTRATADA"
 col_complementar_contratado = "COMPLEMENTAR CONTRATADO"
 col_financiamento_contratado = "FINANCIAMENTO CONTRATADO"
 
+
 def tem_detalhamento_contratado(df):
     # True quando a planilha tem as 4 colunas de detalhamento do contratado
     # por fonte (Apoiado/Contrapartida/Complementar/Financiamento
@@ -290,8 +307,9 @@ def tem_detalhamento_contratado(df):
     return all(
         c in df.columns
         for c in (col_apoiado_contratado, col_financiamento_contratado,
-                   col_contrapartida_contratado, col_complementar_contratado)
+                  col_contrapartida_contratado, col_complementar_contratado)
     )
+
 
 col_empresa_contratada = "EMPRESA CONTRATADA"
 # Cópias do que está na planilha, antes da regra de contratação (ver o ETL)
@@ -318,7 +336,8 @@ status_excluir = [""]
 # ReportLab), sem interromper a geração do relatório.
 try:
     pdfmetrics.registerFont(TTFont("Calibri", caminho_recurso("calibri.ttf")))
-    pdfmetrics.registerFont(TTFont("Calibri-Bold", caminho_recurso("calibrib.ttf")))
+    pdfmetrics.registerFont(
+        TTFont("Calibri-Bold", caminho_recurso("calibrib.ttf")))
     FONTE_PADRAO = "Calibri"
     FONTE_PADRAO_NEGRITO = "Calibri-Bold"
 except Exception:
@@ -331,7 +350,8 @@ except Exception:
 # automaticamente, sem interromper a geração do relatório.
 try:
     pdfmetrics.registerFont(TTFont("DIN", caminho_recurso("DIN.ttf")))
-    pdfmetrics.registerFont(TTFont("DIN-Bold", caminho_recurso("DIN-Bold.ttf")))
+    pdfmetrics.registerFont(
+        TTFont("DIN-Bold", caminho_recurso("DIN-Bold.ttf")))
     FONTE_DIN = "DIN-Bold"
     FONTE_DIN_REGULAR = "DIN"
 except Exception:
@@ -343,7 +363,8 @@ except Exception:
 # Painel Geral. Procura "bahnschrift.ttf" na mesma pasta do script/.exe; se
 # não encontrar, cai para a fonte padrão em negrito, sem travar o relatório.
 try:
-    pdfmetrics.registerFont(TTFont("Bahnschrift", caminho_recurso("bahnschrift.ttf")))
+    pdfmetrics.registerFont(
+        TTFont("Bahnschrift", caminho_recurso("bahnschrift.ttf")))
     FONTE_BAHNSCHRIFT = "Bahnschrift"
 except Exception:
     FONTE_BAHNSCHRIFT = FONTE_PADRAO_NEGRITO
@@ -366,10 +387,12 @@ except Exception:
 # preservada, então o contraste com o texto por cima não muda.
 FATOR_SATURACAO_GRAFICOS = 0.82
 
+
 def dessaturar_hex(hex_base, fator=None):
     fator = FATOR_SATURACAO_GRAFICOS if fator is None else fator
     limpo = str(hex_base).lstrip("#")
-    vermelho, verde, azul = (int(limpo[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    vermelho, verde, azul = (
+        int(limpo[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
     matiz, luminosidade, saturacao = colorsys.rgb_to_hls(vermelho, verde, azul)
     vermelho, verde, azul = colorsys.hls_to_rgb(
         matiz, luminosidade, max(0.0, min(1.0, saturacao * fator))
@@ -378,9 +401,11 @@ def dessaturar_hex(hex_base, fator=None):
         round(vermelho * 255), round(verde * 255), round(azul * 255)
     )
 
+
 def cor_grafico(hex_base):
     # Versão ReportLab da cor já dessaturada.
     return colors.HexColor(dessaturar_hex(hex_base))
+
 
 def clarear_hex(hex_base, fator=0.55):
     # Mistura o hex com branco — usado pra variação "A CONTRATAR" das cores
@@ -393,6 +418,7 @@ def clarear_hex(hex_base, fator=0.55):
     verde = round(verde + (255 - verde) * fator)
     azul = round(azul + (255 - azul) * fator)
     return "#{:02X}{:02X}{:02X}".format(vermelho, verde, azul)
+
 
 # Tokens de cor ÚNICOS para "Apoiado (OGU) / Financiamento / Recurso
 # Estadual", cada um com duas variações — CONTRATADO (cor cheia, a mesma já
@@ -423,8 +449,10 @@ TONS_FINANCEIRO = {
 }
 
 COR_MARCA_TEAL = colors.HexColor("#72B4AE")        # teal puro do dashboard
-COR_MARCA_TEAL_ESCURO = colors.HexColor("#2E6F68")  # versão escura, p/ texto e fundos
-COR_MARCA_TEAL_CLARA = colors.HexColor("#E3EFED")   # tom clarinho, p/ fundos com texto escuro
+COR_MARCA_TEAL_ESCURO = colors.HexColor(
+    "#2E6F68")  # versão escura, p/ texto e fundos
+# tom clarinho, p/ fundos com texto escuro
+COR_MARCA_TEAL_CLARA = colors.HexColor("#E3EFED")
 COR_MARCA_GOLD = colors.HexColor("#E0AB45")         # gold puro do dashboard
 COR_MARCA_GOLD_ESCURO = colors.HexColor("#B8863A")  # versão escura, p/ texto
 
@@ -576,6 +604,7 @@ metodologia_apoio_header = ParagraphStyle(
 metodologia_apoio_header_centro = ParagraphStyle(
     "metodologia_apoio_header_centro", parent=metodologia_apoio_header, alignment=TA_CENTER
 )
+
 
 def _num_metodologia(valor):
     # Número com uma casa decimal e vírgula, como o resto do relatório.
@@ -754,12 +783,14 @@ sec_fase_cell_center_style = ParagraphStyle(
 # 3. MÉTODOS DE TRATAMENTO E FORMATAÇÃO DE DADOS
 # =====================================================
 
+
 def limpar_executor(txt):
     if pd.isna(txt):
         return ""
     texto = str(txt)
     texto = re.sub(r"^\s*\d+\s*-\s*GOV.*?-\s*", "", texto, flags=re.IGNORECASE)
     return texto.strip()
+
 
 def remover_acentos(txt):
     if pd.isna(txt):
@@ -770,6 +801,7 @@ def remover_acentos(txt):
         if unicodedata.category(c) != "Mn"
     )
 
+
 def normalizar_item(item_bruto):
     # Mesma normalização já usada no controle de qualidade: o ITEM pode vir
     # como número (int/float do Excel) ou texto — sempre devolve texto
@@ -777,6 +809,7 @@ def normalizar_item(item_bruto):
     if isinstance(item_bruto, (int, float, np.integer, np.floating)) and not pd.isna(item_bruto):
         return str(int(item_bruto)) if float(item_bruto).is_integer() else str(item_bruto)
     return str(item_bruto).strip() if item_bruto is not None else ""
+
 
 def converter_valor(valor):
     if pd.isna(valor):
@@ -791,6 +824,7 @@ def converter_valor(valor):
     except ValueError:
         return 0.0
 
+
 def moeda_sem_quebra(valor):
     txt = f"R$ {valor:,.2f}"
     return (
@@ -800,6 +834,7 @@ def moeda_sem_quebra(valor):
         .replace(" ", "&nbsp;")
     )
 
+
 def moeda_texto_puro(valor):
     # Mesma formatação de moeda_sem_quebra, mas com espaço normal em vez
     # de "&nbsp;" — usada em contextos que NÃO interpretam entidades HTML
@@ -807,6 +842,7 @@ def moeda_texto_puro(valor):
     # como texto literal em vez de virar espaço.
     txt = f"R$ {valor:,.2f}"
     return txt.replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 def formatar_mi_bi(valor):
     if valor >= 1_000_000_000:
@@ -822,17 +858,21 @@ def formatar_mi_bi(valor):
         return moeda_sem_quebra(valor)
     return res.replace(",", "X").replace(".", ",").replace("X", ".")
 
+
 def formatar_contagem_opcional(contagem):
     return f" ({contagem})" if contagem >= 2 else ""
 
+
 def formatar_municipios_limpo(x):
     contagem = x.dropna().astype(str).value_counts()
-    itens_ordenados = sorted(contagem.items(), key=lambda item: remover_acentos(item[0]))
+    itens_ordenados = sorted(
+        contagem.items(), key=lambda item: remover_acentos(item[0]))
     items = []
     for municipio, quantidade in itens_ordenados:
         sufixo_qtd = formatar_contagem_opcional(quantidade)
         items.append(f"{municipio}{sufixo_qtd}")
     return ", ".join(items)
+
 
 def classificar_termo_compromisso(valor):
     if pd.isna(valor):
@@ -842,9 +882,11 @@ def classificar_termo_compromisso(valor):
         return "NÃO"
     return "SIM"
 
+
 def extrair_ordem_clausula_suspensiva(valor):
     m = re.match(r"^\s*(\d+)", str(valor))
     return int(m.group(1)) if m else 999
+
 
 def tratar_clausula_suspensiva(valor):
     # Usa o texto que já vem preenchido na própria coluna CLÁUSULA SUSPENSIVA
@@ -858,6 +900,7 @@ def tratar_clausula_suspensiva(valor):
         return "NÃO DEFINIDA"
     texto_limpo = re.sub(r"^\s*\d+\s*-\s*", "", txt).strip()
     return texto_limpo if texto_limpo else txt
+
 
 # =====================================================
 # ÍNDICE DE DESEMPENHO POR SECRETARIA (gráfico de medidor)
@@ -944,8 +987,10 @@ _MAPA_SCORE_STATUS_DESEMPENHO = {
 _MAPA_SCORE_STATUS_DESEMPENHO["CONCLUÍDA"] = 85.0
 _MAPA_SCORE_STATUS_DESEMPENHO["INAUGURADA"] = 100.0
 
+
 def _score_status_desempenho(status_texto):
     return _MAPA_SCORE_STATUS_DESEMPENHO.get(str(status_texto).strip().upper(), 50.0)
+
 
 # Além de já pontuarem mais alto (ver _MAPA_SCORE_STATUS_DESEMPENHO acima),
 # o INVESTIMENTO de ações Concluídas e Inauguradas pesa mais na média
@@ -956,8 +1001,10 @@ _MULTIPLICADOR_PESO_INVESTIMENTO_STATUS = {
     "INAUGURADA": 3.0,
 }
 
+
 def _multiplicador_peso_investimento_status(status_texto):
     return _MULTIPLICADOR_PESO_INVESTIMENTO_STATUS.get(str(status_texto).strip().upper(), 1.0)
+
 
 def _score_fase_desempenho(fase_texto):
     # Usa o texto já limpo da fase (não o número extraído do texto bruto,
@@ -968,6 +1015,7 @@ def _score_fase_desempenho(fase_texto):
         return (posicao / (len(ORDEM_FASES) - 1)) * 100
     except (ValueError, AttributeError):
         return 50.0
+
 
 def _score_clausula_desempenho(situacao_clausula_texto):
     # Usa o texto já tratado (SITUACAO_CLAUSULA_SUSPENSIVA), que já
@@ -984,6 +1032,7 @@ def _score_clausula_desempenho(situacao_clausula_texto):
     if "RETIRADA PARCIAL" in texto:
         return 50.0
     return 0.0
+
 
 def _dias_ciclo_desempenho(aviso, emissao_os, prazo_atual):
     # Soma os dois trechos do ciclo (aviso→O.S. e O.S.→previsão de
@@ -1010,6 +1059,7 @@ def _dias_ciclo_desempenho(aviso, emissao_os, prazo_atual):
         pass
     return dias if tem_dado else None
 
+
 def _categoria_indice_desempenho(indice):
     if indice < 25:
         return "Insatisfatório"
@@ -1018,6 +1068,7 @@ def _categoria_indice_desempenho(indice):
     if indice < 75:
         return "Bom"
     return "Ótimo"
+
 
 # Cor por categoria — mesmo espírito das 4 faixas do mapa coroplético
 # (vermelho/laranja/verde/azul), mas aqui numa progressão só de
@@ -1029,6 +1080,7 @@ CORES_CATEGORIA_DESEMPENHO = {
     "Ótimo": cor_grafico("#3F8F52"),
 }
 
+
 def _score_quantidade_desempenho(qtd_secretaria, qtd_minima, qtd_maxima):
     # Quanto mais ações a secretaria tem pra administrar, maior a
     # dificuldade de atingir as metas — por isso mais ações rende nota
@@ -1039,6 +1091,7 @@ def _score_quantidade_desempenho(qtd_secretaria, qtd_minima, qtd_maxima):
         return 50.0
     return ((qtd_secretaria - qtd_minima) / (qtd_maxima - qtd_minima)) * 100.0
 
+
 def _score_proporcao_contratado_desempenho(proporcao_secretaria, proporcao_minima, proporcao_maxima):
     # Proporção = VALOR CONTRATADO da secretaria/executor dividido pelo
     # investimento total da GESTÃO (Estadual ou Federal, nunca as duas
@@ -1048,6 +1101,7 @@ def _score_proporcao_contratado_desempenho(proporcao_secretaria, proporcao_minim
     if proporcao_maxima <= proporcao_minima:
         return 50.0
     return ((proporcao_secretaria - proporcao_minima) / (proporcao_maxima - proporcao_minima)) * 100.0
+
 
 def calcular_indice_desempenho_secretarias(df_base, combos_ativos=None):
     # Recebe o DataFrame já filtrado (precisa ter FASE_TEXTO, STATUS_TEXTO,
@@ -1072,21 +1126,27 @@ def calcular_indice_desempenho_secretarias(df_base, combos_ativos=None):
         return []
 
     df_calc = df_base.copy()
-    df_calc["_SCORE_STATUS"] = df_calc["STATUS_TEXTO"].apply(_score_status_desempenho)
-    df_calc["_SCORE_FASE"] = df_calc["FASE_TEXTO"].apply(_score_fase_desempenho)
-    df_calc["_SCORE_CLAUSULA"] = df_calc["SITUACAO_CLAUSULA_SUSPENSIVA"].apply(_score_clausula_desempenho)
+    df_calc["_SCORE_STATUS"] = df_calc["STATUS_TEXTO"].apply(
+        _score_status_desempenho)
+    df_calc["_SCORE_FASE"] = df_calc["FASE_TEXTO"].apply(
+        _score_fase_desempenho)
+    df_calc["_SCORE_CLAUSULA"] = df_calc["SITUACAO_CLAUSULA_SUSPENSIVA"].apply(
+        _score_clausula_desempenho)
 
     df_calc["_DIAS_CICLO"] = df_calc.apply(
         lambda r: _dias_ciclo_desempenho(
-            r.get(col_aviso_licitacao), r.get(col_emissao_os), r.get(col_prazo_atual)
+            r.get(col_aviso_licitacao), r.get(
+                col_emissao_os), r.get(col_prazo_atual)
         ),
         axis=1,
     )
     df_calc["_SCORE_TEMPO"] = 50.0
     mascara_com_dias = df_calc["_DIAS_CICLO"].notna()
     if mascara_com_dias.sum() > 0:
-        percentil_ascendente = df_calc.loc[mascara_com_dias, "_DIAS_CICLO"].rank(pct=True, ascending=True)
-        df_calc.loc[mascara_com_dias, "_SCORE_TEMPO"] = 100.0 - (percentil_ascendente * 100.0)
+        percentil_ascendente = df_calc.loc[mascara_com_dias, "_DIAS_CICLO"].rank(
+            pct=True, ascending=True)
+        df_calc.loc[mascara_com_dias, "_SCORE_TEMPO"] = 100.0 - \
+            (percentil_ascendente * 100.0)
 
     pesos = PESOS_INDICE_DESEMPENHO
     df_calc["_INDICE_ACAO"] = (
@@ -1108,7 +1168,8 @@ def calcular_indice_desempenho_secretarias(df_base, combos_ativos=None):
     # da GESTÃO ESTADUAL, onde a unidade avaliada é só a secretaria (não a
     # combinação com o executor).
     secretarias_ativas = (
-        {str(sec) for sec, _ in combos_ativos} if combos_ativos is not None else None
+        {str(sec)
+         for sec, _ in combos_ativos} if combos_ativos is not None else None
     )
 
     grupos_resultado = []
@@ -1139,14 +1200,18 @@ def calcular_indice_desempenho_secretarias(df_base, combos_ativos=None):
         # a medir o peso da unidade dentro do universo em que ela realmente
         # é comparada — o mesmo universo já usado na quantidade de ações e
         # na normalização min/max deste critério.
-        investimento_total_gestao = float(df_gestao["_INVESTIMENTO_AJUSTADO"].sum())
-        soma_contratado_por_grupo = df_gestao.groupby(chaves_agrupamento)[col_valor_contratado].sum()
+        investimento_total_gestao = float(
+            df_gestao["_INVESTIMENTO_AJUSTADO"].sum())
+        soma_contratado_por_grupo = df_gestao.groupby(
+            chaves_agrupamento)[col_valor_contratado].sum()
         if investimento_total_gestao > 0:
             proporcoes_contratado = soma_contratado_por_grupo / investimento_total_gestao
         else:
             proporcoes_contratado = soma_contratado_por_grupo * 0.0
-        proporcao_minima = float(proporcoes_contratado.min()) if len(proporcoes_contratado) else 0.0
-        proporcao_maxima = float(proporcoes_contratado.max()) if len(proporcoes_contratado) else 0.0
+        proporcao_minima = float(proporcoes_contratado.min()) if len(
+            proporcoes_contratado) else 0.0
+        proporcao_maxima = float(proporcoes_contratado.max()) if len(
+            proporcoes_contratado) else 0.0
 
         itens = []
         for chave_grupo, grupo in df_gestao.groupby(chaves_agrupamento):
@@ -1159,17 +1224,21 @@ def calcular_indice_desempenho_secretarias(df_base, combos_ativos=None):
             if not str(secretaria).strip():
                 continue
             investimento_real = float(grupo["_INVESTIMENTO_AJUSTADO"].sum())
-            peso_efetivo_total = float(grupo["_PESO_INVESTIMENTO_EFETIVO"].sum())
+            peso_efetivo_total = float(
+                grupo["_PESO_INVESTIMENTO_EFETIVO"].sum())
             if peso_efetivo_total > 0:
                 indice_por_acao = float(
-                    (grupo["_INDICE_ACAO"] * grupo["_PESO_INVESTIMENTO_EFETIVO"]).sum() / peso_efetivo_total
+                    (grupo["_INDICE_ACAO"] * grupo["_PESO_INVESTIMENTO_EFETIVO"]
+                     ).sum() / peso_efetivo_total
                 )
             else:
                 indice_por_acao = float(grupo["_INDICE_ACAO"].mean())
-            score_quantidade = _score_quantidade_desempenho(len(grupo), qtd_minima, qtd_maxima)
+            score_quantidade = _score_quantidade_desempenho(
+                len(grupo), qtd_minima, qtd_maxima)
             valor_contratado_grupo = float(grupo[col_valor_contratado].sum())
             proporcao_grupo = (
-                valor_contratado_grupo / investimento_total_gestao if investimento_total_gestao > 0 else 0.0
+                valor_contratado_grupo /
+                investimento_total_gestao if investimento_total_gestao > 0 else 0.0
             )
             score_proporcao_contratado = _score_proporcao_contratado_desempenho(
                 proporcao_grupo, proporcao_minima, proporcao_maxima
@@ -1192,7 +1261,8 @@ def calcular_indice_desempenho_secretarias(df_base, combos_ativos=None):
             else:
                 rotulo = str(secretaria)
                 esmaecido = (
-                    secretarias_ativas is not None and str(secretaria) not in secretarias_ativas
+                    secretarias_ativas is not None and str(
+                        secretaria) not in secretarias_ativas
                 )
             itens.append(
                 {
@@ -1247,6 +1317,7 @@ def calcular_indice_desempenho_secretarias(df_base, combos_ativos=None):
 
     return grupos_resultado
 
+
 # Dimensões do medidor compacto que acompanha o nome da secretaria no
 # cabeçalho do Detalhamento Analítico. A proporção segue a dos cards da
 # página do índice (altura ≈ 0,85 × largura), que é o que mantém o
@@ -1267,6 +1338,7 @@ nota_indice_cabecalho_style = ParagraphStyle(
     textColor=colors.HexColor("#2B2B2B"),
 )
 
+
 def _indice_desempenho_por_secretaria(grupos):
     # Achata os grupos do Índice de Desempenho num mapa
     # (gestão, secretaria) -> (índice, categoria), para o cabeçalho de cada
@@ -1284,12 +1356,15 @@ def _indice_desempenho_por_secretaria(grupos):
     for grupo in grupos:
         por_secretaria = {}
         for item in grupo["itens"]:
-            por_secretaria.setdefault(str(item["secretaria"]).strip(), []).append(item)
+            por_secretaria.setdefault(
+                str(item["secretaria"]).strip(), []).append(item)
         for secretaria, itens in por_secretaria.items():
-            pesos = [max(0.0, float(item.get("investimento") or 0.0)) for item in itens]
+            pesos = [max(0.0, float(item.get("investimento") or 0.0))
+                     for item in itens]
             total_peso = sum(pesos)
             if total_peso > 0:
-                indice = sum(i["indice"] * p for i, p in zip(itens, pesos)) / total_peso
+                indice = sum(i["indice"] * p for i,
+                             p in zip(itens, pesos)) / total_peso
             else:
                 # Todas as unidades com investimento zerado: média simples,
                 # já que a ponderação não teria como distinguir uma da outra.
@@ -1300,19 +1375,24 @@ def _indice_desempenho_por_secretaria(grupos):
             )
     return mapa
 
+
 def extrair_ordem_status(status):
     m = re.match(r"^\s*(\d+)", str(status))
     return int(m.group(1)) if m else 999
 
+
 def limpar_texto_status(status):
     return re.sub(r"^\s*\d+\s*-\s*", "", str(status)).strip()
+
 
 def extrair_ordem_fase(fase):
     m = re.match(r"F\s*(\d+)", str(fase), re.IGNORECASE)
     return int(m.group(1)) if m else 999
 
+
 def limpar_texto_fase(fase):
     return re.sub(r"F\s*\d+\s*-\s*", "", str(fase), flags=re.IGNORECASE).strip()
+
 
 def formatar_prazo(valor):
     # Datas do corpo do relatório (prazos, emissão de O.S.) em dd/mm/aa —
@@ -1327,6 +1407,7 @@ def formatar_prazo(valor):
     if texto == "" or texto.upper() in ("NAN", "NAT"):
         return ""
     return texto
+
 
 def formatar_percentual(valor):
     if pd.isna(valor):
@@ -1344,6 +1425,7 @@ def formatar_percentual(valor):
         return ""
     return texto if texto.endswith("%") else f"{texto}%"
 
+
 # --- Constantes/ajudantes do Controle de Qualidade ---
 # Vivem aqui (antes do ETL mais abaixo) e não perto de _campos_alerta_
 # qualidade (que as usa) porque a coluna OBRA_NAO_INICIADA, calculada
@@ -1359,12 +1441,15 @@ CAMPOS_ALERTA_STATUS_SEM_PRAZO = {"ANDAMENTO", "CONCLUÍDA", "INAUGURADA"}
 # está em ANDAMENTO o link é o que permite fiscalizar em campo, e depois de
 # CONCLUÍDA/INAUGURADA ele é o registro de onde a entrega ficou — nos três
 # casos o campo em branco é uma pendência de cadastro.
-CAMPOS_ALERTA_STATUS_EXIGE_LINK_LOCALIZACAO = {"ANDAMENTO", "CONCLUÍDA", "INAUGURADA"}
+CAMPOS_ALERTA_STATUS_EXIGE_LINK_LOCALIZACAO = {
+    "ANDAMENTO", "CONCLUÍDA", "INAUGURADA"}
+
 
 def _extrair_data_alerta(valor):
     if isinstance(valor, (pd.Timestamp, datetime)) and not pd.isna(valor):
         return valor.date()
     return None
+
 
 # Dias de tolerância entre a Emissão de O.S. e o Avanço da Obra ainda
 # zerado/em branco — depois disso, a obra já deveria ter saído do papel.
@@ -1390,6 +1475,7 @@ _NOMES_CAMPOS_FICHA_POR_COLUNA_ORIGEM = {
     col_financiamento_contratado: "financiamento_contratado",
 }
 
+
 def _avanco_zero_ou_vazio(valor):
     # True quando o AVANÇO DA OBRA (%) está em branco OU é explicitamente
     # zero (0, 0.0, "0%", "0,0%", "0,00%" etc.) — usado pela regra de OBRA
@@ -1410,6 +1496,7 @@ def _avanco_zero_ou_vazio(valor):
         # comprovado, então não arrisca falso positivo.
         return False
 
+
 def _obra_nao_iniciada(status_atual, valor_emissao_os, valor_avanco, hoje):
     # Regra de Qualidade "OBRA NÃO INICIADA": Avanço da Obra (%) zerado ou
     # em branco, mais de DIAS_TOLERANCIA_OBRA_NAO_INICIADA dias depois da
@@ -1424,6 +1511,7 @@ def _obra_nao_iniciada(status_atual, valor_emissao_os, valor_avanco, hoje):
     if data_os is None or (hoje - data_os).days <= DIAS_TOLERANCIA_OBRA_NAO_INICIADA:
         return False
     return _avanco_zero_ou_vazio(valor_avanco)
+
 
 def _texto_campo_ficha(row, coluna):
     # Extrai um campo de texto de forma defensiva pra Ficha Cadastral: se a
@@ -1445,6 +1533,7 @@ def _texto_campo_ficha(row, coluna):
         return ""
     return texto
 
+
 def _normalizar_link_ficha(texto):
     # Deixa o valor pronto para virar um link clicável. Muita gente cola o
     # endereço sem o "https://" na frente ("www.google.com/maps/...",
@@ -1464,6 +1553,7 @@ def _normalizar_link_ficha(texto):
         return "https://" + texto
     return texto
 
+
 # --- Controle de Qualidade do campo LINK LOCALIZAÇÃO ---
 # O campo existe para guardar o link do Google Maps do ponto da obra, e é
 # comum vir preenchido com o endereço escrito ("Rua Dr. Rodrigues Lima,
@@ -1481,6 +1571,7 @@ DOMINIOS_LINK_MAPS = (
     "goo.gl/maps",
 )
 
+
 def _texto_vazio(valor):
     # Verdadeiro quando o campo está em branco: None/NaN, string vazia, ou os
     # textos que o pandas usa pra representar "nada" ("NAN"/"NAT"/"NONE").
@@ -1488,6 +1579,7 @@ def _texto_vazio(valor):
         return True
     texto = str(valor).strip()
     return not texto or texto.upper() in ("NAN", "NAT", "NONE")
+
 
 def _linha_valores_da_planilha(row):
     # A linha com o VALOR CONTRATADO e o detalhamento como estão na planilha,
@@ -1499,6 +1591,7 @@ def _linha_valores_da_planilha(row):
             linha[coluna] = row[coluna_planilha]
     return linha
 
+
 def _valor_contratado_vazio(valor):
     # Verdadeiro quando o VALOR CONTRATADO está em branco ou zerado — campo
     # numérico (moeda), não usa _texto_vazio (que é pra campos de texto).
@@ -1508,6 +1601,7 @@ def _valor_contratado_vazio(valor):
         return float(valor) <= 0
     except (TypeError, ValueError):
         return True
+
 
 def _motivo_link_localizacao(valor):
     # Devolve o motivo do alerta, ou None quando o campo está vazio (campo
@@ -1526,6 +1620,7 @@ def _motivo_link_localizacao(valor):
     if not any(dominio in endereco for dominio in DOMINIOS_LINK_MAPS):
         return "Link Localização com endereço que não é do Google Maps"
     return None
+
 
 def _montar_dados_ficha_acao(row):
     def campo(coluna):
@@ -1608,6 +1703,7 @@ def _montar_dados_ficha_acao(row):
         "_campos_alerta": list(_campos_alerta_qualidade(row).keys()),
     }
 
+
 def _definicao_secoes_ficha():
     # Mesma estrutura (seções/campos) usada pra montar a ficha no JS —
     # replicada aqui pra gerar o PDF de UMA ação com o Save em PDF.
@@ -1619,12 +1715,15 @@ def _definicao_secoes_ficha():
             ("objeto", "Objeto"), ("descricao", "Descrição"),
         ]},
         {"titulo": "EXECUÇÃO", "campos": [
-            ("gestao", "Gestão"), ("secretaria", "Secretaria/Órgão"), ("executor", "Órgão Executor"),
-            ("eixo", "Eixo"), ("municipio", "Município"), ("fonte", "Fonte de Recurso"),
+            ("gestao", "Gestão"), ("secretaria",
+                                   "Secretaria/Órgão"), ("executor", "Órgão Executor"),
+            ("eixo", "Eixo"), ("municipio",
+                               "Município"), ("fonte", "Fonte de Recurso"),
             ("empresa_contratada", "Empresa Contratada"),
         ]},
         {"titulo": "FINANCEIRO", "campos": [
-            ("valor_contratado", "Valor Contratado"), ("investimento_total", "Investimento Total"),
+            ("valor_contratado", "Valor Contratado"), ("investimento_total",
+                                                       "Investimento Total"),
         ]},
         # Dois detalhamentos diferentes do mesmo investimento, que NÃO podem
         # ficar misturados num bloco só: um é o que já foi efetivamente
@@ -1634,8 +1733,10 @@ def _definicao_secoes_ficha():
         # Financeiro do relatório gerencial). Juntos numa seção só, os dois
         # pareciam a mesma coisa (ver captura de tela que motivou a separação).
         {"titulo": "DETALHAMENTO CONTRATADO", "campos": [
-            ("apoiado_contratado", "Apoiado Contratado"), ("contrapartida_contratado", "Contrapartida Contratada"),
-            ("complementar_contratado", "Complementar Contratado"), ("financiamento_contratado", "Financiamento Contratado"),
+            ("apoiado_contratado", "Apoiado Contratado"), ("contrapartida_contratado",
+                                                           "Contrapartida Contratada"),
+            ("complementar_contratado", "Complementar Contratado"), (
+                "financiamento_contratado", "Financiamento Contratado"),
         ]},
         {"titulo": "DETALHAMENTO DA PREVISÃO ORÇAMENTÁRIA", "campos": [
             ("financiamento", "Financiamento"), ("apoiado", "Apoiado (OGU)"),
@@ -1644,17 +1745,23 @@ def _definicao_secoes_ficha():
         {"titulo": "SITUAÇÃO", "campos": [
             ("fase", "Fase"), ("status", "Status"),
             ("clausula_suspensiva", "Cláusula Suspensiva"), ("vigencia", "Vigência"),
-            ("motivo_clausula_suspensiva", "Motivo da Cláusula Suspensiva"), ("avanco", "Avanço da Obra"),
+            ("motivo_clausula_suspensiva",
+             "Motivo da Cláusula Suspensiva"), ("avanco", "Avanço da Obra"),
         ]},
         {"titulo": "PRAZOS", "campos": [
-            ("aviso_licitacao", "Aviso de Licitação"), ("abertura_licitacao", "Abertura de Licitação"),
-            ("previsao_contratacao", "Previsão de Contratação"), ("emissao_os", "Emissão de O.S."),
-            ("conclusao_original", "Conclusão Original"), ("prazo_atual", "Previsão de Conclusão Atual"),
+            ("aviso_licitacao", "Aviso de Licitação"), ("abertura_licitacao",
+                                                        "Abertura de Licitação"),
+            ("previsao_contratacao",
+             "Previsão de Contratação"), ("emissao_os", "Emissão de O.S."),
+            ("conclusao_original", "Conclusão Original"), ("prazo_atual",
+                                                           "Previsão de Conclusão Atual"),
             ("prazo_fase", "Prazo de Conclusão da Fase"),
         ]},
         {"titulo": "ACOMPANHAMENTO", "largo": True, "campos": [
-            ("pendencia", "Pendências / Tarefa"), ("providencias", "Providências (Datas)"),
-            ("prazo_pendencia", "Prazo da Pendência / Tarefa"), ("proximos_passos", "Próximos Passos"),
+            ("pendencia", "Pendências / Tarefa"), ("providencias",
+                                                   "Providências (Datas)"),
+            ("prazo_pendencia", "Prazo da Pendência / Tarefa"), ("proximos_passos",
+                                                                 "Próximos Passos"),
         ]},
         # "colunas": 2 só entra aqui (não no JS) porque essa seção, na
         # versão PDF, é a única com QR Code — precisa de mais largura por
@@ -1666,14 +1773,20 @@ def _definicao_secoes_ficha():
         ]},
     ]
 
-ficha_pdf_titulo_style = ParagraphStyle("ficha_pdf_titulo", fontName=FONTE_PADRAO_NEGRITO, fontSize=18, leading=21)
-ficha_pdf_subtitulo_style = ParagraphStyle("ficha_pdf_subtitulo", fontName=FONTE_PADRAO, fontSize=9, textColor=colors.HexColor("#666666"))
+
+ficha_pdf_titulo_style = ParagraphStyle(
+    "ficha_pdf_titulo", fontName=FONTE_PADRAO_NEGRITO, fontSize=18, leading=21)
+ficha_pdf_subtitulo_style = ParagraphStyle(
+    "ficha_pdf_subtitulo", fontName=FONTE_PADRAO, fontSize=9, textColor=colors.HexColor("#666666"))
 ficha_pdf_secao_titulo_style = ParagraphStyle(
     "ficha_pdf_secao_titulo", fontName=FONTE_PADRAO_NEGRITO, fontSize=10, textColor=colors.HexColor("#1565A3")
 )
-ficha_pdf_rotulo_style = ParagraphStyle("ficha_pdf_rotulo", fontName=FONTE_PADRAO, fontSize=7.5, textColor=colors.HexColor("#777777"))
-ficha_pdf_valor_style = ParagraphStyle("ficha_pdf_valor", fontName=FONTE_PADRAO, fontSize=10, leading=13, textColor=colors.HexColor("#1A1A1A"))
-ficha_pdf_valor_vazio_style = ParagraphStyle("ficha_pdf_valor_vazio", fontName=FONTE_PADRAO, fontSize=10, textColor=colors.HexColor("#999999"))
+ficha_pdf_rotulo_style = ParagraphStyle(
+    "ficha_pdf_rotulo", fontName=FONTE_PADRAO, fontSize=7.5, textColor=colors.HexColor("#777777"))
+ficha_pdf_valor_style = ParagraphStyle(
+    "ficha_pdf_valor", fontName=FONTE_PADRAO, fontSize=10, leading=13, textColor=colors.HexColor("#1A1A1A"))
+ficha_pdf_valor_vazio_style = ParagraphStyle(
+    "ficha_pdf_valor_vazio", fontName=FONTE_PADRAO, fontSize=10, textColor=colors.HexColor("#999999"))
 ficha_pdf_qr_legenda_style = ParagraphStyle(
     "ficha_pdf_qr_legenda", fontName=FONTE_PADRAO, fontSize=7, leading=9, textColor=colors.HexColor("#777777")
 )
@@ -1682,6 +1795,7 @@ ficha_pdf_qr_legenda_style = ParagraphStyle(
 # 24 mm dá margem suficiente pra maioria dos leitores de câmera de celular
 # ler mesmo numa folha A4 impressa em preto e branco.
 TAMANHO_QR_FICHA = 24 * mm
+
 
 class QRCodeLink(Flowable):
     # QR Code vetorial e clicável: no PDF digital funciona como um link
@@ -1703,14 +1817,17 @@ class QRCodeLink(Flowable):
         altura_nativa = y1 - y0
         desenho = Drawing(
             self.tamanho, self.tamanho,
-            transform=[self.tamanho / largura_nativa, 0, 0, self.tamanho / altura_nativa, 0, 0],
+            transform=[self.tamanho / largura_nativa, 0,
+                       0, self.tamanho / altura_nativa, 0, 0],
         )
         desenho.add(widget)
         renderPDF.draw(desenho, self.canv, 0, 0)
         # "relative=1": a área clicável usa o mesmo sistema de coordenadas
         # do draw() (origem no canto do próprio Flowable), não a página
         # inteira — senão o link ficaria deslocado da imagem do QR.
-        self.canv.linkURL(self.url, (0, 0, self.tamanho, self.tamanho), relative=1, thickness=0)
+        self.canv.linkURL(self.url, (0, 0, self.tamanho,
+                          self.tamanho), relative=1, thickness=0)
+
 
 def _nome_arquivo_ficha_pdf(dados):
     # Nome sugerido pro PDF da Ficha Cadastral: o OBJETO da ação, em vez do
@@ -1723,6 +1840,7 @@ def _nome_arquivo_ficha_pdf(dados):
     objeto = re.sub(r'[<>:"/\\|?*]', " ", objeto)
     objeto = re.sub(r"\s+", " ", objeto).strip(" .")[:150].strip(" .")
     return f"Ficha Cadastral - {objeto}.pdf" if objeto else "Ficha Cadastral.pdf"
+
 
 def gerar_pdf_ficha_acao(dados, caminho):
     # Gera um PDF de UMA página A4 com os dados completos de uma ação —
@@ -1742,9 +1860,11 @@ def gerar_pdf_ficha_acao(dados, caminho):
         valor = str(dados.get(chave, "") or "").strip()
         estilo_valor = ficha_pdf_valor_style if valor else ficha_pdf_valor_vazio_style
         texto_valor = valor.replace("\n", "<br/>") if valor else "—"
-        eh_link = bool(valor) and chave in CHAVES_LINK_FICHA and re.match(r"^https?://", valor, re.IGNORECASE)
+        eh_link = bool(valor) and chave in CHAVES_LINK_FICHA and re.match(
+            r"^https?://", valor, re.IGNORECASE)
 
-        bloco_rotulo_valor = [[Paragraph(rotulo.upper(), ficha_pdf_rotulo_style)]]
+        bloco_rotulo_valor = [
+            [Paragraph(rotulo.upper(), ficha_pdf_rotulo_style)]]
         if not eh_link:
             bloco_rotulo_valor.append([Paragraph(texto_valor, estilo_valor)])
         estilo_cel = [
@@ -1754,8 +1874,10 @@ def gerar_pdf_ficha_acao(dados, caminho):
             ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ]
         if chave in campos_alerta:
-            estilo_cel.append(("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#D64545")))
-            estilo_cel.append(("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FCEDED")))
+            estilo_cel.append(("BOX", (0, 0), (-1, -1), 1,
+                              colors.HexColor("#D64545")))
+            estilo_cel.append(
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FCEDED")))
 
         if not eh_link:
             conteudo = Table(bloco_rotulo_valor, colWidths=[largura - 12])
@@ -1768,7 +1890,8 @@ def gerar_pdf_ficha_acao(dados, caminho):
         # do celular.
         bloco_rotulo_valor.append([Spacer(1, 3)])
         bloco_rotulo_valor.append(
-            [Paragraph("Aponte a câmera do celular para acessar", ficha_pdf_qr_legenda_style)]
+            [Paragraph("Aponte a câmera do celular para acessar",
+                       ficha_pdf_qr_legenda_style)]
         )
         largura_texto = largura - TAMANHO_QR_FICHA - 24
         texto_tbl = Table(bloco_rotulo_valor, colWidths=[largura_texto])
@@ -1791,24 +1914,29 @@ def gerar_pdf_ficha_acao(dados, caminho):
         return conteudo
 
     elementos = [
-        Paragraph(str(dados.get("objeto") or "Ficha Cadastral"), ficha_pdf_titulo_style),
-        Paragraph(f"PAC - Ficha Cadastral da Ação — Item {dados.get('item', '')}", ficha_pdf_subtitulo_style),
+        Paragraph(str(dados.get("objeto") or "Ficha Cadastral"),
+                  ficha_pdf_titulo_style),
+        Paragraph(
+            f"PAC - Ficha Cadastral da Ação — Item {dados.get('item', '')}", ficha_pdf_subtitulo_style),
         Spacer(1, 10),
     ]
     for secao in _definicao_secoes_ficha():
         # Cada seção (título + todos os campos dela) fica agrupada num
         # KeepTogether — se não couber no resto da página atual, a seção
         # INTEIRA passa pra próxima, em vez de quebrar no meio dela.
-        flu_secao = [Paragraph(secao["titulo"], ficha_pdf_secao_titulo_style), Spacer(1, 3)]
+        flu_secao = [
+            Paragraph(secao["titulo"], ficha_pdf_secao_titulo_style), Spacer(1, 3)]
         num_colunas = secao.get("colunas") or (1 if secao.get("largo") else 3)
         campos = secao["campos"]
         largura_coluna = largura_util / num_colunas
         for i in range(0, len(campos), num_colunas):
             linha_campos = campos[i:i + num_colunas]
-            linha = [celula_campo(chave, rotulo, largura_coluna) for chave, rotulo in linha_campos]
+            linha = [celula_campo(chave, rotulo, largura_coluna)
+                     for chave, rotulo in linha_campos]
             while len(linha) < num_colunas:
                 linha.append("")
-            tabela_linha = Table([linha], colWidths=[largura_coluna] * num_colunas)
+            tabela_linha = Table([linha], colWidths=[
+                                 largura_coluna] * num_colunas)
             tabela_linha.setStyle(
                 TableStyle(
                     [
@@ -1861,7 +1989,8 @@ def gerar_pdf_ficha_acao(dados, caminho):
         canvas.setStrokeColor(COR_MARCA_TEAL)
         canvas.line(margem, pos_y_linha, meia_largura, pos_y_linha)
         canvas.setStrokeColor(COR_MARCA_GOLD)
-        canvas.line(meia_largura, pos_y_linha, largura_pagina_marca - margem, pos_y_linha)
+        canvas.line(meia_largura, pos_y_linha,
+                    largura_pagina_marca - margem, pos_y_linha)
 
         # Rodapé: mesma frase de atualização do relatório gerencial, em
         # corpo menor porque a A4 é bem mais estreita que a A3 paisagem.
@@ -1880,7 +2009,9 @@ def gerar_pdf_ficha_acao(dados, caminho):
         topMargin=58,
         bottomMargin=40,
     )
-    doc.build(elementos, onFirstPage=desenhar_marca_ficha, onLaterPages=desenhar_marca_ficha)
+    doc.build(elementos, onFirstPage=desenhar_marca_ficha,
+              onLaterPages=desenhar_marca_ficha)
+
 
 def calcular_trimestre(data, hoje=None):
     if pd.isna(data) or not isinstance(data, (pd.Timestamp, datetime)):
@@ -1897,6 +2028,7 @@ def calcular_trimestre(data, hoje=None):
         return f"{trimestre}ºTri/{ano_curto}"
     return str(data.year)
 
+
 def ordenar_trimestre(rotulo):
     if rotulo == "A definir":
         return (9999, 9)
@@ -1909,6 +2041,7 @@ def ordenar_trimestre(rotulo):
     if texto.isdigit():
         return (int(texto), 0)
     return (9999, 9)
+
 
 # =====================================================
 # 3.1. CATÁLOGO DE COLUNAS DO DETALHAMENTO ANALÍTICO
@@ -1952,8 +2085,10 @@ CATALOGO_COLUNAS_DETALHAMENTO = [
      "requer": ["OBJETO", "FASE"], "padrao": True, "nivel_hierarquia": 3},
     {"chave": "EMISSAO_OS", "titulo": "EMISSÃO DE O.S.", "min_pt": 80, "peso": 0.0,
      "padrao": True, "mescla_repetido": True},
-    {"chave": "AVANCO", "titulo": "AVANÇO FÍSICO (%)", "min_pt": 70, "peso": 0.0, "padrao": True},
-    {"chave": "MUNICIPIOS", "titulo": "MUNICÍPIOS", "min_pt": 120, "peso": 2.0, "padrao": True},
+    {"chave": "AVANCO",
+        "titulo": "AVANÇO FÍSICO (%)", "min_pt": 70, "peso": 0.0, "padrao": True},
+    {"chave": "MUNICIPIOS", "titulo": "MUNICÍPIOS",
+        "min_pt": 120, "peso": 2.0, "padrao": True},
     # O mínimo aqui foi MEDIDO, não estimado: "R$ 495.000.000,00" ocupa
     # 102 pt no corpo da tabela e a célula ainda gasta 12 pt de padding, ou
     # seja, os 100 pt anteriores quebravam o valor em duas linhas. Com 136
@@ -1962,7 +2097,8 @@ CATALOGO_COLUNAS_DETALHAMENTO = [
     # e a de referência. Peso 0: o conteúdo tem largura previsível, então a
     # coluna fica no tamanho de que precisa e devolve o excedente às
     # colunas de texto.
-    {"chave": "INVESTIMENTO", "titulo": "INVESTIMENTO", "min_pt": 136, "peso": 0.0, "padrao": True},
+    {"chave": "INVESTIMENTO", "titulo": "INVESTIMENTO",
+        "min_pt": 136, "peso": 0.0, "padrao": True},
     # As quatro colunas abaixo são os mesmos quatro componentes do
     # INVESTIMENTO AJUSTADO mostrados nos cards do Detalhamento Financeiro
     # (ver gerar_cards_resumo_detalhamento_financeiro) — aqui, por ação, em
@@ -1972,10 +2108,14 @@ CATALOGO_COLUNAS_DETALHAMENTO = [
     # col_valor_contratado/col_apoiado_ajustado/etc. em agregacoes_analiticas,
     # então "sabem se juntar sozinhas" exatamente como INVESTIMENTO — não
     # precisam de chave de agrupamento própria nem de "mescla_repetido".
-    {"chave": "VALOR_CONTRATADO", "titulo": "VALOR CONTRATADO", "min_pt": 136, "peso": 0.0, "padrao": False},
-    {"chave": "OGU", "titulo": "VALOR APOIADO OGU", "min_pt": 136, "peso": 0.0, "padrao": False},
-    {"chave": "RECURSO_ESTADUAL", "titulo": "RECURSO ESTADUAL", "min_pt": 136, "peso": 0.0, "padrao": False},
-    {"chave": "FINANCIAMENTO", "titulo": "FINANCIAMENTO", "min_pt": 136, "peso": 0.0, "padrao": False},
+    {"chave": "VALOR_CONTRATADO", "titulo": "VALOR CONTRATADO",
+        "min_pt": 136, "peso": 0.0, "padrao": False},
+    {"chave": "OGU", "titulo": "VALOR APOIADO OGU",
+        "min_pt": 136, "peso": 0.0, "padrao": False},
+    {"chave": "RECURSO_ESTADUAL", "titulo": "RECURSO ESTADUAL",
+        "min_pt": 136, "peso": 0.0, "padrao": False},
+    {"chave": "FINANCIAMENTO", "titulo": "FINANCIAMENTO",
+        "min_pt": 136, "peso": 0.0, "padrao": False},
     {"chave": "FONTE", "titulo": "FONTE DE RECURSO", "min_pt": 110, "peso": 1.0,
      "padrao": True, "mescla_repetido": True},
     {"chave": "TERMO", "titulo": "TERMO DE COMPROMISSO/ FINANCIAMENTO", "min_pt": 85, "peso": 0.2,
@@ -1997,9 +2137,12 @@ CATALOGO_COLUNAS_DETALHAMENTO = [
      "padrao": False, "mescla_repetido": True},
 ]
 
-COLUNAS_DETALHAMENTO_POR_CHAVE = {c["chave"]: c for c in CATALOGO_COLUNAS_DETALHAMENTO}
-ORDEM_COLUNAS_DETALHAMENTO = [c["chave"] for c in CATALOGO_COLUNAS_DETALHAMENTO]
-COLUNAS_DETALHAMENTO_PADRAO = [c["chave"] for c in CATALOGO_COLUNAS_DETALHAMENTO if c.get("padrao")]
+COLUNAS_DETALHAMENTO_POR_CHAVE = {
+    c["chave"]: c for c in CATALOGO_COLUNAS_DETALHAMENTO}
+ORDEM_COLUNAS_DETALHAMENTO = [c["chave"]
+                              for c in CATALOGO_COLUNAS_DETALHAMENTO]
+COLUNAS_DETALHAMENTO_PADRAO = [c["chave"]
+                               for c in CATALOGO_COLUNAS_DETALHAMENTO if c.get("padrao")]
 
 # Teto de colunas na tabela. Com onze colunas a página A3 paisagem ainda
 # comporta larguras mínimas razoáveis para todas: a soma dos mínimos das
@@ -2032,7 +2175,8 @@ FRACAO_LARGURA_DETALHAMENTO = 0.971
 # detalhamento. Ficam separadas porque precisam de tratamento próprio: não
 # existem obrigatoriamente na planilha e atravessam o agrupamento do
 # relatório por junção de textos, não por soma nem como chave.
-COLUNAS_ACOMPANHAMENTO_DETALHAMENTO = [col_pendencia, col_providencias, col_proximos_passos]
+COLUNAS_ACOMPANHAMENTO_DETALHAMENTO = [
+    col_pendencia, col_providencias, col_proximos_passos]
 
 # Nome da coluna DERIVADA (criada pelo próprio relatório, não vem da
 # planilha) com a data de emissão da O.S. já formatada em dd/mm/aa.
@@ -2053,7 +2197,9 @@ CHAVE_COLUNA_TRAVESSIA = {
 
 # Todas as colunas que atravessam o agrupamento — as que não viraram chave
 # continuam sendo agregadas por junção dos textos distintos.
-COLUNAS_TRAVESSIA_DETALHAMENTO = COLUNAS_ACOMPANHAMENTO_DETALHAMENTO + [COLUNA_EMISSAO_OS_TEXTO]
+COLUNAS_TRAVESSIA_DETALHAMENTO = COLUNAS_ACOMPANHAMENTO_DETALHAMENTO + \
+    [COLUNA_EMISSAO_OS_TEXTO]
+
 
 def texto_acompanhamento_chave(valor):
     # Normalização mínima para essas colunas quando elas viram chave de
@@ -2083,6 +2229,7 @@ def juntar_textos_distintos(serie, separador=" | "):
         partes.append(texto)
     return separador.join(partes)
 
+
 # Prazo de conclusão da fase VENCIDO — destacado em vermelho na tabela de
 # detalhamento.
 COR_PRAZO_VENCIDO = "#C00000"
@@ -2091,6 +2238,7 @@ COR_PRAZO_VENCIDO = "#C00000"
 # casos não é atraso, é simplesmente uma etapa concluída, e não deve sair
 # em vermelho.
 STATUS_FASE_ENTREGUE = {"CONCLUÍDA", "CONCLUIDA", "INAUGURADA"}
+
 
 def prazo_fase_vencido(texto_prazo, status_texto, hoje):
     # Lê a data já formatada da própria célula, em vez de buscar a data
@@ -2115,6 +2263,7 @@ def prazo_fase_vencido(texto_prazo, status_texto, hoje):
         return datetime(ano, mes, dia).date() < hoje
     except ValueError:
         return False  # data impossível na planilha (ex: 31/02)
+
 
 def normalizar_colunas_detalhamento(chaves_selecionadas):
     # Recebe o que veio do painel (ou None) e devolve uma lista de colunas
@@ -2183,6 +2332,7 @@ def normalizar_colunas_detalhamento(chaves_selecionadas):
 
     return ordenadas
 
+
 def calcular_larguras(largura_total, colunas=None):
     # Larguras absolutas das colunas da tabela de detalhamento, em duas
     # camadas: primeiro cada coluna recebe a sua largura MÍNIMA (o que ela
@@ -2217,6 +2367,7 @@ def calcular_larguras(largura_total, colunas=None):
 
     return [minimo + sobra * peso / soma_pesos for minimo, peso in zip(minimos, pesos)]
 
+
 def estimar_altura_linha(celulas):
     # Estima a altura real da linha (pior caso, com o texto completo em cada
     # célula) usando a própria engine de quebra de texto do ReportLab, para
@@ -2230,7 +2381,9 @@ def estimar_altura_linha(celulas):
         p = Paragraph(texto if str(texto).strip() else "&nbsp;", estilo)
         _, altura = p.wrap(largura, 3000)
         maior_altura = max(maior_altura, altura)
-    return maior_altura + 16  # margem de segurança do padding vertical da célula (cobre variações de métrica entre fontes)
+    # margem de segurança do padding vertical da célula (cobre variações de métrica entre fontes)
+    return maior_altura + 16
+
 
 # Altura máxima de UMA linha da tabela. Uma linha não pode ser dividida
 # entre páginas pelo ReportLab: se uma única linha ficar mais alta que a
@@ -2238,6 +2391,7 @@ def estimar_altura_linha(celulas):
 # (Pendências, Providências, Próximos Passos) podem trazer parágrafos
 # enormes da planilha, então o texto é aparado até caber nesse teto.
 ALTURA_MAX_LINHA_DETALHAMENTO = 330
+
 
 def limitar_texto_para_altura(texto, estilo, largura, altura_max=ALTURA_MAX_LINHA_DETALHAMENTO):
     # Encurta o texto (com reticências) até a célula caber na altura máxima.
@@ -2261,6 +2415,7 @@ def limitar_texto_para_altura(texto, estilo, largura, altura_max=ALTURA_MAX_LINH
             alto = meio - 1
     return melhor or "…"
 
+
 # Altura máxima segura (em pontos) para uma célula mesclada (SPAN): acima
 # disso ela pode ficar mais alta que uma página inteira e travar o ReportLab
 # com LayoutError, já que uma célula mesclada não pode ser quebrada entre
@@ -2274,6 +2429,7 @@ def limitar_texto_para_altura(texto, estilo, largura, altura_max=ALTURA_MAX_LINH
 # (ver gerar_tabela_objeto_financeiro).
 ALTURA_MAX_BLOCO = 480
 
+
 def gerar_ids_subgrupo_altura(seq, alturas, limite_altura):
     ids, contador, valor_anterior, altura_no_grupo = [], 0, object(), 0
     for val, altura in zip(seq, alturas):
@@ -2284,6 +2440,7 @@ def gerar_ids_subgrupo_altura(seq, alturas, limite_altura):
         altura_no_grupo += altura
         ids.append(contador)
     return ids
+
 
 def gerar_id_nivel_alinhado_altura(seq_nivel, id_filho, alturas, limite_altura):
     # Nível intermediário/externo da hierarquia de mesclas (ex: FASE
@@ -2302,7 +2459,8 @@ def gerar_id_nivel_alinhado_altura(seq_nivel, id_filho, alturas, limite_altura):
     # dividir.
     altura_por_bloco_filho = {}
     for filho, altura in zip(id_filho, alturas):
-        altura_por_bloco_filho[filho] = altura_por_bloco_filho.get(filho, 0) + altura
+        altura_por_bloco_filho[filho] = altura_por_bloco_filho.get(
+            filho, 0) + altura
 
     ids, contador, valor_anterior, altura_no_grupo = [], 0, object(), 0
     for pos, valor in enumerate(seq_nivel):
@@ -2319,6 +2477,7 @@ def gerar_id_nivel_alinhado_altura(seq_nivel, id_filho, alturas, limite_altura):
         valor_anterior = valor
         ids.append(contador)
     return ids
+
 
 def gerar_ids_subgrupo_aninhado(seq_valor, seq_grupo_pai):
     # Cria um novo id sempre que o VALOR mudar OU o grupo pai mudar —
@@ -2338,6 +2497,7 @@ def gerar_ids_subgrupo_aninhado(seq_valor, seq_grupo_pai):
 # 4. ELEMENTOS VISUAIS E CALLBACKS DE PÁGINA
 # =====================================================
 
+
 def desenhar_background_capa(canvas, doc):
     canvas.saveState()
     largura, altura = PAGINA
@@ -2345,7 +2505,7 @@ def desenhar_background_capa(canvas, doc):
     altura_img = altura * 1
     pos_x = -largura * 0.10
     pos_y = -altura * 0.10
-    
+
     try:
         canvas.setFillAlpha(0.15)
         canvas.setStrokeAlpha(0.15)
@@ -2359,14 +2519,14 @@ def desenhar_background_capa(canvas, doc):
         )
     except Exception:
         pass
-        
+
     canvas.setFillAlpha(1.0)
     canvas.setStrokeAlpha(1.0)
-    
+
     largura_gov, altura_gov = 260, 286
     pos_x_gov = largura - MARGEM_DIR - largura_gov
     pos_y_gov = MARGEM_ESQ
-    
+
     try:
         canvas.drawImage(
             caminho_recurso("GOVERNO.PNG"),
@@ -2390,11 +2550,13 @@ def desenhar_background_capa(canvas, doc):
         capa_cgape_esquerda,
     )
     largura_disponivel_cgape = largura * 0.55
-    _, altura_paragrafo_cgape = paragrafo_cgape_esq.wrap(largura_disponivel_cgape, altura)
+    _, altura_paragrafo_cgape = paragrafo_cgape_esq.wrap(
+        largura_disponivel_cgape, altura)
     pos_y_cgape = pos_y_gov + (altura_gov - altura_paragrafo_cgape) / 2
     paragrafo_cgape_esq.drawOn(canvas, MARGEM_ESQ, pos_y_cgape)
 
     canvas.restoreState()
+
 
 def desenhar_cabecalho(canvas, doc):
     canvas.saveState()
@@ -2446,6 +2608,7 @@ def desenhar_cabecalho(canvas, doc):
     canvas.drawCentredString(largura / 2, 25, ultima_atualizacao_txt)
     canvas.restoreState()
 
+
 # Linha de filtros únicos ("SECRETARIA | EXECUTOR | FASE | STATUS") que o
 # rodapé das páginas de gestão desenha à esquerda, na mesma altura e com a
 # mesma formatação do "GESTÃO ESTADUAL - Página 01 de 15" da direita. Fica
@@ -2462,6 +2625,8 @@ TEXTO_FILTROS_RODAPE = ""
 # a gestão marcada nela (via _MarcadorGestao); 2) só depois de processar
 # TODAS as páginas — quando já se sabe quantas cada gestão tem — é que o
 # texto "Página X de Y" é de fato desenhado, uma página de cada vez.
+
+
 class NumeradorPaginasGestaoCanvas(reportlab_canvas.Canvas):
     def __init__(self, *args, **kwargs):
         reportlab_canvas.Canvas.__init__(self, *args, **kwargs)
@@ -2500,7 +2665,8 @@ class NumeradorPaginasGestaoCanvas(reportlab_canvas.Canvas):
                 # limite, o texto é cortado com reticências, em vez de
                 # encavalar na numeração.
                 if TEXTO_FILTROS_RODAPE:
-                    largura_pagina_txt = self.stringWidth(texto_pagina, FONTE_PADRAO_NEGRITO, 15)
+                    largura_pagina_txt = self.stringWidth(
+                        texto_pagina, FONTE_PADRAO_NEGRITO, 15)
                     espaco = largura - MARGEM_ESQ - MARGEM_DIR - largura_pagina_txt - 30
                     texto_filtros = TEXTO_FILTROS_RODAPE
                     corpo = 15
@@ -2518,6 +2684,7 @@ class NumeradorPaginasGestaoCanvas(reportlab_canvas.Canvas):
                 self.restoreState()
             reportlab_canvas.Canvas.showPage(self)
         reportlab_canvas.Canvas.save(self)
+
 
 class _MarcadorGestao(Flowable):
     # Flowable "invisível" (não ocupa espaço nem desenha nada visível) —
@@ -2539,6 +2706,7 @@ class _MarcadorGestao(Flowable):
 # =====================================================
 # 5. FÁBRICA DE TABELAS E CARDS (FABRICATOR)
 # =====================================================
+
 
 def gerar_cards_resumo(qtd, investimento):
     data = [
@@ -2591,7 +2759,8 @@ def gerar_cards_resumo(qtd, investimento):
     ]
     tabela = Table(
         data,
-        colWidths=[LARGURA_UTIL * CARDS_FATOR_LARGURA, LARGURA_UTIL * CARDS_FATOR_LARGURA],
+        colWidths=[LARGURA_UTIL * CARDS_FATOR_LARGURA,
+                   LARGURA_UTIL * CARDS_FATOR_LARGURA],
         rowHeights=[CARDS_ALTURA_CABECALHO, CARDS_ALTURA_VALOR],
     )
     tabela.setStyle(
@@ -2607,6 +2776,7 @@ def gerar_cards_resumo(qtd, investimento):
         )
     )
     return tabela
+
 
 CORES_DETALHAMENTO_SECRETARIA = {
     "Valor Contratado": cor_grafico("#49925C"),
@@ -2654,6 +2824,7 @@ def _cor_card_financeiro(chave_cor):
     # AJUSTADOS, ou seja, "a contratar" — ficam na variação clareada.
     return CORES_DETALHAMENTO_SECRETARIA_CLARO.get(chave_cor, CORES_DETALHAMENTO_SECRETARIA[chave_cor])
 
+
 def desenhar_legenda_detalhamento_secretaria(largura=LARGURA_UTIL, detalhado=False):
     # Uma linha só, com um quadradinho colorido + nome por componente —
     # mesma legenda usada uma única vez no topo da seção equivalente do
@@ -2670,7 +2841,8 @@ def desenhar_legenda_detalhamento_secretaria(largura=LARGURA_UTIL, detalhado=Fal
     # nesta página específica não há outra marcação em disputa pelo
     # símbolo. Valor Contratado é firme e por isso fica sem marcação.
     if not detalhado:
-        NOMES_PREVISAO_ORCAMENTARIA = {"Valor Apoiado OGU", "Recurso Estadual", "Financiamento"}
+        NOMES_PREVISAO_ORCAMENTARIA = {
+            "Valor Apoiado OGU", "Recurso Estadual", "Financiamento"}
         itens = [
             (f"{nome}*" if nome in NOMES_PREVISAO_ORCAMENTARIA else nome, cor)
             for nome, cor in CORES_DETALHAMENTO_SECRETARIA.items()
@@ -2680,7 +2852,8 @@ def desenhar_legenda_detalhamento_secretaria(largura=LARGURA_UTIL, detalhado=Fal
         x = 0
         for rotulo, cor in itens:
             d.add(Rect(x, 6, 14, 14, fillColor=cor, strokeColor=None))
-            d.add(String(x + 19, 6.5, rotulo, fontName=FONTE_PADRAO, fontSize=16, fillColor=colors.HexColor("#555555")))
+            d.add(String(x + 19, 6.5, rotulo, fontName=FONTE_PADRAO,
+                  fontSize=16, fillColor=colors.HexColor("#555555")))
             x += 19 + len(rotulo) * 9.0 + 30
         return d
 
@@ -2720,6 +2893,7 @@ def desenhar_legenda_detalhamento_secretaria(largura=LARGURA_UTIL, detalhado=Fal
             ))
     return d
 
+
 def gerar_cards_resumo_detalhamento_financeiro(qtd, investimento, df_base):
     # Mesma linha dos dois cards de sempre (QTD TOTAL / INVESTIMENTO), só
     # que nesta página eles vêm acompanhados — na MESMA linha horizontal,
@@ -2735,16 +2909,20 @@ def gerar_cards_resumo_detalhamento_financeiro(qtd, investimento, df_base):
     # novos — ocupando a largura útil inteira, com os novos encostados à
     # direita.
     componentes = [
-        ("VALOR CONTRATADO", float(df_base[col_valor_contratado].sum()), "Valor Contratado"),
-        ("VALOR APOIADO OGU*", float(df_base[col_apoiado_ajustado].sum()), "Valor Apoiado OGU"),
+        ("VALOR CONTRATADO", float(
+            df_base[col_valor_contratado].sum()), "Valor Contratado"),
+        ("VALOR APOIADO OGU*",
+         float(df_base[col_apoiado_ajustado].sum()), "Valor Apoiado OGU"),
         (
             "RECURSO ESTADUAL*",
             float(
-                df_base[col_contrapartida_ajustado].sum() + df_base[col_complementar_ajustado].sum()
+                df_base[col_contrapartida_ajustado].sum(
+                ) + df_base[col_complementar_ajustado].sum()
             ),
             "Recurso Estadual",
         ),
-        ("FINANCIAMENTO*", float(df_base[col_financiamento_ajustado].sum()), "Financiamento"),
+        ("FINANCIAMENTO*",
+         float(df_base[col_financiamento_ajustado].sum()), "Financiamento"),
     ]
 
     def cabecalho(texto):
@@ -2773,7 +2951,8 @@ def gerar_cards_resumo_detalhamento_financeiro(qtd, investimento, df_base):
         )
 
     linha_cabecalho = [cabecalho("QTD TOTAL"), cabecalho("INVESTIMENTO"), ""]
-    linha_valor = [valor_celula(str(qtd)), valor_celula(formatar_mi_bi(investimento)), ""]
+    linha_valor = [valor_celula(str(qtd)), valor_celula(
+        formatar_mi_bi(investimento)), ""]
     for titulo, valor, _chave_cor in componentes:
         linha_cabecalho.append(cabecalho(titulo))
         linha_valor.append(valor_celula(formatar_mi_bi(valor)))
@@ -2799,9 +2978,11 @@ def gerar_cards_resumo_detalhamento_financeiro(qtd, investimento, df_base):
         estilo.append(("BACKGROUND", (col, 0), (col, 0), cor))
         estilo.append(("BACKGROUND", (col, 1), (col, 1), colors.whitesmoke))
         estilo.append(("BOX", (col, 0), (col, -1), 1.0, colors.grey))
-        estilo.append(("INNERGRID", (col, 0), (col, -1), 0.5, colors.lightgrey))
+        estilo.append(
+            ("INNERGRID", (col, 0), (col, -1), 0.5, colors.lightgrey))
     tabela.setStyle(TableStyle(estilo))
     return tabela
+
 
 def gerar_tabela_objeto_financeiro(df_gestao):
     # Tabela do DETALHAMENTO FINANCEIRO POR OBJETO: mesma hierarquia de
@@ -2828,7 +3009,8 @@ def gerar_tabela_objeto_financeiro(df_gestao):
 
     # --- Agregação por OBJETO > FASE > STATUS (sem secretaria/eixo/
     # município — esta tabela é só o recorte financeiro). ---
-    chaves_grupo = [col_objeto, "FASE_ORDEM", "FASE_TEXTO", "STATUS_ORDEM", "STATUS_TEXTO"]
+    chaves_grupo = [col_objeto, "FASE_ORDEM",
+                    "FASE_TEXTO", "STATUS_ORDEM", "STATUS_TEXTO"]
     df_grp = (
         df_gestao.groupby(chaves_grupo, dropna=False)
         .agg({
@@ -2840,14 +3022,18 @@ def gerar_tabela_objeto_financeiro(df_gestao):
         })
         .reset_index()
     )
-    df_grp = df_grp.assign(_OBJETO_SORT=df_grp[col_objeto].apply(remover_acentos))
-    df_grp = df_grp.sort_values(["_OBJETO_SORT", "FASE_ORDEM", "STATUS_ORDEM"], kind="stable")
+    df_grp = df_grp.assign(
+        _OBJETO_SORT=df_grp[col_objeto].apply(remover_acentos))
+    df_grp = df_grp.sort_values(
+        ["_OBJETO_SORT", "FASE_ORDEM", "STATUS_ORDEM"], kind="stable")
 
     # Quantidade de ações por bloco, pro sufixo "(N)" do rótulo mesclado —
     # mesmo efeito visual do Detalhamento Analítico.
     contagem_objeto = df_gestao.groupby(col_objeto).size().to_dict()
-    contagem_fase = df_gestao.groupby([col_objeto, "FASE_TEXTO"]).size().to_dict()
-    contagem_status = df_gestao.groupby([col_objeto, "FASE_TEXTO", "STATUS_TEXTO"]).size().to_dict()
+    contagem_fase = df_gestao.groupby(
+        [col_objeto, "FASE_TEXTO"]).size().to_dict()
+    contagem_status = df_gestao.groupby(
+        [col_objeto, "FASE_TEXTO", "STATUS_TEXTO"]).size().to_dict()
 
     # Financiamento por ORIGEM dentro de cada bloco Objeto+Fase+Status — só
     # entre as linhas com financiamento ajustado != 0 (senão toda ação SEM
@@ -2865,16 +3051,20 @@ def gerar_tabela_objeto_financeiro(df_gestao):
             else FALLBACK_ORIGEM_FINANCIAMENTO
         )
         agrupado_fin = (
-            df_fin.groupby([col_objeto, "FASE_TEXTO", "STATUS_TEXTO", "_ORIGEM"])[col_financiamento_ajustado]
+            df_fin.groupby([col_objeto, "FASE_TEXTO", "STATUS_TEXTO", "_ORIGEM"])[
+                col_financiamento_ajustado]
             .sum()
             .reset_index()
         )
         for _, linha_fin in agrupado_fin.iterrows():
-            chave_bloco = (str(linha_fin[col_objeto]), str(linha_fin["FASE_TEXTO"]), str(linha_fin["STATUS_TEXTO"]))
+            chave_bloco = (str(linha_fin[col_objeto]), str(
+                linha_fin["FASE_TEXTO"]), str(linha_fin["STATUS_TEXTO"]))
             origem = str(linha_fin["_ORIGEM"])
             valor_origem = float(linha_fin[col_financiamento_ajustado])
-            origem_por_bloco.setdefault(chave_bloco, []).append((origem, valor_origem))
-            subtotal_origem_gestao[origem] = subtotal_origem_gestao.get(origem, 0.0) + valor_origem
+            origem_por_bloco.setdefault(
+                chave_bloco, []).append((origem, valor_origem))
+            subtotal_origem_gestao[origem] = subtotal_origem_gestao.get(
+                origem, 0.0) + valor_origem
 
     # "-" em vez de "R$ 0,00": nesta tabela zero é o normal (cada ação só
     # preenche UM dos quatro componentes — ver nota da regra "ajustado" no
@@ -2905,7 +3095,8 @@ def gerar_tabela_objeto_financeiro(df_gestao):
         valor_contratado = float(row[col_valor_contratado])
         ogu = float(row[col_apoiado_ajustado])
         financiamento = float(row[col_financiamento_ajustado])
-        recurso_estadual = float(row[col_contrapartida_ajustado]) + float(row[col_complementar_ajustado])
+        recurso_estadual = float(
+            row[col_contrapartida_ajustado]) + float(row[col_complementar_ajustado])
         investimento = valor_contratado + ogu + financiamento + recurso_estadual
 
         if abs(investimento - (valor_contratado + ogu + financiamento + recurso_estadual)) > TOLERANCIA_DIVERGENCIA:
@@ -2933,7 +3124,8 @@ def gerar_tabela_objeto_financeiro(df_gestao):
 
     data_tab = [
         [
-            Paragraph(f"<b>{COLUNAS_DETALHAMENTO_POR_CHAVE[chave]['titulo']}</b>", header_center)
+            Paragraph(
+                f"<b>{COLUNAS_DETALHAMENTO_POR_CHAVE[chave]['titulo']}</b>", header_center)
             for chave in colunas_tab
         ]
     ]
@@ -2947,9 +3139,11 @@ def gerar_tabela_objeto_financeiro(df_gestao):
     total_ogu = float(df_grp[col_apoiado_ajustado].sum())
     total_financiamento = float(df_grp[col_financiamento_ajustado].sum())
     total_recurso_estadual = float(
-        (df_grp[col_contrapartida_ajustado] + df_grp[col_complementar_ajustado]).sum()
+        (df_grp[col_contrapartida_ajustado] +
+         df_grp[col_complementar_ajustado]).sum()
     )
-    total_investimento = total_valor_contratado + total_ogu + total_financiamento + total_recurso_estadual
+    total_investimento = total_valor_contratado + total_ogu + \
+        total_financiamento + total_recurso_estadual
     totais = {
         "investimento": total_investimento,
         "valor_contratado": total_valor_contratado,
@@ -2961,7 +3155,8 @@ def gerar_tabela_objeto_financeiro(df_gestao):
 
     alturas_linhas = [
         estimar_altura_linha(
-            [(reg["textos"][chave], ESTILO_COLUNA[chave], larguras[i]) for i, chave in enumerate(colunas_tab)]
+            [(reg["textos"][chave], ESTILO_COLUNA[chave], larguras[i])
+             for i, chave in enumerate(colunas_tab)]
         )
         for reg in registros
     ]
@@ -2970,9 +3165,12 @@ def gerar_tabela_objeto_financeiro(df_gestao):
     seq_obj_fase = [(reg["obj"], reg["fas"]) for reg in registros]
     seq_sta = [(reg["obj"], reg["fas"], reg["sta"]) for reg in registros]
 
-    id_sta = gerar_ids_subgrupo_altura(seq_sta, alturas_linhas, ALTURA_MAX_BLOCO)
-    id_fase_nivel = gerar_id_nivel_alinhado_altura(seq_obj_fase, id_sta, alturas_linhas, ALTURA_MAX_BLOCO)
-    id_obj = gerar_id_nivel_alinhado_altura(seq_obj, id_fase_nivel, alturas_linhas, ALTURA_MAX_BLOCO)
+    id_sta = gerar_ids_subgrupo_altura(
+        seq_sta, alturas_linhas, ALTURA_MAX_BLOCO)
+    id_fase_nivel = gerar_id_nivel_alinhado_altura(
+        seq_obj_fase, id_sta, alturas_linhas, ALTURA_MAX_BLOCO)
+    id_obj = gerar_id_nivel_alinhado_altura(
+        seq_obj, id_fase_nivel, alturas_linhas, ALTURA_MAX_BLOCO)
 
     spans = []
     linhas_por_bloco = {"OBJETO": {}, "FASE": {}, "STATUS": {}}
@@ -3017,21 +3215,25 @@ def gerar_tabela_objeto_financeiro(df_gestao):
         else:
             textos["STATUS"] = ""
 
-        data_tab.append([Paragraph(textos[chave], ESTILO_COLUNA[chave]) for chave in colunas_tab])
+        data_tab.append([Paragraph(textos[chave], ESTILO_COLUNA[chave])
+                        for chave in colunas_tab])
 
         linhas_por_bloco["OBJETO"].setdefault(id_obj[pos], []).append(l_idx)
-        linhas_por_bloco["FASE"].setdefault(id_fase_nivel[pos], []).append(l_idx)
+        linhas_por_bloco["FASE"].setdefault(
+            id_fase_nivel[pos], []).append(l_idx)
         linhas_por_bloco["STATUS"].setdefault(id_sta[pos], []).append(l_idx)
 
         id_obj_ant, id_fase_nivel_ant, id_sta_ant = id_obj[pos], id_fase_nivel[pos], id_sta[pos]
-        obj_real_ant, fase_real_ant, sta_real_ant = obj, (obj, fas), (obj, fas, sta)
+        obj_real_ant, fase_real_ant, sta_real_ant = obj, (
+            obj, fas), (obj, fas, sta)
         l_idx += 1
 
     for chave, blocos in linhas_por_bloco.items():
         coluna = colunas_tab.index(chave)
         for linhas in blocos.values():
             if len(linhas) > 1:
-                spans.append(("SPAN", (coluna, linhas[0]), (coluna, linhas[-1])))
+                spans.append(
+                    ("SPAN", (coluna, linhas[0]), (coluna, linhas[-1])))
 
     estilo_tab = [
         ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
@@ -3054,6 +3256,7 @@ def gerar_tabela_objeto_financeiro(df_gestao):
             f"+ Recurso Estadual em {len(divergencias)} linha(s) — {amostra}{sufixo}"
         )
     return tabela, nota_divergencia, totais
+
 
 def gerar_linha_titulo_gestao_com_cards_totais(texto_titulo, totais):
     # Substitui a linha de TOTAL que ficava dentro da tabela (ver
@@ -3119,7 +3322,8 @@ def gerar_linha_titulo_gestao_com_cards_totais(texto_titulo, totais):
     linha_cabecalho = [Paragraph(texto_titulo, gestao_style)] + [
         cabecalho(titulo) for titulo, _, _ in componentes
     ]
-    linha_valor = [""] + [valor_celula(_valor_abreviado(valor)) for _, valor, _ in componentes]
+    linha_valor = [""] + [valor_celula(_valor_abreviado(valor))
+                          for _, valor, _ in componentes]
 
     tabela = Table(
         [linha_cabecalho, linha_valor],
@@ -3135,21 +3339,25 @@ def gerar_linha_titulo_gestao_com_cards_totais(texto_titulo, totais):
     ]
     for i, (_, _, chave_cor) in enumerate(componentes):
         col = 1 + i
-        cor = COR_MARCA_TEAL_ESCURO if chave_cor is None else _cor_card_financeiro(chave_cor)
+        cor = COR_MARCA_TEAL_ESCURO if chave_cor is None else _cor_card_financeiro(
+            chave_cor)
         estilo.append(("BACKGROUND", (col, 0), (col, 0), cor))
         estilo.append(("BACKGROUND", (col, 1), (col, 1), colors.whitesmoke))
         estilo.append(("BOX", (col, 0), (col, -1), 1.0, colors.grey))
-        estilo.append(("INNERGRID", (col, 0), (col, -1), 0.5, colors.lightgrey))
+        estilo.append(
+            ("INNERGRID", (col, 0), (col, -1), 0.5, colors.lightgrey))
     tabela.setStyle(TableStyle(estilo))
 
     nota_origem = None
     subtotal_origem = totais.get("subtotal_origem_financiamento")
     if subtotal_origem:
-        partes_origem = sorted(subtotal_origem.items(), key=lambda par: remover_acentos(par[0]))
+        partes_origem = sorted(subtotal_origem.items(),
+                               key=lambda par: remover_acentos(par[0]))
         nota_origem = "Financiamento por origem — " + "; ".join(
             f"{origem}: {moeda_sem_quebra(valor)}" for origem, valor in partes_origem
         )
     return tabela, nota_origem
+
 
 def _formatar_mi_bi_texto_puro(valor):
     # Versão em TEXTO PURO de formatar_mi_bi — usada dentro de String (do
@@ -3160,6 +3368,7 @@ def _formatar_mi_bi_texto_puro(valor):
     if valor >= 1_000_000:
         return f"R$ {valor/1_000_000:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " Mi"
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 def formas_barra_arredondada(x, y, largura, altura, cor, ponta_inicio=True, ponta_fim=True,
                              horizontal=True, raio=None):
@@ -3186,7 +3395,8 @@ def formas_barra_arredondada(x, y, largura, altura, cor, ponta_inicio=True, pont
         # retângulo comum, sem passar pelo arredondar-e-quadrar-de-volta.
         return [Rect(x, y, largura, altura, fillColor=cor, strokeColor=None)]
 
-    formas = [Rect(x, y, largura, altura, fillColor=cor, strokeColor=None, rx=raio, ry=raio)]
+    formas = [Rect(x, y, largura, altura, fillColor=cor,
+                   strokeColor=None, rx=raio, ry=raio)]
     if not ponta_inicio:
         formas.append(
             Rect(x, y, raio, altura, fillColor=cor, strokeColor=None) if horizontal
@@ -3199,8 +3409,9 @@ def formas_barra_arredondada(x, y, largura, altura, cor, ponta_inicio=True, pont
         )
     return formas
 
+
 def desenhar_barra_detalhamento_secretaria(item, largura, altura_barra=13, mostrar_detalhe=True,
-                                          texto_acima=None, fonte_acima=12):
+                                           texto_acima=None, fonte_acima=12):
     # Barra empilhada PERCENTUAL (sempre 100% de largura, como no dashboard)
     # — cada segmento representa a fatia de Valor Contratado/OGU/Recurso
     # Estadual/Financiamento dentro do investimento daquela secretaria, sem
@@ -3226,7 +3437,8 @@ def desenhar_barra_detalhamento_secretaria(item, largura, altura_barra=13, mostr
         partes_texto = []
         for sigla, contratado, a_contratar in (
             ("OGU", item["valorApoiadoContratado"], item["valorApoiadoOgu"]),
-            ("FIN", item["valorFinanciamentoContratado"], item["financiamento"]),
+            ("FIN", item["valorFinanciamentoContratado"],
+             item["financiamento"]),
             ("RE", item["valorEstadualContratado"], item["recursoEstadual"]),
         ):
             total_fonte = contratado + a_contratar
@@ -3237,10 +3449,12 @@ def desenhar_barra_detalhamento_secretaria(item, largura, altura_barra=13, mostr
                 f"({_formatar_mi_bi_texto_puro(contratado)} contratado)"
             )
             if sigla == "FIN" and item.get("fontesFinanciamento"):
-                texto_segmento += " — " + ", ".join(item["fontesFinanciamento"])
+                texto_segmento += " — " + \
+                    ", ".join(item["fontesFinanciamento"])
             partes_texto.append(texto_segmento)
         if item["valorNaoDiscriminado"] > 0:
-            partes_texto.append(f"Não discriminado: {_formatar_mi_bi_texto_puro(item['valorNaoDiscriminado'])}")
+            partes_texto.append(
+                f"Não discriminado: {_formatar_mi_bi_texto_puro(item['valorNaoDiscriminado'])}")
     else:
         segmentos = [
             ("Valor Contratado", item["valorContratado"]),
@@ -3248,14 +3462,16 @@ def desenhar_barra_detalhamento_secretaria(item, largura, altura_barra=13, mostr
             ("Recurso Estadual", item["recursoEstadual"]),
             ("Financiamento", item["financiamento"]),
         ]
-        siglas = {"Valor Contratado": "VC", "Valor Apoiado OGU": "OGU", "Recurso Estadual": "RE", "Financiamento": "FIN"}
+        siglas = {"Valor Contratado": "VC", "Valor Apoiado OGU": "OGU",
+                  "Recurso Estadual": "RE", "Financiamento": "FIN"}
         partes_texto = []
         for nome, valor in segmentos:
             if valor <= 0:
                 continue
             texto_segmento = f"{siglas[nome]}: {_formatar_mi_bi_texto_puro(valor)}"
             if nome == "Financiamento" and item.get("fontesFinanciamento"):
-                texto_segmento += " (" + ", ".join(item["fontesFinanciamento"]) + ")"
+                texto_segmento += " (" + \
+                    ", ".join(item["fontesFinanciamento"]) + ")"
             partes_texto.append(texto_segmento)
     texto_detalhe = "     ".join(partes_texto)
 
@@ -3274,7 +3490,8 @@ def desenhar_barra_detalhamento_secretaria(item, largura, altura_barra=13, mostr
     # dentro porque a barra tem 11 pt de altura na miniatura — não há como
     # escrever ali dentro sem cobrir os segmentos.
     altura_texto_acima = (fonte_acima + 3) if texto_acima else 0
-    altura_total = altura_barra + espaco_acima_detalhe + altura_texto_detalhe + altura_texto_acima
+    altura_total = altura_barra + espaco_acima_detalhe + \
+        altura_texto_detalhe + altura_texto_acima
     topo_barra = altura_total - altura_texto_acima
     d = Drawing(largura, altura_total)
     if texto_acima:
@@ -3286,13 +3503,15 @@ def desenhar_barra_detalhamento_secretaria(item, largura, altura_barra=13, mostr
             )
         )
     for forma in formas_barra_arredondada(
-        0, topo_barra - altura_barra, largura, altura_barra, colors.HexColor("#E4E4E4")
+        0, topo_barra -
+            altura_barra, largura, altura_barra, colors.HexColor("#E4E4E4")
     ):
         d.add(forma)
     # Só o PRIMEIRO segmento arredonda à esquerda e só o ÚLTIMO à direita —
     # as junções internas continuam retas, senão apareceria uma falha em
     # forma de lente entre um segmento e o vizinho.
-    segmentos_visiveis = [(nome, valor) for nome, valor in segmentos if valor > 0]
+    segmentos_visiveis = [(nome, valor)
+                          for nome, valor in segmentos if valor > 0]
     x = 0
     limites_internos = []
     for posicao, (nome, valor) in enumerate(segmentos_visiveis):
@@ -3321,8 +3540,10 @@ def desenhar_barra_detalhamento_secretaria(item, largura, altura_barra=13, mostr
         )
 
     if mostrar_detalhe:
-        d.add(String(0, 5, texto_detalhe, fontName=FONTE_PADRAO, fontSize=16, fillColor=colors.HexColor("#666666")))
+        d.add(String(0, 5, texto_detalhe, fontName=FONTE_PADRAO,
+              fontSize=16, fillColor=colors.HexColor("#666666")))
     return d
+
 
 def gerar_grafico_detalhamento_secretaria(df_base):
     # Mesma regra de valores ajustados usada no dashboard: o INVESTIMENTO de
@@ -3346,8 +3567,10 @@ def gerar_grafico_detalhamento_secretaria(df_base):
             COMPLEMENTAR_CONTRATADO=(col_complementar_contratado, "sum"),
             FINANCIAMENTO_CONTRATADO=(col_financiamento_contratado, "sum"),
         )
-    df_resumo = df_base.groupby(["GESTAO", "SECRETARIA_LIMPA"]).agg(**agregacoes).reset_index()
-    df_resumo["RECURSO_ESTADUAL"] = df_resumo["CONTRAPARTIDA_AJ"] + df_resumo["COMPLEMENTAR_AJ"]
+    df_resumo = df_base.groupby(["GESTAO", "SECRETARIA_LIMPA"]).agg(
+        **agregacoes).reset_index()
+    df_resumo["RECURSO_ESTADUAL"] = df_resumo["CONTRAPARTIDA_AJ"] + \
+        df_resumo["COMPLEMENTAR_AJ"]
     df_resumo["INVESTIMENTO"] = (
         df_resumo["VALOR_CONTRATADO"]
         + df_resumo["APOIADO_AJ"]
@@ -3356,7 +3579,8 @@ def gerar_grafico_detalhamento_secretaria(df_base):
     )
     if detalhado:
         df_resumo["ESTADUAL_CONTRATADO"] = (
-            df_resumo["CONTRAPARTIDA_CONTRATADA"] + df_resumo["COMPLEMENTAR_CONTRATADO"]
+            df_resumo["CONTRAPARTIDA_CONTRATADA"] +
+            df_resumo["COMPLEMENTAR_CONTRATADO"]
         )
         df_resumo["NAO_DISCRIMINADO"] = (
             df_resumo["VALOR_CONTRATADO"]
@@ -3448,7 +3672,8 @@ def gerar_grafico_detalhamento_secretaria(df_base):
             data.append([rotulo, barra])
             linha += 1
 
-    tabela = Table(data, colWidths=[largura_rotulo, largura_barra], repeatRows=0)
+    tabela = Table(data, colWidths=[
+                   largura_rotulo, largura_barra], repeatRows=0)
     estilo_base = [
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
@@ -3462,11 +3687,13 @@ def gerar_grafico_detalhamento_secretaria(df_base):
     # segunda), separando visualmente uma gestão da outra — a primeira não
     # precisa, já que vem logo depois da legenda.
     for idx_linha_cabecalho in linhas_cabecalho_gestao[1:]:
-        estilo_base.append(("TOPPADDING", (0, idx_linha_cabecalho), (-1, idx_linha_cabecalho), 14))
+        estilo_base.append(
+            ("TOPPADDING", (0, idx_linha_cabecalho), (-1, idx_linha_cabecalho), 14))
     estilo_base.extend(estilos_extra)
     tabela.setStyle(TableStyle(estilo_base))
     tabela.hAlign = "CENTER"
     return tabela
+
 
 # Resumo por Eixo / por Status: cada linha traz o número e, ao lado, uma
 # barra do tamanho proporcional ao maior valor da coluna. A barra não
@@ -3482,6 +3709,7 @@ def gerar_grafico_detalhamento_secretaria(df_base):
 COR_BARRA_RESUMO = colors.HexColor("#5E9C96")
 ALTURA_BARRA_RESUMO = 9.0
 
+
 def _barra_resumo(valor, maximo, largura):
     # Barra proporcional ao maior valor da coluna. Devolve None quando não
     # há o que comparar (coluna toda zerada) — melhor a célula vazia do que
@@ -3496,6 +3724,7 @@ def _barra_resumo(valor, maximo, largura):
         d.add(forma)
     return d
 
+
 def _moeda_abreviada_resumo(valor):
     # "R$ 5,70 Bi" / "R$ 439,16 Mi" — duas casas decimais, ao contrário de
     # formatar_mi_bi (que usa uma), porque aqui a coluna é a informação
@@ -3509,11 +3738,14 @@ def _moeda_abreviada_resumo(valor):
         return moeda_sem_quebra(valor)
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
+
 def _tabela_resumo_com_barras(df_base, gestao, coluna_nome, coluna_ordem, titulo, largura):
     # Uma função para os dois resumos (Eixo e Status): a estrutura é a
     # mesma, muda só a coluna de agrupamento e a de ordenação.
-    target_df = df_base[df_base["GESTAO"] == gestao] if gestao != "GERAL" else df_base
-    target_df = target_df.assign(_INV_AJ=_serie_investimento_ajustado(target_df))
+    target_df = df_base[df_base["GESTAO"] ==
+                        gestao] if gestao != "GERAL" else df_base
+    target_df = target_df.assign(
+        _INV_AJ=_serie_investimento_ajustado(target_df))
     df_resumo = (
         target_df.groupby([coluna_ordem, coluna_nome])
         .agg({col_objeto: "count", "_INV_AJ": "sum"})
@@ -3548,9 +3780,12 @@ def _tabela_resumo_com_barras(df_base, gestao, coluna_nome, coluna_ordem, titulo
         data.append(
             [
                 Paragraph(str(row[coluna_nome]), resumo_barras_cell_style),
-                Paragraph(str(int(row[col_objeto])), resumo_barras_center_style),
-                Paragraph(_moeda_abreviada_resumo(row["_INV_AJ"]), resumo_barras_valor_style),
-                _barra_resumo(float(row["_INV_AJ"]), max_inv, largura_barra_inv - 16) or "",
+                Paragraph(str(int(row[col_objeto])),
+                          resumo_barras_center_style),
+                Paragraph(_moeda_abreviada_resumo(
+                    row["_INV_AJ"]), resumo_barras_valor_style),
+                _barra_resumo(float(row["_INV_AJ"]),
+                              max_inv, largura_barra_inv - 16) or "",
             ]
         )
 
@@ -3558,7 +3793,8 @@ def _tabela_resumo_com_barras(df_base, gestao, coluna_nome, coluna_ordem, titulo
     data.append(
         [
             Paragraph("<b>TOTAL</b>", resumo_barras_cell_style),
-            Paragraph(f"<b>{int(df_resumo[col_objeto].sum())}</b>", resumo_barras_center_style),
+            Paragraph(
+                f"<b>{int(df_resumo[col_objeto].sum())}</b>", resumo_barras_center_style),
             Paragraph(
                 f"<b>{_moeda_abreviada_resumo(df_resumo['_INV_AJ'].sum())}</b>",
                 resumo_barras_valor_style,
@@ -3576,12 +3812,14 @@ def _tabela_resumo_com_barras(df_base, gestao, coluna_nome, coluna_ordem, titulo
             [
                 ("BACKGROUND", (0, 0), (-1, 0), COR_MARCA_TEAL_CLARA),
                 ("SPAN", (2, 0), (3, 0)),
-                ("BACKGROUND", (0, linha_total), (-1, linha_total), colors.HexColor("#F2F2F2")),
+                ("BACKGROUND", (0, linha_total),
+                 (-1, linha_total), colors.HexColor("#F2F2F2")),
                 # Sem grade completa: só uma linha fina abaixo de cada item.
                 # Com barras na mesma célula, a grade fechada vira ruído e
                 # briga com o desenho.
                 ("LINEBELOW", (0, 0), (-1, -1), 0.35, colors.HexColor("#D8D8D8")),
-                ("LINEABOVE", (0, linha_total), (-1, linha_total), 0.8, colors.grey),
+                ("LINEABOVE", (0, linha_total),
+                 (-1, linha_total), 0.8, colors.grey),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (3, 1), (3, -1), "LEFT"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 6),
@@ -3595,6 +3833,7 @@ def _tabela_resumo_com_barras(df_base, gestao, coluna_nome, coluna_ordem, titulo
     )
     tabela.hAlign = "LEFT"
     return tabela
+
 
 def gerar_faixa_resumo_eixo_status(df_base, gestao, largura_total=None):
     # Eixo à esquerda, Status à direita, ocupando a largura da página. Antes
@@ -3632,11 +3871,15 @@ def gerar_faixa_resumo_eixo_status(df_base, gestao, largura_total=None):
     )
     return faixa
 
+
 def gerar_tabela_secretaria_fase(df_base, gestao, altura_maxima=None):
     df_filtrado = df_base[df_base["GESTAO"] == gestao]
-    df_filtrado = df_filtrado.assign(_INV_AJ=_serie_investimento_ajustado(df_filtrado))
-    fases = ["CAPTAÇÃO DE RECURSO", "LICITAÇÃO", "EXECUÇÃO DO OBJETO", "CONCLUÍDA"]
-    pares = df_filtrado[["SECRETARIA_LIMPA", "EXECUTOR"]].drop_duplicates().copy()
+    df_filtrado = df_filtrado.assign(
+        _INV_AJ=_serie_investimento_ajustado(df_filtrado))
+    fases = ["CAPTAÇÃO DE RECURSO", "LICITAÇÃO",
+             "EXECUÇÃO DO OBJETO", "CONCLUÍDA"]
+    pares = df_filtrado[["SECRETARIA_LIMPA",
+                         "EXECUTOR"]].drop_duplicates().copy()
     pares["_SEC_SORT"] = pares["SECRETARIA_LIMPA"].apply(remover_acentos)
     pares["_EXE_SORT"] = pares["EXECUTOR"].apply(remover_acentos)
     pares = pares.sort_values(["_SEC_SORT", "_EXE_SORT"])
@@ -3756,7 +3999,8 @@ def gerar_tabela_secretaria_fase(df_base, gestao, altura_maxima=None):
 
             data.append(linha)
             controle_sec.setdefault(item["sec"], []).append(linha_idx)
-            controle_exe.setdefault((item["sec"], item["exe"]), []).append(linha_idx)
+            controle_exe.setdefault(
+                (item["sec"], item["exe"]), []).append(linha_idx)
             linha_idx += 1
 
         total_l = [
@@ -3818,7 +4062,8 @@ def gerar_tabela_secretaria_fase(df_base, gestao, altura_maxima=None):
             num_linhas_tabela = len(linhas_base) + 2  # cabeçalho + TOTAL
             excesso = altura_tabela - altura_maxima
             reducao = -(-excesso // (2 * num_linhas_tabela))  # ceil
-            padding_vertical = max(SEC_FASE_PADDING_MINIMA, padding_vertical - reducao)
+            padding_vertical = max(
+                SEC_FASE_PADDING_MINIMA, padding_vertical - reducao)
             tabela = _montar_tabela(fonte_tam, padding_vertical)
             _, altura_tabela = tabela.wrap(LARGURA_UTIL, 100000)
             # Margem de segurança: se a conta linear não bastou (raro, só
@@ -3862,6 +4107,7 @@ def gerar_tabela_secretaria_fase(df_base, gestao, altura_maxima=None):
 # 5B. GRÁFICOS DO PAINEL GERAL
 # =====================================================
 
+
 COR_AZUL = cor_grafico("#4E92BA")
 COR_VERMELHO = cor_grafico("#BB6060")
 COR_VERDE = cor_grafico("#49925C")
@@ -3870,7 +4116,8 @@ COR_AMARELO = cor_grafico("#BC9E2C")
 # Ordem e cores padrão das FASES, usadas tanto no gráfico PANORAMA GERAL DAS
 # FASES quanto na nova página PANORAMA POR SECRETARIA | EXECUTOR — mantém as
 # duas visualizações com a mesma paleta.
-ORDEM_FASES = ["CAPTAÇÃO DE RECURSO", "LICITAÇÃO", "EXECUÇÃO DO OBJETO", "CONCLUÍDA"]
+ORDEM_FASES = ["CAPTAÇÃO DE RECURSO", "LICITAÇÃO",
+               "EXECUÇÃO DO OBJETO", "CONCLUÍDA"]
 CORES_FASE = {
     "CAPTAÇÃO DE RECURSO": COR_VERMELHO,
     "LICITAÇÃO": COR_AMARELO,
@@ -3892,6 +4139,7 @@ GRUPOS_STATUS_POR_FASE = {
     # precisa listar aqui.
 }
 
+
 def _cor_status_por_grupo_fase(status_texto):
     # Esquema de cores ORGANIZADO por qual FASE aquele STATUS representa na
     # prática — não é mais um gradiente numérico solto, é a MESMA cor da
@@ -3904,6 +4152,7 @@ def _cor_status_por_grupo_fase(status_texto):
     #   Licitação (amarelo): Licitação/Contratação
     #   Captação de Recurso (vermelho): À Licitar e todos os demais status
     return GRUPOS_STATUS_POR_FASE.get(str(status_texto).strip().upper(), (0, COR_VERMELHO))
+
 
 def _grafico_pizza_igual_com_legenda(titulo, categorias_cores, diametro=130, max_linhas_por_coluna=8, largura_coluna_legenda=175):
     # Gráfico de pizza DIDÁTICO: todas as fatias do MESMO tamanho (não
@@ -3924,8 +4173,10 @@ def _grafico_pizza_igual_com_legenda(titulo, categorias_cores, diametro=130, max
 
     if n == 0:
         d = Drawing(diametro, altura_titulo + 20)
-        d.add(String(0, altura_titulo + 2, titulo, fontName=FONTE_PADRAO_NEGRITO, fontSize=13, fillColor=colors.HexColor("#333333")))
-        d.add(String(0, 2, "Sem dados no filtro atual", fontName=FONTE_PADRAO, fontSize=10, fillColor=colors.grey))
+        d.add(String(0, altura_titulo + 2, titulo, fontName=FONTE_PADRAO_NEGRITO,
+              fontSize=13, fillColor=colors.HexColor("#333333")))
+        d.add(String(0, 2, "Sem dados no filtro atual",
+              fontName=FONTE_PADRAO, fontSize=10, fillColor=colors.grey))
         return d
 
     n_colunas = -(-n // max_linhas_por_coluna)  # arredonda pra cima
@@ -3935,7 +4186,8 @@ def _grafico_pizza_igual_com_legenda(titulo, categorias_cores, diametro=130, max
     largura_total = diametro + 16 + n_colunas * largura_coluna_legenda
 
     d = Drawing(largura_total, altura_total)
-    d.add(String(0, altura_total - 16, titulo, fontName=FONTE_PADRAO_NEGRITO, fontSize=14, fillColor=colors.HexColor("#333333")))
+    d.add(String(0, altura_total - 16, titulo, fontName=FONTE_PADRAO_NEGRITO,
+          fontSize=14, fillColor=colors.HexColor("#333333")))
 
     y_topo_area = altura_total - altura_titulo
     grafico = Pie()
@@ -3959,8 +4211,10 @@ def _grafico_pizza_igual_com_legenda(titulo, categorias_cores, diametro=130, max
         x_legenda = x_base_legenda + coluna * largura_coluna_legenda
         y = y_topo_area - 12 - linha * altura_linha_legenda
         d.add(Rect(x_legenda, y - 8, 11, 11, fillColor=cor, strokeColor=None))
-        d.add(String(x_legenda + 16, y - 7, rotulo, fontName=FONTE_PADRAO, fontSize=fonte_legenda, fillColor=colors.HexColor("#333333")))
+        d.add(String(x_legenda + 16, y - 7, rotulo, fontName=FONTE_PADRAO,
+              fontSize=fonte_legenda, fillColor=colors.HexColor("#333333")))
     return d
+
 
 fase_status_header_style = ParagraphStyle(
     "fase_status_header", fontName=FONTE_PADRAO_NEGRITO, fontSize=15, leading=18, alignment=TA_LEFT,
@@ -3968,6 +4222,7 @@ fase_status_header_style = ParagraphStyle(
 fase_status_cell_style = ParagraphStyle(
     "fase_status_cell", fontName=FONTE_PADRAO, fontSize=15, leading=18, alignment=TA_LEFT,
 )
+
 
 def _tabela_fase_status(df_base, max_linhas_por_bloco=8):
     # Tabela de referência (SEM nenhum elemento gráfico) mostrando o
@@ -4011,7 +4266,8 @@ def _tabela_fase_status(df_base, max_linhas_por_bloco=8):
         metade = total_linhas / 2
         bloco_esq, bloco_dir, acumulado = [], [], 0
         for fase_nome, nomes in grupos:
-            (bloco_esq if acumulado < metade else bloco_dir).append((fase_nome, nomes))
+            (bloco_esq if acumulado < metade else bloco_dir).append(
+                (fase_nome, nomes))
             acumulado += len(nomes)
         blocos = [b for b in (bloco_esq, bloco_dir) if b]
 
@@ -4029,7 +4285,8 @@ def _tabela_fase_status(df_base, max_linhas_por_bloco=8):
             for i, nome in enumerate(nomes_do_grupo):
                 data.append(
                     [
-                        Paragraph(fase_nome if i == 0 else "", fase_status_cell_style),
+                        Paragraph(fase_nome if i == 0 else "",
+                                  fase_status_cell_style),
                         Paragraph(nome, fase_status_cell_style),
                     ]
                 )
@@ -4038,7 +4295,8 @@ def _tabela_fase_status(df_base, max_linhas_por_bloco=8):
             # célula da coluna FASE verticalmente, deixando claro
             # visualmente que aqueles status pertencem todos à mesma fase.
             if len(nomes_do_grupo) > 1:
-                spans.append(("SPAN", (0, inicio_linha), (0, inicio_linha + len(nomes_do_grupo) - 1)))
+                spans.append(("SPAN", (0, inicio_linha),
+                             (0, inicio_linha + len(nomes_do_grupo) - 1)))
 
         tabela_bloco = Table(data, colWidths=[160, 215])
         estilo_bloco = [
@@ -4061,7 +4319,8 @@ def _tabela_fase_status(df_base, max_linhas_por_bloco=8):
         larguras_blocos = [t.wrap(600, 2000)[0] for t in tabelas_blocos]
         tabela_final = Table(
             [tabelas_blocos],
-            colWidths=[larguras_blocos[0] + espaco_entre_blocos] + larguras_blocos[1:],
+            colWidths=[larguras_blocos[0] + espaco_entre_blocos] +
+            larguras_blocos[1:],
         )
         tabela_final.setStyle(
             TableStyle(
@@ -4079,6 +4338,7 @@ def _tabela_fase_status(df_base, max_linhas_por_bloco=8):
     tabela_final.hAlign = "CENTER"
     return tabela_final
 
+
 def gerar_graficos_observacao(df_base):
     # Monta o gráfico de pizza da FASE (mantido) e, ao lado, a tabela de
     # referência FASE/STATUS (substitui o gráfico de pizza do STATUS —
@@ -4090,7 +4350,8 @@ def gerar_graficos_observacao(df_base):
         .tolist()
     )
     fase_cores = [(f, CORES_FASE.get(f, colors.grey)) for f in fases_presentes]
-    grafico_fase = _grafico_pizza_igual_com_legenda("FASE", fase_cores, diametro=175, max_linhas_por_coluna=8, largura_coluna_legenda=180)
+    grafico_fase = _grafico_pizza_igual_com_legenda(
+        "FASE", fase_cores, diametro=175, max_linhas_por_coluna=8, largura_coluna_legenda=180)
 
     tabela_status = _tabela_fase_status(df_base)
     if tabela_status is None:
@@ -4144,6 +4405,7 @@ def gerar_graficos_observacao(df_base):
     )
     return wrapper_centralizado
 
+
 def desenho_sem_dados(largura, altura, mensagem="Sem investimento no filtro atual"):
     # Placeholder exibido no lugar de um gráfico de pizza quando, depois de
     # aplicado o filtro, sobra quantidade de ações mas o investimento total
@@ -4160,19 +4422,22 @@ def desenho_sem_dados(largura, altura, mensagem="Sem investimento no filtro atua
     )
     return desenho
 
+
 def desenhar_legenda_topo(desenho, itens, y, centro_x, espacamento=18, fonte_tam=8, raio_bolinha=3.5):
     # Posiciona a legenda em uma única linha horizontal, centralizada em
     # centro_x, na ordem em que os itens forem passados (bolinha + nome,
     # sem valor).
     larguras = [
-        raio_bolinha * 2 + 4 + pdfmetrics.stringWidth(nome, FONTE_PADRAO_NEGRITO, fonte_tam)
+        raio_bolinha * 2 + 4 +
+        pdfmetrics.stringWidth(nome, FONTE_PADRAO_NEGRITO, fonte_tam)
         for nome, _ in itens
     ]
     largura_total = sum(larguras) + espacamento * (len(itens) - 1)
     x = centro_x - largura_total / 2
     for (nome, cor), largura_item in zip(itens, larguras):
         centro_y = y + fonte_tam * 0.32
-        desenho.add(Circle(x + raio_bolinha, centro_y, raio_bolinha, fillColor=cor, strokeColor=None))
+        desenho.add(Circle(x + raio_bolinha, centro_y,
+                    raio_bolinha, fillColor=cor, strokeColor=None))
         desenho.add(
             String(
                 x + raio_bolinha * 2 + 4, y, nome,
@@ -4181,9 +4446,11 @@ def desenhar_legenda_topo(desenho, itens, y, centro_x, espacamento=18, fonte_tam
         )
         x += largura_item + espacamento
 
+
 # Raio do canto no topo das colunas verticais. Vale para o PDF e tem o
 # equivalente no CSS do dashboard (.grafico-barra).
 RAIO_CANTO_COLUNA = 4.0
+
 
 def arredondar_topo_barras(no, cores_barras, y_base):
     # Percorre a árvore de formas que o VerticalBarChart produz e troca cada
@@ -4231,6 +4498,7 @@ def arredondar_topo_barras(no, cores_barras, y_base):
     if trocou:
         conteudo[:] = novo_conteudo
 
+
 class VerticalBarChartArredondado(VerticalBarChart):
     # VerticalBarChart com o topo das barras arredondado. A rodada de
     # arredondamento acontece dentro de makeBars, e não sobre o gráfico já
@@ -4241,6 +4509,7 @@ class VerticalBarChartArredondado(VerticalBarChart):
         grupo = VerticalBarChart.makeBars(self)
         arredondar_topo_barras(grupo, self._cores_barras_arredondadas, self.y)
         return grupo
+
 
 def gerar_grafico_prazo(df_base):
     contagem = df_base["PRAZO_TRIMESTRE"].value_counts().reset_index()
@@ -4300,6 +4569,7 @@ def gerar_grafico_prazo(df_base):
     desenho.add(grafico)
     return desenho
 
+
 # Rótulo da fatia do detalhamento do contratado para as ações com VALOR
 # CONTRATADO mas sem nenhum valor planejado (Financiamento/Apoiado/
 # Contrapartida/Complementar) que permita ratear o contrato entre as fontes.
@@ -4321,7 +4591,8 @@ def financeiro_contratado_por_fonte(df_base):
     estadual = df_base[col_contrapartida] + df_base[col_complementar]
     planejado = ogu + financiamento + estadual
     tem_rateio = (contratado > 0) & (planejado > 0)
-    fator = (contratado / planejado.where(planejado > 0)).where(tem_rateio, 0.0)
+    fator = (contratado / planejado.where(planejado > 0)
+             ).where(tem_rateio, 0.0)
     return [
         ("OGU", float((ogu * fator).sum())),
         ("FINANCIAMENTO", float((financiamento * fator).sum())),
@@ -4347,9 +4618,11 @@ def gerar_grafico_financeiro(df_base, detalhar_contratado=False):
         ]
     else:
         categorias_valores = [
-            ("VALOR CONTRATADO", df_base[col_valor_contratado].sum(), COR_VERDE),
+            ("VALOR CONTRATADO",
+             df_base[col_valor_contratado].sum(), COR_VERDE),
             ("OGU", df_base[col_apoiado_ajustado].sum(), COR_AZUL),
-            ("FINANCIAMENTO", df_base[col_financiamento_ajustado].sum(), COR_VERMELHO),
+            ("FINANCIAMENTO",
+             df_base[col_financiamento_ajustado].sum(), COR_VERMELHO),
             (
                 "RECURSO ESTADUAL",
                 df_base[col_contrapartida_ajustado].sum()
@@ -4402,7 +4675,8 @@ def gerar_grafico_financeiro(df_base, detalhar_contratado=False):
     # em que elas são geradas internamente (duas linhas por fatia, na mesma
     # ordem de categorias_valores).
     elemento_grafico = grafico.draw()
-    linhas_chamada = [e for e in elemento_grafico.contents if isinstance(e, Line)]
+    linhas_chamada = [
+        e for e in elemento_grafico.contents if isinstance(e, Line)]
     for idx_linha, linha in enumerate(linhas_chamada):
         cor_fatia = categorias_valores[idx_linha // 2][2]
         linha.strokeColor = cor_fatia
@@ -4418,14 +4692,17 @@ def gerar_grafico_financeiro(df_base, detalhar_contratado=False):
     # Orçamentária") fica no título do gráfico, não aqui no desenho.
     # No detalhamento do contratado todas as fatias SÃO valor contratado
     # (firme), então nenhuma leva a marcação.
-    NOMES_PREVISAO_ORCAMENTARIA = set() if detalhar_contratado else {"OGU", "FINANCIAMENTO", "RECURSO ESTADUAL"}
+    NOMES_PREVISAO_ORCAMENTARIA = set() if detalhar_contratado else {
+        "OGU", "FINANCIAMENTO", "RECURSO ESTADUAL"}
     itens_legenda = [
         (f"{nome}**" if nome in NOMES_PREVISAO_ORCAMENTARIA else nome, cor)
         for nome, _, cor in categorias_valores
     ]
-    desenhar_legenda_topo(desenho, itens_legenda, y=245, centro_x=240, espacamento=20, fonte_tam=12)
+    desenhar_legenda_topo(desenho, itens_legenda, y=245,
+                          centro_x=240, espacamento=20, fonte_tam=12)
 
     return desenho
+
 
 def gerar_grafico_panorama(df_base):
     df_base = df_base.assign(_INV_AJ=_serie_investimento_ajustado(df_base))
@@ -4464,7 +4741,8 @@ def gerar_grafico_panorama(df_base):
     grafico.sideLabelsOffset = 0.15
     grafico.checkLabelOverlap = 1
 
-    cores_slices = [CORES_FASE.get(fase, colors.grey) for fase in resumo["FASE_TEXTO"]]
+    cores_slices = [CORES_FASE.get(fase, colors.grey)
+                    for fase in resumo["FASE_TEXTO"]]
     for idx, cor in enumerate(cores_slices):
         grafico.slices[idx].fillColor = cor
         grafico.slices[idx].fontName = FONTE_BAHNSCHRIFT
@@ -4481,7 +4759,8 @@ def gerar_grafico_panorama(df_base):
     # linhas por fatia (um "cotovelo" de dois segmentos), por isso o índice
     # é dividido por 2 — na mesma ordem de "cores_slices".
     elemento_grafico = grafico.draw()
-    linhas_chamada = [e for e in elemento_grafico.contents if isinstance(e, Line)]
+    linhas_chamada = [
+        e for e in elemento_grafico.contents if isinstance(e, Line)]
     for idx_linha, linha in enumerate(linhas_chamada):
         cor_fatia = cores_slices[idx_linha // 2]
         linha.strokeColor = cor_fatia
@@ -4496,9 +4775,11 @@ def gerar_grafico_panorama(df_base):
         (linha["FASE_TEXTO"], CORES_FASE.get(linha["FASE_TEXTO"], colors.grey))
         for _, linha in resumo.iterrows()
     ]
-    desenhar_legenda_topo(desenho, itens_legenda, y=220, centro_x=240, espacamento=20, fonte_tam=12)
+    desenhar_legenda_topo(desenho, itens_legenda, y=220,
+                          centro_x=240, espacamento=20, fonte_tam=12)
 
     return desenho
+
 
 def gerar_grafico_termo_compromisso(df_base):
     cores_situacao = {"SIM": COR_VERDE, "NÃO": COR_VERMELHO}
@@ -4539,7 +4820,8 @@ def gerar_grafico_termo_compromisso(df_base):
     grafico.sideLabelsOffset = 0.15
     grafico.checkLabelOverlap = 1
 
-    cores_slices = [cores_situacao.get(sit, colors.grey) for sit in resumo["SITUACAO"]]
+    cores_slices = [cores_situacao.get(sit, colors.grey)
+                    for sit in resumo["SITUACAO"]]
     for idx, cor in enumerate(cores_slices):
         grafico.slices[idx].fillColor = cor
         grafico.slices[idx].fontName = FONTE_BAHNSCHRIFT
@@ -4555,7 +4837,8 @@ def gerar_grafico_termo_compromisso(df_base):
     # fatia (um "cotovelo" de dois segmentos), por isso o índice é dividido
     # por 2 — na mesma ordem de "cores_slices".
     elemento_grafico = grafico.draw()
-    linhas_chamada = [e for e in elemento_grafico.contents if isinstance(e, Line)]
+    linhas_chamada = [
+        e for e in elemento_grafico.contents if isinstance(e, Line)]
     for idx_linha, linha in enumerate(linhas_chamada):
         cor_fatia = cores_slices[idx_linha // 2]
         linha.strokeColor = cor_fatia
@@ -4574,13 +4857,15 @@ def gerar_grafico_termo_compromisso(df_base):
         )
         for _, linha in resumo.iloc[::-1].iterrows()
     ]
-    desenhar_legenda_topo(desenho, itens_legenda, y=220, centro_x=240, espacamento=20, fonte_tam=12)
+    desenhar_legenda_topo(desenho, itens_legenda, y=220,
+                          centro_x=240, espacamento=20, fonte_tam=12)
 
     return desenho
 
 # =====================================================
 # 5C. PANORAMA POR SECRETARIA | EXECUTOR (GRADE DE MINI-GRÁFICOS)
 # =====================================================
+
 
 def gerar_mini_grafico_fases(resumo_fase, largura=150, altura=132):
     # Mesma configuração de fatias/rótulos/linhas de chamada do gráfico
@@ -4607,7 +4892,8 @@ def gerar_mini_grafico_fases(resumo_fase, largura=150, altura=132):
     grafico.sideLabelsOffset = 0.15
     grafico.checkLabelOverlap = 1
 
-    cores_slices = [CORES_FASE.get(fase, colors.grey) for fase in resumo_fase["FASE_TEXTO"]]
+    cores_slices = [CORES_FASE.get(fase, colors.grey)
+                    for fase in resumo_fase["FASE_TEXTO"]]
     for idx, cor in enumerate(cores_slices):
         grafico.slices[idx].fillColor = cor
         grafico.slices[idx].fontName = FONTE_BAHNSCHRIFT
@@ -4618,7 +4904,8 @@ def gerar_mini_grafico_fases(resumo_fase, largura=150, altura=132):
     # Mesma correção de cor das linhas de chamada usada no gráfico Panorama
     # Geral (2 linhas por fatia no modo sideLabels).
     elemento_grafico = grafico.draw()
-    linhas_chamada = [e for e in elemento_grafico.contents if isinstance(e, Line)]
+    linhas_chamada = [
+        e for e in elemento_grafico.contents if isinstance(e, Line)]
     for idx_linha, linha in enumerate(linhas_chamada):
         cor_fatia = cores_slices[idx_linha // 2]
         linha.strokeColor = cor_fatia
@@ -4626,6 +4913,7 @@ def gerar_mini_grafico_fases(resumo_fase, largura=150, altura=132):
 
     desenho.add(elemento_grafico)
     return desenho
+
 
 def gerar_legenda_fases_unica(fases_presentes, largura=380, altura=22, fonte_tam=11):
     # Legenda única da página (uma só, não uma por gráfico) — mesmo
@@ -4635,8 +4923,10 @@ def gerar_legenda_fases_unica(fases_presentes, largura=380, altura=22, fonte_tam
     # fase não entra na legenda).
     desenho = Drawing(largura, altura)
     itens_legenda = [(fase, CORES_FASE[fase]) for fase in fases_presentes]
-    desenhar_legenda_topo(desenho, itens_legenda, y=6, centro_x=largura / 2, espacamento=22, fonte_tam=fonte_tam)
+    desenhar_legenda_topo(desenho, itens_legenda, y=6,
+                          centro_x=largura / 2, espacamento=22, fonte_tam=fonte_tam)
     return desenho
+
 
 cabecalho_sec_exec_style = ParagraphStyle(
     "cabecalho_sec_exec",
@@ -4677,13 +4967,16 @@ cabecalho_grafico_painel_style_direita = ParagraphStyle(
     alignment=TA_RIGHT,
 )
 
+
 def montar_pagina_panorama_secretaria(df_pagina, titulo_pagina, num_colunas=4):
     # Monta os elementos de UMA página do Panorama por Secretaria/Executor:
     # título, cards de resumo, legenda única e uma grade de mini-gráficos —
     # um por combinação SECRETARIA/EXECUTOR presente em df_pagina. Retorna
     # None se não houver nenhum par (ex: gestão vazia após split).
-    df_pagina = df_pagina.assign(_INV_AJ=_serie_investimento_ajustado(df_pagina))
-    pares = df_pagina[["SECRETARIA_LIMPA", "EXECUTOR"]].drop_duplicates().copy()
+    df_pagina = df_pagina.assign(
+        _INV_AJ=_serie_investimento_ajustado(df_pagina))
+    pares = df_pagina[["SECRETARIA_LIMPA", "EXECUTOR"]
+                      ].drop_duplicates().copy()
     pares["_SEC_SORT"] = pares["SECRETARIA_LIMPA"].apply(remover_acentos)
     pares["_EXE_SORT"] = pares["EXECUTOR"].apply(remover_acentos)
     pares = pares.sort_values(["_SEC_SORT", "_EXE_SORT"])
@@ -4693,7 +4986,8 @@ def montar_pagina_panorama_secretaria(df_pagina, titulo_pagina, num_colunas=4):
     for _, par in pares.iterrows():
         sec, exe = str(par["SECRETARIA_LIMPA"]), str(par["EXECUTOR"])
         df_par = df_pagina[
-            (df_pagina["SECRETARIA_LIMPA"] == sec) & (df_pagina["EXECUTOR"] == exe)
+            (df_pagina["SECRETARIA_LIMPA"] == sec) & (
+                df_pagina["EXECUTOR"] == exe)
         ]
         resumo_fase = (
             df_par.groupby("FASE_TEXTO")
@@ -4706,7 +5000,8 @@ def montar_pagina_panorama_secretaria(df_pagina, titulo_pagina, num_colunas=4):
         # investimento — uma fase com investimento zero deixaria o
         # ReportLab dividir pelo total zero e travar com
         # "float division by zero").
-        resumo_fase = resumo_fase[(resumo_fase["QTD"] > 0) & (resumo_fase["VALOR"] > 0)]
+        resumo_fase = resumo_fase[(resumo_fase["QTD"] > 0) & (
+            resumo_fase["VALOR"] > 0)]
         if resumo_fase.empty:
             continue
 
@@ -4724,7 +5019,8 @@ def montar_pagina_panorama_secretaria(df_pagina, titulo_pagina, num_colunas=4):
                 ]
             )
         )
-        grafico_mini = gerar_mini_grafico_fases(resumo_fase, largura=largura_coluna - 8)
+        grafico_mini = gerar_mini_grafico_fases(
+            resumo_fase, largura=largura_coluna - 8)
         celulas.append([cabecalho_tab, Spacer(1, 4), grafico_mini])
 
     if not celulas:
@@ -4777,6 +5073,7 @@ def montar_pagina_panorama_secretaria(df_pagina, titulo_pagina, num_colunas=4):
         grid,
     ]
 
+
 def estimar_altura_pagina_panorama_secretaria(df_pagina, num_colunas=4):
     # Estima a altura da página SEM desenhar nenhum mini-gráfico — só conta
     # quantos pares Secretaria/Executor existem e calcula a altura esperada
@@ -4785,15 +5082,18 @@ def estimar_altura_pagina_panorama_secretaria(df_pagina, num_colunas=4):
     # de "cabe numa página ou divide por gestão" desenhava a página inteira
     # só para medir e, no caso comum de não caber, jogava tudo fora e
     # desenhava de novo — dobrando o tempo de geração à toa.
-    n_pares = df_pagina[["SECRETARIA_LIMPA", "EXECUTOR"]].drop_duplicates().shape[0]
+    n_pares = df_pagina[["SECRETARIA_LIMPA", "EXECUTOR"]
+                        ].drop_duplicates().shape[0]
     if n_pares == 0:
         return 0, 0
     n_linhas = -(-n_pares // num_colunas)  # ceil(n_pares / num_colunas)
-    ALTURA_LINHA_GRID = 173  # cabeçalho + spacer + gráfico (132) + padding da célula
+    # cabeçalho + spacer + gráfico (132) + padding da célula
+    ALTURA_LINHA_GRID = 173
     altura_grid = n_linhas * ALTURA_LINHA_GRID
     # título + cards + nota de orientação + legenda + grid
     altura_pagina = 25 + 13 + 68 + 6 + 15 + 6 + 22 + 12 + altura_grid
     return n_pares, altura_pagina
+
 
 # =====================================================
 # 5D. MAPA COROPLÉTICO DOS MUNICÍPIOS (BAHIA)
@@ -4822,6 +5122,7 @@ CORES_CLASSES_MAPA = [
 ]
 COR_MAPA_SEM_DADO = colors.HexColor("#E0E0E0")
 
+
 def carregar_geojson_municipios():
     try:
         with open(caminho_recurso(ARQUIVO_GEOJSON_MUNICIPIOS), encoding="utf-8") as f:
@@ -4829,21 +5130,26 @@ def carregar_geojson_municipios():
     except Exception:
         return None
 
+
 def _bbox_projecao_municipios(features):
     # Projeção equirretangular simples, com correção de achatamento
     # leste-oeste pela latitude média — suficiente para um mapa estadual
     # como o da Bahia, sem depender de bibliotecas de projeção cartográfica.
-    lons = [lon for feat in features for anel in feat["geometry"]["coordinates"] for lon, _ in anel]
-    lats = [lat for feat in features for anel in feat["geometry"]["coordinates"] for _, lat in anel]
+    lons = [lon for feat in features for anel in feat["geometry"]
+            ["coordinates"] for lon, _ in anel]
+    lats = [lat for feat in features for anel in feat["geometry"]
+            ["coordinates"] for _, lat in anel]
     minlon, maxlon = min(lons), max(lons)
     minlat, maxlat = min(lats), max(lats)
     correcao_x = math.cos(math.radians((minlat + maxlat) / 2))
     return minlon, minlat, maxlon, maxlat, correcao_x
 
+
 # Faixas de valor FIXAS (não mais por quantil): azul até R$ 50 Mi, verde de
 # R$ 50 Mi a R$ 500 Mi, laranja de R$ 500 Mi a R$ 2 Bi, vermelho a partir
 # de R$ 2 Bi.
 BORDAS_FIXAS_MAPA = [50_000_000.0, 500_000_000.0, 2_000_000_000.0]
+
 
 def _calcular_bordas_classes_mapa(valores):
     # Começa no MENOR valor real do filtro atual (não mais fixo em R$ 0) e
@@ -4860,6 +5166,7 @@ def _calcular_bordas_classes_mapa(valores):
             bordas.append(limite)
     bordas.append(valor_max)
     return bordas
+
 
 def _indice_classe_mapa(valor, bordas):
     # Encontra em qual classe o valor cai (última borda é inclusiva).
@@ -4879,12 +5186,14 @@ VARREDURA_MEDIDOR = 250.0
 COR_TRILHO_MEDIDOR = colors.HexColor("#E8E8E8")
 COR_TRILHO_MEDIDOR_ESMAECIDO = colors.HexColor("#EDEDED")
 
+
 def _cor_texto_categoria(cor):
     # As cores das categorias foram escolhidas para preencher área (arco,
     # barra, mapa), e as claras — "Bom" é um verde bem pálido — não têm
     # contraste para virar texto sobre fundo branco. Escurece 30% só para o
     # rótulo, mantendo o tom reconhecível ao lado do arco.
     return colors.Color(cor.red * 0.7, cor.green * 0.7, cor.blue * 0.7)
+
 
 def gerar_medidor_desempenho(secretaria, indice, categoria, largura=200, altura=165, esmaecido=False,
                              mostrar_rotulos=True, mostrar_categoria=True):
@@ -4927,17 +5236,20 @@ def gerar_medidor_desempenho(secretaria, indice, categoria, largura=200, altura=
     # A altura do arco sai do que sobra: 1,574 é a altura de um arco de 250°
     # em função do raio (1 acima do centro, 0,574 abaixo, que é o seno de
     # 215°), então o raio é o maior que cabe na largura E na altura.
-    espaco_categoria = altura * 0.22 if (mostrar_rotulos and mostrar_categoria) else 0.0
+    espaco_categoria = altura * \
+        0.22 if (mostrar_rotulos and mostrar_categoria) else 0.0
     # Espessura do anel: proporcional, com piso — no medidor de 46 pt do
     # cabeçalho do detalhamento, a proporção pura deixava um fio fino demais
     # para se ler impresso.
     espessura = max(4.0, min(largura, altura) * 0.12)
-    raio = min((largura - espessura) / 2, (altura - espaco_categoria - espessura) / 1.574)
+    raio = min((largura - espessura) / 2, (altura -
+               espaco_categoria - espessura) / 1.574)
     cx = largura / 2
     cy = espaco_categoria + espessura / 2 + 0.574 * raio
 
     indice_limitado = max(0.0, min(100.0, float(indice)))
-    angulo_valor = ANGULO_INICIAL_MEDIDOR - (indice_limitado / 100.0) * VARREDURA_MEDIDOR
+    angulo_valor = ANGULO_INICIAL_MEDIDOR - \
+        (indice_limitado / 100.0) * VARREDURA_MEDIDOR
 
     def _ponto(angulo_graus, raio_ponto=None):
         rad = math.radians(angulo_graus)
@@ -4955,7 +5267,8 @@ def gerar_medidor_desempenho(secretaria, indice, categoria, largura=200, altura=
     )
     for angulo_ponta in (ANGULO_INICIAL_MEDIDOR, ANGULO_INICIAL_MEDIDOR - VARREDURA_MEDIDOR):
         x_ponta, y_ponta = _ponto(angulo_ponta)
-        desenho.add(Circle(x_ponta, y_ponta, espessura / 2, fillColor=cor_trilho, strokeColor=None))
+        desenho.add(Circle(x_ponta, y_ponta, espessura / 2,
+                    fillColor=cor_trilho, strokeColor=None))
 
     # Trecho percorrido. A ponta arredondada do início só entra quando o
     # trecho é longo o bastante para ela não se fundir com o marcador e
@@ -4969,13 +5282,16 @@ def gerar_medidor_desempenho(secretaria, indice, categoria, largura=200, altura=
             )
         )
         x_ini, y_ini = _ponto(ANGULO_INICIAL_MEDIDOR)
-        desenho.add(Circle(x_ini, y_ini, espessura / 2, fillColor=cor_categoria, strokeColor=None))
+        desenho.add(Circle(x_ini, y_ini, espessura / 2,
+                    fillColor=cor_categoria, strokeColor=None))
 
     # Marcador: círculo colorido sobre um anel branco que o destaca do
     # trilho, como no desenho de referência.
     x_marcador, y_marcador = _ponto(angulo_valor)
-    desenho.add(Circle(x_marcador, y_marcador, espessura * 0.86, fillColor=colors.white, strokeColor=None))
-    desenho.add(Circle(x_marcador, y_marcador, espessura * 0.58, fillColor=cor_categoria, strokeColor=None))
+    desenho.add(Circle(x_marcador, y_marcador, espessura *
+                0.86, fillColor=colors.white, strokeColor=None))
+    desenho.add(Circle(x_marcador, y_marcador, espessura * 0.58,
+                fillColor=cor_categoria, strokeColor=None))
 
     if not mostrar_rotulos:
         return desenho
@@ -4987,7 +5303,8 @@ def gerar_medidor_desempenho(secretaria, indice, categoria, largura=200, altura=
         String(
             cx, cy - fonte_numero * 0.34, f"{indice:.0f}",
             fontName=FONTE_PADRAO_NEGRITO, fontSize=fonte_numero, textAnchor="middle",
-            fillColor=colors.HexColor("#9A9A9A") if esmaecido else colors.HexColor("#2B2B2B"),
+            fillColor=colors.HexColor(
+                "#9A9A9A") if esmaecido else colors.HexColor("#2B2B2B"),
         )
     )
     if not mostrar_categoria:
@@ -4999,17 +5316,21 @@ def gerar_medidor_desempenho(secretaria, indice, categoria, largura=200, altura=
     # pela largura garante que "Insatisfatório", a palavra mais longa,
     # continue cabendo dentro do desenho.
     fonte_categoria = max(7, fonte_numero * 0.38)
-    largura_categoria = pdfmetrics.stringWidth(categoria, FONTE_PADRAO_NEGRITO, fonte_categoria)
+    largura_categoria = pdfmetrics.stringWidth(
+        categoria, FONTE_PADRAO_NEGRITO, fonte_categoria)
     if largura_categoria > largura * 0.94:
-        fonte_categoria = fonte_categoria * (largura * 0.94) / largura_categoria
+        fonte_categoria = fonte_categoria * \
+            (largura * 0.94) / largura_categoria
     desenho.add(
         String(
             cx, espaco_categoria * 0.30, categoria,
             fontName=FONTE_PADRAO_NEGRITO, fontSize=fonte_categoria, textAnchor="middle",
-            fillColor=colors.HexColor("#9A9A9A") if esmaecido else _cor_texto_categoria(cor_categoria),
+            fillColor=colors.HexColor(
+                "#9A9A9A") if esmaecido else _cor_texto_categoria(cor_categoria),
         )
     )
     return desenho
+
 
 ESPACO_TITULO_MEDIDOR = 9
 
@@ -5047,6 +5368,7 @@ ALTURA_MIN_MEDIDOR_INDICE = 52
 # e ainda assim é preferível a quebrar a gestão em duas páginas.
 LARGURA_ABSOLUTA_MIN_MEDIDOR_INDICE = 26
 
+
 def _texto_nota_indice(texto_agrupamento):
     return (
         "* O índice combina Status, Fase, Cláusula Suspensiva, o tempo "
@@ -5056,6 +5378,7 @@ def _texto_nota_indice(texto_agrupamento):
         f"pelo investimento de cada ação. Avaliação {texto_agrupamento}, "
         "separada por gestão, ordenada da melhor pra pior."
     )
+
 
 def _altura_cabecalho_card_indice(itens, largura_cabecalho):
     # Mede a altura REAL do maior cabeçalho (barra teal com "1º — SECRETARIA
@@ -5071,6 +5394,7 @@ def _altura_cabecalho_card_indice(itens, largura_cabecalho):
         )
         altura = max(altura, paragrafo.wrap(largura_texto, ALTURA_UTIL)[1])
     return altura + 8
+
 
 def dimensionar_grade_indice_desempenho(itens, altura_disponivel, largura_disponivel):
     # Escolhe o nº de colunas E a altura do medidor que melhor APROVEITAM o
@@ -5099,10 +5423,12 @@ def dimensionar_grade_indice_desempenho(itens, altura_disponivel, largura_dispon
             # Daqui pra frente as colunas só ficam mais estreitas — nem o
             # cabeçalho caberia.
             break
-        altura_cabecalho = _altura_cabecalho_card_indice(itens, largura_coluna - 8)
+        altura_cabecalho = _altura_cabecalho_card_indice(
+            itens, largura_coluna - 8)
         altura_linha = altura_disponivel / n_linhas
         altura_medidor = (
-            altura_linha - altura_cabecalho - ESPACO_TITULO_MEDIDOR - PADDING_VERTICAL_CELULA_INDICE
+            altura_linha - altura_cabecalho -
+            ESPACO_TITULO_MEDIDOR - PADDING_VERTICAL_CELULA_INDICE
         )
         if altura_medidor <= 0:
             # Nessa grade nem sobra espaço pro desenho depois do cabeçalho.
@@ -5140,10 +5466,12 @@ def dimensionar_grade_indice_desempenho(itens, altura_disponivel, largura_dispon
         # Só chegaria aqui com uma quantidade absurda de itens; ainda assim,
         # uma página só: a grade mais larga possível com o menor desenho
         # aceitável.
-        num_colunas = max(1, int(largura_disponivel // (LARGURA_ABSOLUTA_MIN_MEDIDOR_INDICE + 8)))
+        num_colunas = max(1, int(largura_disponivel //
+                          (LARGURA_ABSOLUTA_MIN_MEDIDOR_INDICE + 8)))
         n_linhas = math.ceil(n_itens / num_colunas)
         largura_coluna = largura_disponivel / num_colunas
-        altura_cabecalho = _altura_cabecalho_card_indice(itens, largura_coluna - 8)
+        altura_cabecalho = _altura_cabecalho_card_indice(
+            itens, largura_coluna - 8)
         melhor = {
             "num_colunas": num_colunas,
             "n_linhas": n_linhas,
@@ -5169,6 +5497,7 @@ def dimensionar_grade_indice_desempenho(itens, altura_disponivel, largura_dispon
     melhor["altura_linha"] = altura_disponivel / melhor["n_linhas"]
     return melhor
 
+
 def montar_tabela_grade_indice_desempenho(itens, layout, largura_disponivel):
     # Monta a tabela de medidores em si, com as dimensões já decididas por
     # dimensionar_grade_indice_desempenho.
@@ -5181,7 +5510,8 @@ def montar_tabela_grade_indice_desempenho(itens, layout, largura_disponivel):
             cabecalho_card_indice_esmaecido_style if esmaecido else cabecalho_card_indice_style
         )
         cabecalho_tab = Table(
-            [[Paragraph(f"{item['posicao']}º — {item['rotulo']}", estilo_cabecalho)]],
+            [[Paragraph(f"{item['posicao']}º — {item['rotulo']}",
+                        estilo_cabecalho)]],
             colWidths=[largura_coluna - 8],
             # Todos os cabeçalhos com a MESMA altura (a do maior rótulo, já
             # medida no dimensionamento) — sem isso, um rótulo que quebra em
@@ -5192,7 +5522,8 @@ def montar_tabela_grade_indice_desempenho(itens, layout, largura_disponivel):
         cabecalho_tab.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EDEDED") if esmaecido else COR_MARCA_TEAL_CLARA),
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EDEDED")
+                     if esmaecido else COR_MARCA_TEAL_CLARA),
                     ("LEFTPADDING", (0, 0), (-1, -1), 6),
                     ("TOPPADDING", (0, 0), (-1, -1), 4),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
@@ -5207,7 +5538,8 @@ def montar_tabela_grade_indice_desempenho(itens, layout, largura_disponivel):
         # Respiro entre o cabeçalho (barra teal com o rótulo) e o medidor —
         # se mudar aqui, mudar também a conta de altura da célula em
         # dimensionar_grade_indice_desempenho.
-        celulas.append([cabecalho_tab, Spacer(1, ESPACO_TITULO_MEDIDOR), medidor])
+        celulas.append([cabecalho_tab, Spacer(
+            1, ESPACO_TITULO_MEDIDOR), medidor])
 
     linhas_grid, linha_atual = [], []
     for celula in celulas:
@@ -5244,6 +5576,7 @@ def montar_tabela_grade_indice_desempenho(itens, layout, largura_disponivel):
     )
     return grid
 
+
 class GradeIndiceDesempenho(Flowable):
     # Grade de medidores que só decide o próprio tamanho na hora em que o
     # ReportLab a posiciona na página.
@@ -5276,11 +5609,13 @@ class GradeIndiceDesempenho(Flowable):
             return self.width, self.height
 
         altura_util = max(1.0, altura_disponivel - FOLGA_SEGURANCA_INDICE)
-        layout = dimensionar_grade_indice_desempenho(self.itens, altura_util, largura_disponivel)
+        layout = dimensionar_grade_indice_desempenho(
+            self.itens, altura_util, largura_disponivel)
         self._tabela = montar_tabela_grade_indice_desempenho(
             self.itens, layout, largura_disponivel
         )
-        self.width, self.height = self._tabela.wrap(largura_disponivel, altura_util)
+        self.width, self.height = self._tabela.wrap(
+            largura_disponivel, altura_util)
         return self.width, self.height
 
     def split(self, largura_disponivel, altura_disponivel):
@@ -5290,6 +5625,7 @@ class GradeIndiceDesempenho(Flowable):
     def draw(self):
         if self._tabela is not None:
             self._tabela.drawOn(self.canv, 0, 0)
+
 
 def montar_pagina_indice_desempenho(itens_pagina, titulo_pagina, texto_agrupamento="por SECRETARIA | EXECUTOR"):
     # Monta os elementos de UMA página do Índice de Desempenho: título, nota
@@ -5305,10 +5641,12 @@ def montar_pagina_indice_desempenho(itens_pagina, titulo_pagina, texto_agrupamen
     return [
         Paragraph(titulo_pagina, titulo_style),
         Spacer(1, 13),
-        Paragraph(_texto_nota_indice(texto_agrupamento), orientacao_leitura_style),
+        Paragraph(_texto_nota_indice(texto_agrupamento),
+                  orientacao_leitura_style),
         Spacer(1, 12),
         GradeIndiceDesempenho(itens_pagina),
     ]
+
 
 def montar_paginas_indice_desempenho_gestao(itens_gestao, titulo_base, texto_agrupamento="por SECRETARIA | EXECUTOR"):
     # Recebe os itens JÁ CALCULADOS de uma única gestão (ordenados da melhor
@@ -5318,9 +5656,12 @@ def montar_paginas_indice_desempenho_gestao(itens_gestao, titulo_base, texto_agr
     if not itens_gestao:
         return []
 
-    itens_numerados = [dict(item, posicao=i + 1) for i, item in enumerate(itens_gestao)]
-    elementos = montar_pagina_indice_desempenho(itens_numerados, titulo_base, texto_agrupamento)
+    itens_numerados = [dict(item, posicao=i + 1)
+                       for i, item in enumerate(itens_gestao)]
+    elementos = montar_pagina_indice_desempenho(
+        itens_numerados, titulo_base, texto_agrupamento)
     return [elementos] if elementos is not None else []
+
 
 def gerar_mapa_coropletico_municipios(df_base, geojson_data, largura_mapa=500):
     # Soma o investimento e a quantidade de ações por município (nome
@@ -5331,14 +5672,16 @@ def gerar_mapa_coropletico_municipios(df_base, geojson_data, largura_mapa=500):
     # num editor gráfico (Illustrator, Inkscape, Corel etc.), não é imagem.
     resumo = (
         df_base.assign(
-            _MUN_NORM=df_base[col_municipio].apply(lambda x: remover_acentos(x).strip().upper()),
+            _MUN_NORM=df_base[col_municipio].apply(
+                lambda x: remover_acentos(x).strip().upper()),
             _INV_AJ=_serie_investimento_ajustado(df_base),
         )
         .groupby("_MUN_NORM")
         .agg(QTD=(col_objeto, "count"), VALOR=("_INV_AJ", "sum"))
     )
 
-    minlon, minlat, maxlon, maxlat, correcao_x = _bbox_projecao_municipios(geojson_data["features"])
+    minlon, minlat, maxlon, maxlat, correcao_x = _bbox_projecao_municipios(
+        geojson_data["features"])
     largura_bruta = (maxlon - minlon) * correcao_x
     altura_bruta = maxlat - minlat
     escala = largura_mapa / largura_bruta
@@ -5357,17 +5700,20 @@ def gerar_mapa_coropletico_municipios(df_base, geojson_data, largura_mapa=500):
             )
 
     valores_presentes = [valor for _, valor in dados_por_municipio.values()]
-    bordas_classes = _calcular_bordas_classes_mapa(valores_presentes) if valores_presentes else [0.0, 0.0]
+    bordas_classes = _calcular_bordas_classes_mapa(
+        valores_presentes) if valores_presentes else [0.0, 0.0]
 
     desenho = Drawing(largura_mapa, altura_mapa)
     for feat in geojson_data["features"]:
         dado = dados_por_municipio.get(feat["properties"]["name"])
         if dado:
-            cor = CORES_CLASSES_MAPA[_indice_classe_mapa(dado[1], bordas_classes) % len(CORES_CLASSES_MAPA)]
+            cor = CORES_CLASSES_MAPA[_indice_classe_mapa(
+                dado[1], bordas_classes) % len(CORES_CLASSES_MAPA)]
         else:
             cor = COR_MAPA_SEM_DADO
         for anel in feat["geometry"]["coordinates"]:
-            caminho = Path(fillColor=cor, strokeColor=colors.white, strokeWidth=0.4)
+            caminho = Path(
+                fillColor=cor, strokeColor=colors.white, strokeWidth=0.4)
             x0, y0 = projetar(*anel[0])
             caminho.moveTo(x0, y0)
             for lon, lat in anel[1:]:
@@ -5379,6 +5725,7 @@ def gerar_mapa_coropletico_municipios(df_base, geojson_data, largura_mapa=500):
     qtd_municipios_com_dado = len(dados_por_municipio)
     qtd_municipios_total = len(geojson_data["features"])
     return desenho, bordas_classes, qtd_municipios_com_dado, qtd_municipios_total
+
 
 def gerar_legenda_mapa_municipios(bordas_classes, largura=340, altura=290):
     # Uma amostra de cor sólida por classe (não degradê) — cada faixa mostra
@@ -5433,6 +5780,7 @@ def gerar_legenda_mapa_municipios(bordas_classes, largura=340, altura=290):
 # 6. ENGENHARIA DE DADOS (ETL PANDAS)
 # =====================================================
 
+
 try:
     # Antes lia a planilha INTEIRA (header=None) só pra descobrir em qual
     # linha fica o cabeçalho (procurando "EIXO"), e depois lia de novo,
@@ -5456,7 +5804,8 @@ try:
         return None
 
     LINHAS_BUSCA_CABECALHO = 20
-    df_temp = pd.read_excel(arquivo_excel, header=None, nrows=LINHAS_BUSCA_CABECALHO)
+    df_temp = pd.read_excel(arquivo_excel, header=None,
+                            nrows=LINHAS_BUSCA_CABECALHO)
     linha_header = _linha_do_cabecalho(df_temp)
     if linha_header is None:
         df_temp = pd.read_excel(arquivo_excel, header=None)
@@ -5497,13 +5846,17 @@ df.columns = [
 # diferente fazia o campo aparecer vazio na ficha, em silêncio — nem erro,
 # nem aviso. Agora o nome é resolvido aqui na carga: primeiro pelos nomes
 # conhecidos, depois por palavra-chave no cabeçalho.
+
+
 def _resolver_coluna_por_apelido(colunas, candidatos, grupos_palavras):
     normalizadas = {
-        coluna: re.sub(r"\s+", " ", remover_acentos(str(coluna)).strip().upper())
+        coluna: re.sub(
+            r"\s+", " ", remover_acentos(str(coluna)).strip().upper())
         for coluna in colunas
     }
     for candidato in candidatos:
-        alvo = re.sub(r"\s+", " ", remover_acentos(str(candidato)).strip().upper())
+        alvo = re.sub(
+            r"\s+", " ", remover_acentos(str(candidato)).strip().upper())
         for coluna, normalizada in normalizadas.items():
             if normalizada == alvo:
                 return coluna
@@ -5515,6 +5868,7 @@ def _resolver_coluna_por_apelido(colunas, candidatos, grupos_palavras):
             if all(palavra in normalizada for palavra in palavras):
                 return coluna
     return None
+
 
 _col_monitora_encontrada = _resolver_coluna_por_apelido(
     df.columns,
@@ -5534,6 +5888,7 @@ _col_localizacao_encontrada = _resolver_coluna_por_apelido(
 )
 if _col_localizacao_encontrada:
     col_link_localizacao = _col_localizacao_encontrada
+
 
 def _preencher_hiperlinks_embutidos(arquivo, linha_do_cabecalho, coluna_alvo):
     # Recupera os endereços dos hiperlinks EMBUTIDOS nas células.
@@ -5565,7 +5920,8 @@ def _preencher_hiperlinks_embutidos(arquivo, linha_do_cabecalho, coluna_alvo):
         for celula in aba[linha_cabecalho_excel]:
             if celula.value is None:
                 continue
-            nome = re.sub(r"\s+", " ", remover_acentos(str(celula.value)).strip().upper())
+            nome = re.sub(
+                r"\s+", " ", remover_acentos(str(celula.value)).strip().upper())
             if nome == coluna_alvo:
                 indice_coluna_excel = celula.column
                 break
@@ -5596,6 +5952,7 @@ def _preencher_hiperlinks_embutidos(arquivo, linha_do_cabecalho, coluna_alvo):
     except Exception:
         return
 
+
 for _coluna_link in (col_link_monitora, col_link_localizacao):
     _preencher_hiperlinks_embutidos(arquivo_excel, linha_header, _coluna_link)
 
@@ -5612,7 +5969,8 @@ for _rotulo_link, _coluna_link, _achou in (
               f"(procurei por '{_coluna_link}' e variações). O campo ficará vazio.")
     else:
         _com_endereco = int(
-            df[_coluna_link].astype(str).str.contains(r"https?://", case=False, na=False).sum()
+            df[_coluna_link].astype(str).str.contains(
+                r"https?://", case=False, na=False).sum()
         )
         print(f"[Ficha Cadastral] Link '{_rotulo_link}' → coluna '{_coluna_link}': "
               f"{_com_endereco} de {len(df)} linhas com endereço.")
@@ -5648,7 +6006,8 @@ COLUNAS_ESSENCIAIS = {
     col_valor_contratado: "VALOR CONTRATADO",
     col_invest: "INVESTIMENTO TOTAL",
 }
-_colunas_faltando = [nome for coluna, nome in COLUNAS_ESSENCIAIS.items() if coluna not in df.columns]
+_colunas_faltando = [
+    nome for coluna, nome in COLUNAS_ESSENCIAIS.items() if coluna not in df.columns]
 if _colunas_faltando:
     _plural = len(_colunas_faltando) > 1
     _erro_fatal_inicializacao(
@@ -5664,7 +6023,8 @@ if _colunas_faltando:
 df = df[df[col_objeto].notna() & (df[col_objeto].astype(str).str.strip() != "")]
 
 df["GESTAO"] = df[col_orgao].apply(
-    lambda x: "GESTÃO FEDERAL" if "FEDERAL" in str(x).upper() else "GESTÃO ESTADUAL"
+    lambda x: "GESTÃO FEDERAL" if "FEDERAL" in str(
+        x).upper() else "GESTÃO ESTADUAL"
 )
 df["SECRETARIA_LIMPA"] = df[col_orgao].fillna("").astype(str).str.strip()
 df["EXECUTOR"] = df[col_executor].apply(limpar_executor)
@@ -5687,42 +6047,56 @@ for _col_contratado_detalhe in (
     col_financiamento_contratado,
 ):
     if _col_contratado_detalhe in df.columns:
-        df[_col_contratado_detalhe] = df[_col_contratado_detalhe].apply(converter_valor)
+        df[_col_contratado_detalhe] = df[_col_contratado_detalhe].apply(
+            converter_valor)
 
 # Regra de contratação (decisão do usuário em 06/11/2026): a ação está
 # contratada (Termo de Compromisso firmado) quando tem o Nº DO TERMO DE COMP.
 # (TC) / CT FINANCIAMENTO preenchido, com qualquer texto, E VALOR CONTRATADO
 # maior que zero. Qualquer outro caso é a contratar, pelo planejado de cada
 # fonte. Daqui em diante, VALOR CONTRATADO, o detalhamento por fonte e as colunas
-# AJUSTADO refletem essa regra em todo o projeto. O que está de fato na planilha
+# AJUSTADO refletem essa regra em todo o projeto. ATENÇÃO (09/11/2026): isto
+# decide só QUAL valor a ação usa (contratado x planejado), NÃO se o Termo de
+# Compromisso está firmado — essa classificação tem regra única,
+# classificar_termo_compromisso (coluna SINALIZACAO_TC), usada no painel, nos
+# filtros e na apresentação (gerar_pptx_pac.calcular_metricas). Ação com TC
+# preenchido e VALOR CONTRATADO zerado é TC FIRMADO, valorada pelo planejado.
+# O que está de fato na planilha
 # fica em COLUNAS_CONTRATADO_PLANILHA, para o Controle de Qualidade e a Ficha
 # Cadastral (ver _linha_valores_da_planilha).
 for _coluna, _coluna_planilha in COLUNAS_CONTRATADO_PLANILHA.items():
     if _coluna in df.columns:
         df[_coluna_planilha] = df[_coluna]
 
-_contratada = (df[col_tc].apply(classificar_termo_compromisso) == "SIM") & (df[col_valor_contratado] > 0)
+_contratada = (df[col_tc].apply(classificar_termo_compromisso)
+               == "SIM") & (df[col_valor_contratado] > 0)
 
 for _coluna in COLUNAS_CONTRATADO_PLANILHA:
     if _coluna in df.columns:
         df[_coluna] = np.where(_contratada, df[_coluna], 0.0)
 
-df[col_financiamento_ajustado] = np.where(_contratada, 0, df[col_financiamento])
+df[col_financiamento_ajustado] = np.where(
+    _contratada, 0, df[col_financiamento])
 df[col_apoiado_ajustado] = np.where(_contratada, 0, df[col_apoiado])
-df[col_contrapartida_ajustado] = np.where(_contratada, 0, df[col_contrapartida])
+df[col_contrapartida_ajustado] = np.where(
+    _contratada, 0, df[col_contrapartida])
 df[col_complementar_ajustado] = np.where(_contratada, 0, df[col_complementar])
 
 df["STATUS_ORDEM"] = df[col_status].apply(extrair_ordem_status)
-df["STATUS_TEXTO"] = df[col_status].apply(limpar_texto_status).astype(str).str.strip()
+df["STATUS_TEXTO"] = df[col_status].apply(
+    limpar_texto_status).astype(str).str.strip()
 df["FASE_ORDEM"] = df[col_fase].apply(extrair_ordem_fase)
-df["FASE_TEXTO"] = df[col_fase].apply(limpar_texto_fase).astype(str).str.strip()
+df["FASE_TEXTO"] = df[col_fase].apply(
+    limpar_texto_fase).astype(str).str.strip()
 df["SINALIZACAO_TC"] = df[col_tc].apply(classificar_termo_compromisso)
 df["EIXO_SORT"] = df[col_eixo].apply(remover_acentos)
 df["PRAZO_FASE_TEXTO"] = df[col_prazo].apply(formatar_prazo)
 df["PRAZO_TRIMESTRE"] = df[col_prazo].apply(calcular_trimestre)
 df[col_vigencia] = pd.to_datetime(df[col_vigencia], errors="coerce")
-df["CLAUSULA_SUSPENSIVA_ORDEM"] = df[col_clausula_suspensiva].apply(extrair_ordem_clausula_suspensiva)
-df["SITUACAO_CLAUSULA_SUSPENSIVA"] = df[col_clausula_suspensiva].apply(tratar_clausula_suspensiva)
+df["CLAUSULA_SUSPENSIVA_ORDEM"] = df[col_clausula_suspensiva].apply(
+    extrair_ordem_clausula_suspensiva)
+df["SITUACAO_CLAUSULA_SUSPENSIVA"] = df[col_clausula_suspensiva].apply(
+    tratar_clausula_suspensiva)
 df["AVANCO_OBRA_TEXTO"] = df[col_avanco].apply(formatar_percentual)
 
 # Coluna derivada SIM/NÃO pra virar filtro no painel (ver blocos_config em
@@ -5750,7 +6124,8 @@ df[col_fonte] = (
 
 df = df[~df["STATUS_TEXTO"].isin(status_excluir)]
 
-df_original = df.copy()  # cópia intacta pós-ETL, usada para reaplicar os filtros a cada geração
+# cópia intacta pós-ETL, usada para reaplicar os filtros a cada geração
+df_original = df.copy()
 
 # =====================================================
 # 6B. INTERFACE GRÁFICA DE FILTROS (TKINTER)
@@ -5769,6 +6144,7 @@ STATUS_PADRAO_SELECIONADOS = {
     "À LICITAR",
 }
 
+
 def _serie_investimento_ajustado(df):
     # Investimento AJUSTADO por linha — mesma regra usada em todo o
     # relatório: em ação contratada (Nº do TC e Valor Contratado), Valor Contratado
@@ -5785,6 +6161,7 @@ def _serie_investimento_ajustado(df):
         + df[col_complementar_ajustado]
     )
 
+
 def _investimento_ajustado(df):
     # Mesma regra de valores ajustados já usada no dashboard: soma os
     # componentes (Valor Contratado + OGU + Financiamento + Contrapartida +
@@ -5794,6 +6171,7 @@ def _investimento_ajustado(df):
     # garante que o card "INVESTIMENTO" do relatório impresso sempre bate
     # com o do dashboard, para o mesmo filtro.
     return float(_serie_investimento_ajustado(df).sum())
+
 
 # =====================================================
 # ÍNDICE DE DESEMPENHO POR SECRETARIA (gráfico de medidor)
@@ -5838,6 +6216,7 @@ ORDEM_STATUS_INDICE = [
 ]
 _MAPA_ORDEM_STATUS_INDICE = {s: i for i, s in enumerate(ORDEM_STATUS_INDICE)}
 
+
 def _dias_entre(data_inicio, data_fim):
     if not isinstance(data_inicio, (pd.Timestamp, datetime)) or pd.isna(data_inicio):
         return None
@@ -5845,6 +6224,7 @@ def _dias_entre(data_inicio, data_fim):
         return None
     dias = (data_fim - data_inicio).days
     return dias if dias >= 0 else None
+
 
 # Faixas da nota (0 a 1) pra cada categoria — ajustável se as faixas
 # precisarem ficar mais/menos rígidas no futuro.
@@ -5854,11 +6234,14 @@ FAIXAS_CATEGORIA_INDICE = [
     (0.35, "REGULAR"),
     (0.0, "INSATISFATÓRIO"),
 ]
+
+
 def _categoria_indice(nota):
     for limite, nome in FAIXAS_CATEGORIA_INDICE:
         if nota >= limite:
             return nome
     return FAIXAS_CATEGORIA_INDICE[-1][1]
+
 
 def _filtrar_dataframe(filtros_selecionados):
     # Aplica os filtros selecionados sempre a partir de uma cópia limpa dos
@@ -5882,19 +6265,26 @@ def _filtrar_dataframe(filtros_selecionados):
     if filtros_selecionados["OBJETO"]:
         df = df[df[col_objeto].isin(filtros_selecionados["OBJETO"])]
     if filtros_selecionados["MUNICIPIO"]:
-        df = df[df[col_municipio].astype(str).isin(filtros_selecionados["MUNICIPIO"])]
+        df = df[df[col_municipio].astype(str).isin(
+            filtros_selecionados["MUNICIPIO"])]
     if filtros_selecionados["FONTE"]:
         df = df[df[col_fonte].astype(str).isin(filtros_selecionados["FONTE"])]
     if filtros_selecionados["CLAUSULA_SUSPENSIVA"]:
-        df = df[df["SITUACAO_CLAUSULA_SUSPENSIVA"].isin(filtros_selecionados["CLAUSULA_SUSPENSIVA"])]
+        df = df[df["SITUACAO_CLAUSULA_SUSPENSIVA"].isin(
+            filtros_selecionados["CLAUSULA_SUSPENSIVA"])]
     if filtros_selecionados["TERMO_COMPROMISSO"]:
-        df = df[df["SINALIZACAO_TC"].isin(filtros_selecionados["TERMO_COMPROMISSO"])]
+        df = df[df["SINALIZACAO_TC"].isin(
+            filtros_selecionados["TERMO_COMPROMISSO"])]
     if filtros_selecionados["OBRA_NAO_INICIADA"]:
-        df = df[df["OBRA_NAO_INICIADA"].isin(filtros_selecionados["OBRA_NAO_INICIADA"])]
+        df = df[df["OBRA_NAO_INICIADA"].isin(
+            filtros_selecionados["OBRA_NAO_INICIADA"])]
 
-    df = _aplicar_filtro_arvore_data(df, col_prazo, filtros_selecionados.get("DATAS_CONCLUSAO_FASE"))
-    df = _aplicar_filtro_arvore_data(df, col_vigencia, filtros_selecionados.get("DATAS_VIGENCIA"))
-    df = _aplicar_filtro_arvore_data(df, col_prazo_atual, filtros_selecionados.get("DATAS_CONCLUSAO_ATUAL"))
+    df = _aplicar_filtro_arvore_data(
+        df, col_prazo, filtros_selecionados.get("DATAS_CONCLUSAO_FASE"))
+    df = _aplicar_filtro_arvore_data(
+        df, col_vigencia, filtros_selecionados.get("DATAS_VIGENCIA"))
+    df = _aplicar_filtro_arvore_data(
+        df, col_prazo_atual, filtros_selecionados.get("DATAS_CONCLUSAO_ATUAL"))
 
     return df
 
@@ -5907,7 +6297,8 @@ def _aplicar_filtro_arvore_data(df, coluna, datas_selecionadas):
     # df sem alterar — não trava o relatório.
     if not datas_selecionadas or coluna not in df.columns:
         return df
-    datas_str = pd.to_datetime(df[coluna], errors="coerce").dt.strftime("%Y-%m-%d")
+    datas_str = pd.to_datetime(
+        df[coluna], errors="coerce").dt.strftime("%Y-%m-%d")
     return df[datas_str.isin(datas_selecionadas)]
 
 
@@ -5944,6 +6335,7 @@ def _construir_arvore_datas(df, coluna):
 # avisa quantas ficaram de fora.
 LIMITE_LISTA_BUSCA_FICHA = 50
 
+
 def _campos_alerta_qualidade(row, hoje=None):
     row = _linha_valores_da_planilha(row)
     # Mesma lógica de detecção usada no painel de Controle de Qualidade
@@ -5956,11 +6348,13 @@ def _campos_alerta_qualidade(row, hoje=None):
         hoje = agora_bahia().date()
     status_atual = str(row.get("STATUS_TEXTO", "")).strip().upper()
     fase_atual = str(row.get("FASE_TEXTO", "")).strip().upper()
-    data_fase = _extrair_data_alerta(row.get(col_prazo)) if col_prazo in row.index else None
+    data_fase = _extrair_data_alerta(
+        row.get(col_prazo)) if col_prazo in row.index else None
     alertas = {}
 
     if status_atual not in CAMPOS_ALERTA_STATUS_IGNORAR_VENCIMENTO:
-        data_vigencia = _extrair_data_alerta(row.get(col_vigencia)) if col_vigencia in row.index else None
+        data_vigencia = _extrair_data_alerta(
+            row.get(col_vigencia)) if col_vigencia in row.index else None
         if data_fase is not None and data_fase < hoje:
             alertas["prazo_fase"] = "Prazo de Conclusão da Fase vencido"
         if data_vigencia is not None and data_vigencia < hoje:
@@ -5988,7 +6382,8 @@ def _campos_alerta_qualidade(row, hoje=None):
     # Antes os dois casos caíam no segundo, e a ficha acusava fase errada em
     # ações cuja fase estava correta — o problema era só o campo em branco.
     if col_aviso_licitacao in row.index:
-        data_aviso_licitacao = _extrair_data_alerta(row.get(col_aviso_licitacao))
+        data_aviso_licitacao = _extrair_data_alerta(
+            row.get(col_aviso_licitacao))
         data_abertura_licitacao = (
             _extrair_data_alerta(row.get(col_abertura_licitacao))
             if col_abertura_licitacao in row.index
@@ -6021,7 +6416,8 @@ def _campos_alerta_qualidade(row, hoje=None):
         or fase_atual in CAMPOS_ALERTA_FASE_IGNORAR_VENCIMENTO
     )
     if col_prazo_pendencia in row.index and not acao_ja_entregue:
-        data_prazo_pendencia = _extrair_data_alerta(row.get(col_prazo_pendencia))
+        data_prazo_pendencia = _extrair_data_alerta(
+            row.get(col_prazo_pendencia))
         if data_prazo_pendencia is not None and data_prazo_pendencia < hoje:
             alertas["prazo_pendencia"] = "Prazo da Pendência / Tarefa vencido"
 
@@ -6034,12 +6430,14 @@ def _campos_alerta_qualidade(row, hoje=None):
     #      ver CAMPOS_ALERTA_STATUS_EXIGE_LINK_LOCALIZACAO.
     if col_link_localizacao in row.index:
         valor_link_localizacao = row.get(col_link_localizacao)
-        motivo_link_localizacao = _motivo_link_localizacao(valor_link_localizacao)
+        motivo_link_localizacao = _motivo_link_localizacao(
+            valor_link_localizacao)
         # A cobrança do campo em branco só faz sentido pra OBRA: é o único
         # TIPO que tem execução em campo pra localizar. EQUIPAMENTOS e PROJETO
         # ficam de fora da checagem — cobrar o link deles aqui geraria alerta
         # sobre algo que não se aplica ao tipo de ação.
-        tipo_atual = str(row.get(col_tipo, "")).strip().upper() if col_tipo in row.index else ""
+        tipo_atual = str(row.get(col_tipo, "")).strip(
+        ).upper() if col_tipo in row.index else ""
         if motivo_link_localizacao:
             alertas["link_localizacao"] = motivo_link_localizacao
         elif (
@@ -6075,7 +6473,8 @@ def _campos_alerta_qualidade(row, hoje=None):
     # ANDAMENTO) ou já existe Emissão de O.S. (documento que formaliza a
     # contratação), então os dois campos já deveriam estar preenchidos.
     data_emissao_os = (
-        _extrair_data_alerta(row.get(col_emissao_os)) if col_emissao_os in row.index else None
+        _extrair_data_alerta(row.get(col_emissao_os)
+                             ) if col_emissao_os in row.index else None
     )
     if status_atual == "ANDAMENTO" or data_emissao_os is not None:
         if col_valor_contratado in row.index and _valor_contratado_vazio(row.get(col_valor_contratado)):
@@ -6103,7 +6502,8 @@ def _campos_alerta_qualidade(row, hoje=None):
         col_complementar_contratado, col_financiamento_contratado,
     )
     if all(c in row.index for c in _colunas_detalhamento_contratado):
-        _soma_detalhamento = sum(float(row.get(c) or 0) for c in _colunas_detalhamento_contratado)
+        _soma_detalhamento = sum(float(row.get(c) or 0)
+                                 for c in _colunas_detalhamento_contratado)
         _valor_contratado_linha = float(row.get(col_valor_contratado) or 0)
         _diferenca = _valor_contratado_linha - _soma_detalhamento
         if abs(_diferenca) > TOLERANCIA_VALOR_CONTRATADO_DETALHAMENTO:
@@ -6128,7 +6528,8 @@ def _campos_alerta_qualidade(row, hoje=None):
     # no gráfico.
     _valor_contratado_linha = float(row.get(col_valor_contratado) or 0)
     if _valor_contratado_linha > 0:
-        _colunas_origem_orcamento = (col_apoiado, col_financiamento, col_contrapartida, col_complementar)
+        _colunas_origem_orcamento = (
+            col_apoiado, col_financiamento, col_contrapartida, col_complementar)
         _tem_origem_orcamento = any(
             c in row.index and float(row.get(c) or 0) > 0 for c in _colunas_origem_orcamento
         )
@@ -6148,9 +6549,11 @@ def _campos_alerta_qualidade(row, hoje=None):
             )
             for _c in _colunas_origem_orcamento + _colunas_detalhamento_contratado:
                 if _c in row.index:
-                    alertas[_NOMES_CAMPOS_FICHA_POR_COLUNA_ORIGEM[_c]] = _motivo_origem_recurso
+                    alertas[_NOMES_CAMPOS_FICHA_POR_COLUNA_ORIGEM[_c]
+                            ] = _motivo_origem_recurso
 
     return alertas
+
 
 def _montar_aviso_qualidade(df):
     # Retorna o texto do aviso de Controle de Qualidade (prazos vencidos ou
@@ -6188,7 +6591,8 @@ def _montar_aviso_qualidade(df):
         if motivos:
             chave = (gestao_atual, obj)
             registro = problemas_por_objeto.setdefault(
-                chave, {"itens": set(), "motivos": set(), "itens_por_motivo": {}}
+                chave, {"itens": set(), "motivos": set(),
+                        "itens_por_motivo": {}}
             )
             registro["motivos"].update(motivos)
             item_valido = item if (item and item.upper() != "NAN") else None
@@ -6213,7 +6617,8 @@ def _montar_aviso_qualidade(df):
             objetos_por_gestao.setdefault(gestao_chave, []).append(obj)
         gestoes_com_problema = sorted(
             objetos_por_gestao.keys(),
-            key=lambda g: ORDEM_GESTAO_QC.index(g) if g in ORDEM_GESTAO_QC else 99,
+            key=lambda g: ORDEM_GESTAO_QC.index(
+                g) if g in ORDEM_GESTAO_QC else 99,
         )
 
         LIMITE_LINHAS_AVISO = 30
@@ -6230,11 +6635,13 @@ def _montar_aviso_qualidade(df):
         # digitar o item de novo no campo de busca.
         grupos = []
         for gestao_chave in gestoes_com_problema:
-            objs_ordenados = sorted(objetos_por_gestao[gestao_chave], key=remover_acentos)
+            objs_ordenados = sorted(
+                objetos_por_gestao[gestao_chave], key=remover_acentos)
             linhas_grupo = []
             for obj in objs_ordenados[:LIMITE_LINHAS_AVISO]:
                 info = problemas_por_objeto[(gestao_chave, obj)]
-                itens_ordenados = sorted(info["itens"], key=_chave_ordenacao_item) if info["itens"] else []
+                itens_ordenados = sorted(
+                    info["itens"], key=_chave_ordenacao_item) if info["itens"] else []
                 # Hierarquia OBJETO > ALERTA > ITENS: cada objeto vira um
                 # tópico e, dentro dele, um subtópico por tipo de pendência,
                 # com os itens que têm exatamente aquela pendência.
@@ -6283,9 +6690,11 @@ def _montar_aviso_qualidade(df):
             col_complementar_contratado, col_financiamento_contratado,
         )
         if all(c in df.columns for c in _colunas_detalhamento_contratado):
-            _total_valor_contratado = float(df[COLUNAS_CONTRATADO_PLANILHA[col_valor_contratado]].sum())
+            _total_valor_contratado = float(
+                df[COLUNAS_CONTRATADO_PLANILHA[col_valor_contratado]].sum())
             _total_detalhamento = float(
-                sum(df[COLUNAS_CONTRATADO_PLANILHA[c]].sum() for c in _colunas_detalhamento_contratado)
+                sum(df[COLUNAS_CONTRATADO_PLANILHA[c]].sum()
+                    for c in _colunas_detalhamento_contratado)
             )
             # moeda_texto_puro, não moeda_sem_quebra: este texto passa pelo
             # escaparHtmlFicha do JS (pensado pra texto cru da planilha), que
@@ -6341,7 +6750,8 @@ def _dados_pre_visualizacao(df):
     # --- Previsão de conclusão por trimestre ---
     contagem_prazo = df["PRAZO_TRIMESTRE"].value_counts().reset_index()
     contagem_prazo.columns = ["TRIMESTRE", "QTD"]
-    contagem_prazo["ORDEM"] = contagem_prazo["TRIMESTRE"].apply(ordenar_trimestre)
+    contagem_prazo["ORDEM"] = contagem_prazo["TRIMESTRE"].apply(
+        ordenar_trimestre)
     contagem_prazo = contagem_prazo.sort_values("ORDEM")
     prazo = []
     for _, r in contagem_prazo.iterrows():
@@ -6357,10 +6767,12 @@ def _dados_pre_visualizacao(df):
             .sort_values("VALOR", ascending=False)
         )
         objetos_prazo = [
-            {"objeto": str(o[col_objeto]), "qtd": int(o["QTD"]), "valor": float(o["VALOR"])}
+            {"objeto": str(o[col_objeto]), "qtd": int(
+                o["QTD"]), "valor": float(o["VALOR"])}
             for _, o in resumo_objetos_prazo.iterrows()
         ]
-        prazo.append({"rotulo": trimestre_nome, "qtd": int(r["QTD"]), "objetos": objetos_prazo})
+        prazo.append({"rotulo": trimestre_nome, "qtd": int(
+            r["QTD"]), "objetos": objetos_prazo})
 
     # --- Resumo financeiro ---
     financeiro_bruto = [
@@ -6369,10 +6781,12 @@ def _dados_pre_visualizacao(df):
         ("FINANCIAMENTO", float(df[col_financiamento_ajustado].sum())),
         (
             "RECURSO ESTADUAL",
-            float(df[col_contrapartida_ajustado].sum() + df[col_complementar_ajustado].sum()),
+            float(df[col_contrapartida_ajustado].sum() +
+                  df[col_complementar_ajustado].sum()),
         ),
     ]
-    financeiro = [{"rotulo": nome, "valor": valor} for nome, valor in financeiro_bruto if valor > 0]
+    financeiro = [{"rotulo": nome, "valor": valor}
+                  for nome, valor in financeiro_bruto if valor > 0]
     # Mesmo gráfico com a chave "Detalhar contratado" ligada: o VALOR
     # CONTRATADO rateado por fonte (ver financeiro_contratado_por_fonte).
     financeiro_contratado = [
@@ -6388,7 +6802,8 @@ def _dados_pre_visualizacao(df):
         .reset_index()
         .sort_values("FASE_ORDEM")
     )
-    resumo_fase = resumo_fase[(resumo_fase["QTD"] > 0) & (resumo_fase["VALOR"] > 0)]
+    resumo_fase = resumo_fase[(resumo_fase["QTD"] > 0)
+                              & (resumo_fase["VALOR"] > 0)]
     panorama = []
     for _, r in resumo_fase.iterrows():
         fase_nome = str(r["FASE_TEXTO"])
@@ -6402,11 +6817,13 @@ def _dados_pre_visualizacao(df):
             .sort_values("VALOR", ascending=False)
         )
         objetos_fase = [
-            {"objeto": str(o[col_objeto]), "qtd": int(o["QTD"]), "valor": float(o["VALOR"])}
+            {"objeto": str(o[col_objeto]), "qtd": int(
+                o["QTD"]), "valor": float(o["VALOR"])}
             for _, o in resumo_objetos_fase.iterrows()
         ]
         panorama.append(
-            {"rotulo": fase_nome, "qtd": int(r["QTD"]), "valor": float(r["VALOR"]), "objetos": objetos_fase}
+            {"rotulo": fase_nome, "qtd": int(r["QTD"]), "valor": float(
+                r["VALOR"]), "objetos": objetos_fase}
         )
 
     # --- Situação do termo de compromisso ---
@@ -6432,7 +6849,8 @@ def _dados_pre_visualizacao(df):
             .sort_values("VALOR", ascending=False)
         )
         objetos_tc = [
-            {"objeto": str(o[col_objeto]), "qtd": int(o["QTD"]), "valor": float(o["VALOR"])}
+            {"objeto": str(o[col_objeto]), "qtd": int(
+                o["QTD"]), "valor": float(o["VALOR"])}
             for _, o in resumo_objetos_tc.iterrows()
         ]
         termo.append(
@@ -6487,8 +6905,10 @@ def _dados_pre_visualizacao(df):
             COMPLEMENTAR_CONTRATADO=(col_complementar_contratado, "sum"),
             FINANCIAMENTO_CONTRATADO=(col_financiamento_contratado, "sum"),
         )
-    df_sec_grp = df.groupby("SECRETARIA_LIMPA").agg(**agregacoes_sec).reset_index()
-    df_sec_grp["RECURSO_ESTADUAL"] = df_sec_grp["CONTRAPARTIDA_AJ"] + df_sec_grp["COMPLEMENTAR_AJ"]
+    df_sec_grp = df.groupby("SECRETARIA_LIMPA").agg(
+        **agregacoes_sec).reset_index()
+    df_sec_grp["RECURSO_ESTADUAL"] = df_sec_grp["CONTRAPARTIDA_AJ"] + \
+        df_sec_grp["COMPLEMENTAR_AJ"]
     df_sec_grp["INVESTIMENTO_CALC"] = (
         df_sec_grp["VALOR_CONTRATADO"]
         + df_sec_grp["APOIADO_AJ"]
@@ -6497,7 +6917,8 @@ def _dados_pre_visualizacao(df):
     )
     if detalhado_secretaria:
         df_sec_grp["ESTADUAL_CONTRATADO"] = (
-            df_sec_grp["CONTRAPARTIDA_CONTRATADA"] + df_sec_grp["COMPLEMENTAR_CONTRATADO"]
+            df_sec_grp["CONTRAPARTIDA_CONTRATADA"] +
+            df_sec_grp["COMPLEMENTAR_CONTRATADO"]
         )
         df_sec_grp["NAO_DISCRIMINADO"] = (
             df_sec_grp["VALOR_CONTRATADO"]
@@ -6505,7 +6926,8 @@ def _dados_pre_visualizacao(df):
             - df_sec_grp["FINANCIAMENTO_CONTRATADO"]
             - df_sec_grp["ESTADUAL_CONTRATADO"]
         ).clip(lower=0)
-    df_sec_grp = df_sec_grp[df_sec_grp["QTD"] > 0].sort_values("INVESTIMENTO_CALC", ascending=False)
+    df_sec_grp = df_sec_grp[df_sec_grp["QTD"] > 0].sort_values(
+        "INVESTIMENTO_CALC", ascending=False)
     detalhamento_secretaria = [
         {
             "secretaria": str(r["SECRETARIA_LIMPA"]),
@@ -6534,7 +6956,8 @@ def _dados_pre_visualizacao(df):
         "secretaria": _dados_panorama_secretaria(df),
         "detalhamentoSecretaria": detalhamento_secretaria,
         "desempenho": calcular_indice_desempenho_secretarias(
-            df_original.assign(_INVESTIMENTO_AJUSTADO=_serie_investimento_ajustado(df_original)),
+            df_original.assign(
+                _INVESTIMENTO_AJUSTADO=_serie_investimento_ajustado(df_original)),
             combos_ativos=set(
                 df[["SECRETARIA_LIMPA", "EXECUTOR"]]
                 .dropna()
@@ -6542,7 +6965,78 @@ def _dados_pre_visualizacao(df):
             ),
         ),
         "mapa": _dados_mapa_municipios(df),
+        "clausulas": _dados_clausulas_dash(df),
         "secretaria_unica": secretaria_unica,
+    }
+
+
+# Seção "Cláusulas Suspensivas" do dash — mesma regra da seção da
+# Apresentação CGAPE (gerar_pptx_pac._calcular_clausulas), pedido do usuário
+# em 10/11/2026: card por ação cuja cláusula ainda não foi totalmente
+# retirada, agrupados por eixo; Retirada Total / NÃO DEFINIDA só contam no
+# resumo do topo. A cor do card vem do prazo da VIGÊNCIA.
+DIAS_ALERTA_VIGENCIA_CLAUSULA = 90
+
+
+def _dados_clausulas_dash(df):
+    def _texto(valor):
+        if valor is None or (not isinstance(valor, str) and pd.isna(valor)):
+            return ""
+        texto = str(valor).strip()
+        return "" if texto.upper() in ("NAN", "NAT", "-") else texto
+
+    hoje = agora_bahia().date()
+    situacao = df["SITUACAO_CLAUSULA_SUSPENSIVA"].fillna("NÃO DEFINIDA").astype(str)
+    situacao_up = situacao.str.upper()
+    investimento = (df["_INVESTIMENTO_AJUSTADO"] if "_INVESTIMENTO_AJUSTADO" in df.columns
+                    else _serie_investimento_ajustado(df))
+    vigencias = pd.to_datetime(df[col_vigencia], errors="coerce", dayfirst=True) \
+        if col_vigencia in df.columns else pd.Series(pd.NaT, index=df.index)
+
+    acoes = []
+    for idx in df.index[~situacao_up.isin(["RETIRADA TOTAL", "NÃO DEFINIDA"])]:
+        linha = df.loc[idx]
+        vig = vigencias.loc[idx]
+        dias = None if pd.isna(vig) else (vig.date() - hoje).days
+        if dias is None:
+            prazo = "sem_data"
+        elif dias < 0:
+            prazo = "vencida"
+        elif dias <= DIAS_ALERTA_VIGENCIA_CLAUSULA:
+            prazo = "proxima"
+        else:
+            prazo = "no_prazo"
+        acoes.append({
+            "eixo": _texto(linha.get(col_eixo)) or "NÃO INFORMADO",
+            "item": _texto(normalizar_item(linha.get(col_item))),
+            "objeto": _texto(linha.get(col_objeto)) or "NÃO INFORMADO",
+            "municipio": _texto(linha.get(col_municipio)),
+            "secretaria": _texto(linha.get("SECRETARIA_LIMPA")),
+            "situacao": situacao.loc[idx],
+            "fase": _texto(linha.get("FASE_TEXTO")),
+            "status": _texto(linha.get("STATUS_TEXTO")),
+            "motivo": _texto(linha.get(col_motivo_clausula_suspensiva)),
+            "valor": float(investimento.loc[idx]),
+            "vigencia": None if pd.isna(vig) else vig.strftime("%d/%m/%Y"),
+            "dias": dias,
+            "prazo": prazo,
+        })
+
+    grupos = {}
+    for acao in acoes:
+        grupos.setdefault(acao["eixo"], []).append(acao)
+    for lista in grupos.values():
+        lista.sort(key=lambda a: (a["dias"] is None, a["dias"] if a["dias"] is not None else 0, -a["valor"]))
+    eixos = sorted(grupos.items(), key=lambda g: (-sum(a["valor"] for a in g[1]), g[0]))
+    return {
+        "qtd": len(acoes),
+        "valor": float(sum(a["valor"] for a in acoes)),
+        "vencidas": sum(1 for a in acoes if a["prazo"] == "vencida"),
+        "proximas": sum(1 for a in acoes if a["prazo"] == "proxima"),
+        "retiradaTotal": int((situacao_up == "RETIRADA TOTAL").sum()),
+        "diasAlerta": DIAS_ALERTA_VIGENCIA_CLAUSULA,
+        "eixos": [{"eixo": e, "qtd": len(l), "valor": float(sum(a["valor"] for a in l)), "acoes": l}
+                  for e, l in eixos],
     }
 
 
@@ -6577,7 +7071,8 @@ def _dados_panorama_secretaria(df):
         if df_gestao.empty:
             continue
 
-        pares = df_gestao[["SECRETARIA_LIMPA", "EXECUTOR"]].drop_duplicates().copy()
+        pares = df_gestao[["SECRETARIA_LIMPA", "EXECUTOR"]
+                          ].drop_duplicates().copy()
         pares["_SEC_SORT"] = pares["SECRETARIA_LIMPA"].apply(remover_acentos)
         pares["_EXE_SORT"] = pares["EXECUTOR"].apply(remover_acentos)
         pares = pares.sort_values(["_SEC_SORT", "_EXE_SORT"])
@@ -6585,7 +7080,8 @@ def _dados_panorama_secretaria(df):
         cartoes = []
         for _, par in pares.iterrows():
             sec, exe = str(par["SECRETARIA_LIMPA"]), str(par["EXECUTOR"])
-            df_par = df_gestao[(df_gestao["SECRETARIA_LIMPA"] == sec) & (df_gestao["EXECUTOR"] == exe)]
+            df_par = df_gestao[(df_gestao["SECRETARIA_LIMPA"] == sec) & (
+                df_gestao["EXECUTOR"] == exe)]
             resumo_fase = (
                 df_par.groupby("FASE_TEXTO")
                 .agg(QTD=(col_objeto, "count"), VALOR=("_INVESTIMENTO_AJUSTADO", "sum"))
@@ -6593,7 +7089,8 @@ def _dados_panorama_secretaria(df):
                 .fillna(0)
                 .reset_index()
             )
-            resumo_fase = resumo_fase[(resumo_fase["QTD"] > 0) & (resumo_fase["VALOR"] > 0)]
+            resumo_fase = resumo_fase[(resumo_fase["QTD"] > 0) & (
+                resumo_fase["VALOR"] > 0)]
             if resumo_fase.empty:
                 continue
 
@@ -6608,7 +7105,8 @@ def _dados_panorama_secretaria(df):
                     .sort_values("VALOR", ascending=False)
                 )
                 objetos_lista = [
-                    {"objeto": str(o[col_objeto]), "qtd": int(o["QTD"]), "valor": float(o["VALOR"])}
+                    {"objeto": str(o[col_objeto]), "qtd": int(
+                        o["QTD"]), "valor": float(o["VALOR"])}
                     for _, o in resumo_objetos.iterrows()
                 ]
                 fases_lista.append(
@@ -6650,10 +7148,12 @@ def _dados_mapa_municipios(df, largura_mapa=760):
         return None
 
     df_com_norm = df.assign(
-        _MUN_NORM=df[col_municipio].apply(lambda x: remover_acentos(x).strip().upper()),
+        _MUN_NORM=df[col_municipio].apply(
+            lambda x: remover_acentos(x).strip().upper()),
         _INV_AJ=_serie_investimento_ajustado(df),
     )
-    resumo = df_com_norm.groupby("_MUN_NORM").agg(QTD=(col_objeto, "count"), VALOR=("_INV_AJ", "sum"))
+    resumo = df_com_norm.groupby("_MUN_NORM").agg(
+        QTD=(col_objeto, "count"), VALOR=("_INV_AJ", "sum"))
 
     # Detalhamento por OBJETO dentro de cada município — usado no tooltip
     # (tabela OBJETO | INVESTIMENTO TOTAL ao passar o mouse), mesmo padrão
@@ -6670,7 +7170,8 @@ def _dados_mapa_municipios(df, largura_mapa=760):
             {"objeto": str(linha[col_objeto]), "valor": float(linha["VALOR"])}
         )
 
-    minlon, minlat, maxlon, maxlat, correcao_x = _bbox_projecao_municipios(geojson_data["features"])
+    minlon, minlat, maxlon, maxlat, correcao_x = _bbox_projecao_municipios(
+        geojson_data["features"])
     largura_bruta = (maxlon - minlon) * correcao_x
     altura_bruta = maxlat - minlat
     escala = largura_mapa / largura_bruta
@@ -6694,23 +7195,27 @@ def _dados_mapa_municipios(df, largura_mapa=760):
             )
 
     valores_presentes = [valor for _, valor, _ in dados_por_municipio.values()]
-    bordas_classes = _calcular_bordas_classes_mapa(valores_presentes) if valores_presentes else [0.0, 0.0]
+    bordas_classes = _calcular_bordas_classes_mapa(
+        valores_presentes) if valores_presentes else [0.0, 0.0]
     cor_sem_dado_hex = _cor_reportlab_para_hex(COR_MAPA_SEM_DADO)
-    cores_classes_hex = [_cor_reportlab_para_hex(c) for c in CORES_CLASSES_MAPA]
+    cores_classes_hex = [_cor_reportlab_para_hex(
+        c) for c in CORES_CLASSES_MAPA]
 
     poligonos = []
     for feat in geojson_data["features"]:
         nome_municipio = feat["properties"]["name"]
         dado = dados_por_municipio.get(nome_municipio)
         if dado:
-            cor = cores_classes_hex[_indice_classe_mapa(dado[1], bordas_classes) % len(cores_classes_hex)]
+            cor = cores_classes_hex[_indice_classe_mapa(
+                dado[1], bordas_classes) % len(cores_classes_hex)]
         else:
             cor = cor_sem_dado_hex
         for anel in feat["geometry"]["coordinates"]:
             pontos = " ".join(
                 f"{x:.2f},{y:.2f}" for x, y in (projetar_svg(lon, lat) for lon, lat in anel)
             )
-            poligono = {"pontos": pontos, "cor": cor, "municipio": nome_municipio}
+            poligono = {"pontos": pontos, "cor": cor,
+                        "municipio": nome_municipio}
             if dado:
                 poligono["qtd"] = dado[0]
                 poligono["valor"] = dado[1]
@@ -6776,12 +7281,16 @@ def _linha_filtro_unico(df, colunas):
 
     return " | ".join(partes)
 
+
 # Ordem fixa das categorias na linha de filtros. A capa mostra a lista
 # inteira; o rodapé das páginas de gestão repete a mesma linha SEM a
 # gestão, que já aparece ali do lado direito no "GESTÃO ESTADUAL - Página
 # 01 de 15" e ficaria escrita duas vezes na mesma faixa.
-COLUNAS_LINHA_FILTRO_UNICO = ["GESTAO", "SECRETARIA_LIMPA", "EXECUTOR", "FASE_TEXTO", "STATUS_TEXTO"]
-COLUNAS_LINHA_FILTRO_RODAPE = [c for c in COLUNAS_LINHA_FILTRO_UNICO if c != "GESTAO"]
+COLUNAS_LINHA_FILTRO_UNICO = [
+    "GESTAO", "SECRETARIA_LIMPA", "EXECUTOR", "FASE_TEXTO", "STATUS_TEXTO"]
+COLUNAS_LINHA_FILTRO_RODAPE = [
+    c for c in COLUNAS_LINHA_FILTRO_UNICO if c != "GESTAO"]
+
 
 def _linha_capa_filtro_unico(df):
     # Monta "GESTÃO | SECRETARIA | EXECUTOR | FASE | STATUS" pra capa (o
@@ -6830,6 +7339,7 @@ def _miniatura_detalhamento_financeiro(df_secretaria, largura, altura_barra=11):
         texto_acima=f"{percentual_contratado:.0f}% contratado",
     )
 
+
 def _cabecalho_secretaria_detalhamento(texto, indice_categoria, miniatura=None, recuo_miniatura=0):
     # Cabeçalho de cada secretaria no Detalhamento Analítico: o nome com a
     # contagem e o investimento, o medidor do Índice de Desempenho, a nota
@@ -6865,7 +7375,8 @@ def _cabecalho_secretaria_detalhamento(texto, indice_categoria, miniatura=None, 
         larguras.append(LARGURA_MEDIDOR_CABECALHO_SECRETARIA)
         cor_texto = colors.HexColor("#9A9A9A")
         if categoria in CORES_CATEGORIA_DESEMPENHO:
-            cor_texto = _cor_texto_categoria(CORES_CATEGORIA_DESEMPENHO[categoria])
+            cor_texto = _cor_texto_categoria(
+                CORES_CATEGORIA_DESEMPENHO[categoria])
         # Estilo clonado só para trocar a cor — mais seguro que embutir uma
         # tag <font> no texto, que exigiria escapar o valor hexadecimal.
         celulas.append(
@@ -6924,6 +7435,7 @@ def _cabecalho_secretaria_detalhamento(texto, indice_categoria, miniatura=None, 
     cabecalho.keepWithNext = True
     return cabecalho
 
+
 # --- Seções do relatório, na ordem em que aparecem no PDF ---
 # "chave" é o que trafega entre o painel e a geração; "titulo" é o que a
 # janela de seleção mostra; "layout" escolhe o desenho da miniatura.
@@ -6937,17 +7449,24 @@ SECOES_RELATORIO = [
     {"chave": "OBSERVACAO", "titulo": "Observações", "layout": "texto"},
     {"chave": "PAINEL_GERAL", "titulo": "Painel Geral", "layout": "graficos"},
     {"chave": "PANORAMA", "titulo": "Panorama por Secretaria", "layout": "tabela"},
-    {"chave": "METODOLOGIA", "titulo": "Metodologia do Índice", "layout": "texto_tabelas"},
-    {"chave": "INDICE_DESEMPENHO", "titulo": "Índice de Desempenho", "layout": "medidores"},
-    {"chave": "DETALHAMENTO_FINANCEIRO", "titulo": "Detalhamento Financeiro", "layout": "barras"},
-    {"chave": "DETALHAMENTO_FINANCEIRO_OBJETO", "titulo": "Detalhamento Financeiro por Objeto", "layout": "detalhamento"},
+    {"chave": "METODOLOGIA", "titulo": "Metodologia do Índice",
+        "layout": "texto_tabelas"},
+    {"chave": "INDICE_DESEMPENHO",
+        "titulo": "Índice de Desempenho", "layout": "medidores"},
+    {"chave": "DETALHAMENTO_FINANCEIRO",
+        "titulo": "Detalhamento Financeiro", "layout": "barras"},
+    {"chave": "DETALHAMENTO_FINANCEIRO_OBJETO",
+        "titulo": "Detalhamento Financeiro por Objeto", "layout": "detalhamento"},
     {"chave": "MAPA", "titulo": "Mapa dos Municípios", "layout": "mapa"},
-    {"chave": "RESUMO_GERAL", "titulo": "Resumo Executivo Geral", "layout": "cards_tabelas"},
+    {"chave": "RESUMO_GERAL", "titulo": "Resumo Executivo Geral",
+        "layout": "cards_tabelas"},
     {"chave": "POR_STATUS", "titulo": "Visão por Status", "layout": "cards_tabelas"},
     {"chave": "POR_FASE", "titulo": "Visão por Fase", "layout": "cards_tabela"},
-    {"chave": "DETALHAMENTO", "titulo": "Detalhamento Analítico", "layout": "detalhamento"},
+    {"chave": "DETALHAMENTO", "titulo": "Detalhamento Analítico",
+        "layout": "detalhamento"},
 ]
 SECOES_RELATORIO_POR_CHAVE = {sec["chave"]: sec for sec in SECOES_RELATORIO}
+
 
 def normalizar_secoes_relatorio(secoes):
     # None ou vazio = relatório completo. Ignora chaves desconhecidas, para
@@ -6956,6 +7475,7 @@ def normalizar_secoes_relatorio(secoes):
         return set(SECOES_RELATORIO_POR_CHAVE)
     validas = {str(c) for c in secoes if str(c) in SECOES_RELATORIO_POR_CHAVE}
     return validas or set(SECOES_RELATORIO_POR_CHAVE)
+
 
 def _secoes_disponiveis_relatorio(df):
     # Quais seções o recorte ATUAL realmente produziria, com a contagem de
@@ -6969,7 +7489,8 @@ def _secoes_disponiveis_relatorio(df):
     if df is None or df.empty:
         return []
 
-    gestoes = sorted({str(g).strip() for g in df["GESTAO"].dropna().unique() if str(g).strip()})
+    gestoes = sorted({str(g).strip()
+                     for g in df["GESTAO"].dropna().unique() if str(g).strip()})
     n_gestoes = max(1, len(gestoes))
 
     # DETALHAMENTO FINANCEIRO: num recorte só de ANDAMENTO a página não é
@@ -6984,7 +7505,8 @@ def _secoes_disponiveis_relatorio(df):
     # PANORAMA: existe só se houver par SECRETARIA | EXECUTOR no recorte, e
     # pode virar uma página por gestão quando a grade não cabe numa só.
     try:
-        n_pares_panorama, altura_panorama = estimar_altura_pagina_panorama_secretaria(df)
+        n_pares_panorama, altura_panorama = estimar_altura_pagina_panorama_secretaria(
+            df)
     except Exception:
         n_pares_panorama, altura_panorama = 1, 0
 
@@ -6995,12 +7517,14 @@ def _secoes_disponiveis_relatorio(df):
     # é suprimida (mesma regra aplicada na geração).
     try:
         grupos_indice = calcular_indice_desempenho_secretarias(
-            df_original.assign(_INVESTIMENTO_AJUSTADO=_serie_investimento_ajustado(df_original))
+            df_original.assign(
+                _INVESTIMENTO_AJUSTADO=_serie_investimento_ajustado(df_original))
         )
     except Exception:
         grupos_indice = []
     if len(gestoes) == 1:
-        grupos_indice = [g for g in grupos_indice if str(g["gestao"]).strip() in set(gestoes)]
+        grupos_indice = [g for g in grupos_indice if str(
+            g["gestao"]).strip() in set(gestoes)]
     paginas_indice = len([g for g in grupos_indice if g.get("itens")])
 
     disponiveis = []
@@ -7035,7 +7559,8 @@ def _secoes_disponiveis_relatorio(df):
         # pouco nesse corte. Antes ela era suprimida à força e não havia
         # como pedi-la.
         marcada = not (
-            chave in ("DETALHAMENTO_FINANCEIRO", "DETALHAMENTO_FINANCEIRO_OBJETO") and so_andamento
+            chave in ("DETALHAMENTO_FINANCEIRO",
+                      "DETALHAMENTO_FINANCEIRO_OBJETO") and so_andamento
         )
 
         disponiveis.append(
@@ -7048,6 +7573,7 @@ def _secoes_disponiveis_relatorio(df):
             }
         )
     return disponiveis
+
 
 def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financeiro_detalhado=False):
     # financeiro_detalhado: chave "Detalhar contratado" do Resumo Financeiro
@@ -7064,7 +7590,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
     # entrada, e não lá na interface: qualquer caminho que chame esta função
     # (painel, teste, chamada direta) recebe o mesmo tratamento de
     # dependências, ordem e limite.
-    colunas_detalhamento = normalizar_colunas_detalhamento(colunas_detalhamento)
+    colunas_detalhamento = normalizar_colunas_detalhamento(
+        colunas_detalhamento)
     # secoes: chaves de SECOES_RELATORIO que devem entrar no PDF. None = tudo.
     secoes_ativas = normalizar_secoes_relatorio(secoes)
 
@@ -7195,23 +7722,29 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
         )
 
         df_counts_objeto = (
-            df.groupby(["GESTAO", col_eixo, col_objeto])[col_objeto].count().to_dict()
+            df.groupby(["GESTAO", col_eixo, col_objeto])[
+                col_objeto].count().to_dict()
         )
-        df_counts_objeto = {(str(k[0]), str(k[1]), str(k[2])): v for k, v in df_counts_objeto.items()}
+        df_counts_objeto = {(str(k[0]), str(k[1]), str(
+            k[2])): v for k, v in df_counts_objeto.items()}
 
         df_counts_fase = (
-            df.groupby(["GESTAO", col_eixo, col_objeto, "FASE_TEXTO"])["FASE_TEXTO"]
+            df.groupby(["GESTAO", col_eixo, col_objeto, "FASE_TEXTO"])[
+                "FASE_TEXTO"]
             .count()
             .to_dict()
         )
-        df_counts_fase = {(str(k[0]), str(k[1]), str(k[2]), str(k[3])): v for k, v in df_counts_fase.items()}
+        df_counts_fase = {(str(k[0]), str(k[1]), str(k[2]), str(
+            k[3])): v for k, v in df_counts_fase.items()}
 
         df_counts_status = (
-            df.groupby(["GESTAO", col_eixo, col_objeto, "FASE_TEXTO", "STATUS_TEXTO"])["STATUS_TEXTO"]
+            df.groupby(["GESTAO", col_eixo, col_objeto, "FASE_TEXTO", "STATUS_TEXTO"])[
+                "STATUS_TEXTO"]
             .count()
             .to_dict()
         )
-        df_counts_status = {(str(k[0]), str(k[1]), str(k[2]), str(k[3]), str(k[4])): v for k, v in df_counts_status.items()}
+        df_counts_status = {(str(k[0]), str(k[1]), str(k[2]), str(
+            k[3]), str(k[4])): v for k, v in df_counts_status.items()}
         doc = SimpleDocTemplate(
             arquivo_pdf,
             pagesize=PAGINA,
@@ -7237,7 +7770,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
         # capa, observação, painel geral etc.) usam esse rótulo pra
         # título — mas não pra numeração de página, já que a capa e as
         # páginas de gráfico não devem ser numeradas.
-        gestoes_presentes_titulo = sorted(df["GESTAO"].dropna().unique().tolist())
+        gestoes_presentes_titulo = sorted(
+            df["GESTAO"].dropna().unique().tolist())
         if len(gestoes_presentes_titulo) == 1:
             sufixo_titulo_painel = gestoes_presentes_titulo[0]
         else:
@@ -7252,17 +7786,20 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             elements.append(Spacer(1, ALTURA_UTIL * 0.18))
             elements.append(Paragraph("<b>PAC</b>", capa_projeto))
             elements.append(Spacer(1, 20))
-            elements.append(Paragraph("RELATÓRIO GERENCIAL - BAHIA", capa_relatorio))
+            elements.append(
+                Paragraph("RELATÓRIO GERENCIAL - BAHIA", capa_relatorio))
             elements.append(Spacer(1, 142))
             linha_filtro_unico_capa = _linha_capa_filtro_unico(df)
             # Mesma linha da capa, sem a gestão, para o rodapé de todas as
             # páginas de gestão. Definida aqui e não dentro do canvas porque é
             # o dataframe já filtrado deste PDF que decide o conteúdo.
             global TEXTO_FILTROS_RODAPE
-            TEXTO_FILTROS_RODAPE = _linha_filtro_unico(df, COLUNAS_LINHA_FILTRO_RODAPE)
+            TEXTO_FILTROS_RODAPE = _linha_filtro_unico(
+                df, COLUNAS_LINHA_FILTRO_RODAPE)
             if linha_filtro_unico_capa:
                 elements.append(Spacer(1, 6))
-                elements.append(Paragraph(linha_filtro_unico_capa, capa_filtro_unico))
+                elements.append(
+                    Paragraph(linha_filtro_unico_capa, capa_filtro_unico))
             elements.append(Spacer(1, 8))
             elements.append(Paragraph(data_capa_txt, capa_data))
             elements.append(PageBreak())
@@ -7346,7 +7883,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             # ALIGN CENTER via TableStyle, já que hAlign de um flowable sozinho
             # não é respeitado quando aninhado dentro de outra tabela.
             bloco_observacoes = Table(
-                [[Paragraph("OBSERVAÇÃO", obs_titulo)], [Spacer(1, 20)], [tabela_observacoes]],
+                [[Paragraph("OBSERVAÇÃO", obs_titulo)], [
+                    Spacer(1, 20)], [tabela_observacoes]],
                 colWidths=[LARGURA_OBSERVACOES],
             )
             bloco_observacoes.setStyle(
@@ -7359,7 +7897,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     ]
                 )
             )
-            wrapper_observacoes = Table([[bloco_observacoes]], colWidths=[LARGURA_UTIL])
+            wrapper_observacoes = Table(
+                [[bloco_observacoes]], colWidths=[LARGURA_UTIL])
             wrapper_observacoes.setStyle(
                 TableStyle(
                     [
@@ -7391,7 +7930,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 if marcador_direita:
                     linha = [
                         Paragraph(texto, cabecalho_grafico_painel_style),
-                        Paragraph(marcador_direita, cabecalho_grafico_painel_style_direita),
+                        Paragraph(marcador_direita,
+                                  cabecalho_grafico_painel_style_direita),
                     ]
                     larguras = [LARGURA_UTIL / 2 - 8 - 155, 155]
                 else:
@@ -7414,7 +7954,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             tabela_painel_geral = Table(
                 [
                     [
-                        _titulo_grafico_painel("PREVISÃO DE CONCLUSÃO DA FASE"),
+                        _titulo_grafico_painel(
+                            "PREVISÃO DE CONCLUSÃO DA FASE"),
                         (
                             _titulo_grafico_painel(
                                 "RESUMO FINANCEIRO - CONTRATADO POR FONTE",
@@ -7424,12 +7965,15 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                             else _titulo_grafico_painel("RESUMO FINANCEIRO", marcador_direita="** Previsão Orçamentária")
                         ),
                     ],
-                    [gerar_grafico_prazo(df), gerar_grafico_financeiro(df, detalhar_contratado=financeiro_detalhado)],
+                    [gerar_grafico_prazo(df), gerar_grafico_financeiro(
+                        df, detalhar_contratado=financeiro_detalhado)],
                     [
                         _titulo_grafico_painel("PANORAMA GERAL DAS FASES*"),
-                        _titulo_grafico_painel("SITUAÇÃO DO TERMO DE COMPROMISSO*"),
+                        _titulo_grafico_painel(
+                            "SITUAÇÃO DO TERMO DE COMPROMISSO*"),
                     ],
-                    [gerar_grafico_panorama(df), gerar_grafico_termo_compromisso(df)],
+                    [gerar_grafico_panorama(
+                        df), gerar_grafico_termo_compromisso(df)],
                 ],
                 colWidths=[LARGURA_UTIL / 2, LARGURA_UTIL / 2],
             )
@@ -7448,9 +7992,11 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             elements.append(
                 KeepTogether(
                     [
-                        Paragraph(f"PAC - PAINEL GERAL - {sufixo_titulo_painel}", titulo_style),
+                        Paragraph(
+                            f"PAC - PAINEL GERAL - {sufixo_titulo_painel}", titulo_style),
                         Spacer(1, 10),
-                        gerar_cards_resumo(len(df), _investimento_ajustado(df)),
+                        gerar_cards_resumo(
+                            len(df), _investimento_ajustado(df)),
                         Spacer(1, 4),
                         Paragraph(
                             "* O tamanho de cada fatia do gráfico corresponde ao valor financeiro "
@@ -7474,7 +8020,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             # A decisão usa uma ESTIMATIVA de altura (sem desenhar nenhum
             # gráfico) — só depois de decidido é que a página escolhida é
             # realmente montada e desenhada, uma única vez.
-            n_pares_total, altura_estimada_combinada = estimar_altura_pagina_panorama_secretaria(df)
+            n_pares_total, altura_estimada_combinada = estimar_altura_pagina_panorama_secretaria(
+                df)
             if n_pares_total > 0:
                 titulo_secretaria_exec = f"PAC - PANORAMA POR SECRETARIA | EXECUTOR* - {sufixo_titulo_painel}"
                 if altura_estimada_combinada <= ALTURA_UTIL:
@@ -7522,7 +8069,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
         # Mapa (gestão, secretaria) -> índice, usado no cabeçalho de cada
         # secretaria do Detalhamento Analítico. Também fica fora dos "ifs":
         # o Detalhamento pode ser gerado sem a página do Índice.
-        indices_por_secretaria = _indice_desempenho_por_secretaria(grupos_indice_desempenho)
+        indices_por_secretaria = _indice_desempenho_por_secretaria(
+            grupos_indice_desempenho)
 
         if secao_ativa("METODOLOGIA"):
             # --- ETAPA B3.55: METODOLOGIA DO ÍNDICE DE DESEMPENHO ---
@@ -7542,7 +8090,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             # em uma tabela e "0,30 × Status" em outra. Assim toda a explicação
             # do índice cabe numa página só.
             LARGURA_EXEMPLO_CALCULO_METODOLOGIA = LARGURA_METODOLOGIA * 0.54
-            LARGURA_EXEMPLOS_METODOLOGIA = LARGURA_METODOLOGIA - LARGURA_EXEMPLO_CALCULO_METODOLOGIA
+            LARGURA_EXEMPLOS_METODOLOGIA = LARGURA_METODOLOGIA - \
+                LARGURA_EXEMPLO_CALCULO_METODOLOGIA
 
             # Quatro medidores de exemplo, um por categoria, com a nota escolhida
             # no meio de cada faixa. Servem de legenda visual: quem vê o medidor
@@ -7563,7 +8112,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             # medidores, o texto de apoio e a tabela de composição, e o bloco
             # inteiro tem cerca de 8 pt de folga na página. Medidor maior que
             # isso empurra a coluna para além da folha.
-            LARGURA_EXEMPLO_MEDIDOR = min(120.0, LARGURA_EXEMPLOS_METODOLOGIA / 4 - 6)
+            LARGURA_EXEMPLO_MEDIDOR = min(
+                120.0, LARGURA_EXEMPLOS_METODOLOGIA / 4 - 6)
             celulas_exemplos = [
                 gerar_medidor_desempenho(
                     categoria_exemplo, nota_exemplo, categoria_exemplo,
@@ -7578,7 +8128,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             ]
             tabela_exemplos_metodologia = Table(
                 [
-                    [Paragraph("<b>4 · O índice vira uma categoria</b>", metodologia_tabela_header)] + [""] * 3,
+                    [Paragraph("<b>4 · O índice vira uma categoria</b>",
+                               metodologia_tabela_header)] + [""] * 3,
                     celulas_exemplos,
                     faixas_exemplos,
                 ],
@@ -7618,7 +8169,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     i for i in grupo_exemplo_metodologia["itens"] if i.get("detalhe_calculo")
                 ]
                 if itens_com_detalhe:
-                    item_exemplo_metodologia = itens_com_detalhe[len(itens_com_detalhe) // 2]
+                    item_exemplo_metodologia = itens_com_detalhe[len(
+                        itens_com_detalhe) // 2]
 
             if item_exemplo_metodologia:
                 det = item_exemplo_metodologia["detalhe_calculo"]
@@ -7628,21 +8180,28 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     return [
                         Paragraph(descricao, metodologia_exemplo_desc),
                         Paragraph(conta, metodologia_exemplo_conta),
-                        Paragraph(f"<b>{resultado}</b>", metodologia_exemplo_valor),
+                        Paragraph(f"<b>{resultado}</b>",
+                                  metodologia_exemplo_valor),
                     ]
 
                 parcela_status = det["media_status"] * pesos_txt["status"]
                 parcela_fase = det["media_fase"] * pesos_txt["fase"]
-                parcela_clausula = det["media_clausula"] * pesos_txt["clausula"]
+                parcela_clausula = det["media_clausula"] * \
+                    pesos_txt["clausula"]
                 parcela_tempo = det["media_tempo"] * pesos_txt["tempo"]
-                parcela_quantidade = det["score_quantidade"] * pesos_txt["quantidade"]
-                parcela_proporcao = det["score_proporcao"] * pesos_txt["proporcao_contratado"]
+                parcela_quantidade = det["score_quantidade"] * \
+                    pesos_txt["quantidade"]
+                parcela_proporcao = det["score_proporcao"] * \
+                    pesos_txt["proporcao_contratado"]
 
                 linhas_exemplo = [
                     [
-                        Paragraph("<b>3 · Os seis critérios viram o índice</b>", metodologia_tabela_header),
-                        Paragraph("<b>Conta</b>", metodologia_tabela_header_centro),
-                        Paragraph("<b>Resultado</b>", metodologia_tabela_header_centro),
+                        Paragraph(
+                            "<b>3 · Os seis critérios viram o índice</b>", metodologia_tabela_header),
+                        Paragraph("<b>Conta</b>",
+                                  metodologia_tabela_header_centro),
+                        Paragraph("<b>Resultado</b>",
+                                  metodologia_tabela_header_centro),
                     ],
                     _linha_exemplo(
                         "Status (30%) — média ponderada das ações",
@@ -7680,8 +8239,10 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                         _num_metodologia(parcela_proporcao),
                     ),
                     [
-                        Paragraph("<b>Índice final</b>", metodologia_exemplo_desc),
-                        Paragraph("soma das parcelas", metodologia_exemplo_conta),
+                        Paragraph("<b>Índice final</b>",
+                                  metodologia_exemplo_desc),
+                        Paragraph("soma das parcelas",
+                                  metodologia_exemplo_conta),
                         Paragraph(
                             f"<b>{_num_metodologia(item_exemplo_metodologia['indice'])} "
                             f"({item_exemplo_metodologia['categoria']})</b>",
@@ -7701,7 +8262,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     TableStyle(
                         [
                             ("BACKGROUND", (0, 0), (-1, 0), COR_MARCA_TEAL_CLARA),
-                            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F2F2F2")),
+                            ("BACKGROUND", (0, -1), (-1, -1),
+                             colors.HexColor("#F2F2F2")),
                             ("BOX", (0, 0), (-1, -1), 0.5, colors.grey),
                             ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
                             ("LINEABOVE", (0, -1), (-1, -1), 0.9, colors.grey),
@@ -7723,21 +8285,31 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 peso_total_exemplo = det.get("peso_efetivo_total") or 0.0
                 linhas_composicao = [
                     [
-                        Paragraph("<b>2 · As notas viram a nota da unidade</b>", metodologia_apoio_header),
-                        Paragraph("<b>Nota</b>", metodologia_apoio_header_centro),
-                        Paragraph("<b>Ações</b>", metodologia_apoio_header_centro),
-                        Paragraph("<b>Peso</b>", metodologia_apoio_header_centro),
-                        Paragraph("<b>Contribui</b>", metodologia_apoio_header_centro),
+                        Paragraph(
+                            "<b>2 · As notas viram a nota da unidade</b>", metodologia_apoio_header),
+                        Paragraph("<b>Nota</b>",
+                                  metodologia_apoio_header_centro),
+                        Paragraph("<b>Ações</b>",
+                                  metodologia_apoio_header_centro),
+                        Paragraph("<b>Peso</b>",
+                                  metodologia_apoio_header_centro),
+                        Paragraph("<b>Contribui</b>",
+                                  metodologia_apoio_header_centro),
                     ]
                 ]
                 for parcela in sorted(composicao, key=lambda c: c["peso"], reverse=True):
-                    fatia_peso = parcela["peso"] / peso_total_exemplo if peso_total_exemplo > 0 else 0.0
+                    fatia_peso = parcela["peso"] / \
+                        peso_total_exemplo if peso_total_exemplo > 0 else 0.0
                     linhas_composicao.append(
                         [
-                            Paragraph(parcela["status"].title(), metodologia_apoio_desc),
-                            Paragraph(_num_metodologia(parcela["nota"]), metodologia_apoio_conta),
-                            Paragraph(str(parcela["qtd"]), metodologia_apoio_conta),
-                            Paragraph(f"{_num_metodologia(fatia_peso * 100)}%", metodologia_apoio_conta),
+                            Paragraph(parcela["status"].title(),
+                                      metodologia_apoio_desc),
+                            Paragraph(_num_metodologia(
+                                parcela["nota"]), metodologia_apoio_conta),
+                            Paragraph(str(parcela["qtd"]),
+                                      metodologia_apoio_conta),
+                            Paragraph(
+                                f"{_num_metodologia(fatia_peso * 100)}%", metodologia_apoio_conta),
                             Paragraph(
                                 f"<b>{_num_metodologia(parcela['nota'] * fatia_peso)}</b>",
                                 metodologia_apoio_valor,
@@ -7746,7 +8318,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     )
                 linhas_composicao.append(
                     [
-                        Paragraph("<b>Nota de Status da unidade</b>", metodologia_apoio_desc),
+                        Paragraph("<b>Nota de Status da unidade</b>",
+                                  metodologia_apoio_desc),
                         Paragraph("", metodologia_apoio_conta),
                         Paragraph("", metodologia_apoio_conta),
                         Paragraph("<b>100%</b>", metodologia_apoio_conta),
@@ -7769,7 +8342,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     TableStyle(
                         [
                             ("BACKGROUND", (0, 0), (-1, 0), COR_MARCA_TEAL_CLARA),
-                            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F2F2F2")),
+                            ("BACKGROUND", (0, -1), (-1, -1),
+                             colors.HexColor("#F2F2F2")),
                             ("BOX", (0, 0), (-1, -1), 0.5, colors.grey),
                             ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
                             ("LINEABOVE", (0, -1), (-1, -1), 0.9, colors.grey),
@@ -7793,22 +8367,29 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 # caberia e a regra fica igualmente clara com o primeiro, alguns
                 # do meio e os três últimos.
                 total_em_andamento = len(_STATUS_EM_ANDAMENTO_DESEMPENHO)
-                posicoes_escala = [0, total_em_andamento // 2, total_em_andamento - 1]
+                posicoes_escala = [0, total_em_andamento //
+                                   2, total_em_andamento - 1]
                 linhas_escala = [
                     [
-                        Paragraph("<b>1 · Cada status vale uma nota</b>", metodologia_apoio_header),
-                        Paragraph("<b>Posição</b>", metodologia_apoio_header_centro),
-                        Paragraph("<b>Nota</b>", metodologia_apoio_header_centro),
+                        Paragraph("<b>1 · Cada status vale uma nota</b>",
+                                  metodologia_apoio_header),
+                        Paragraph("<b>Posição</b>",
+                                  metodologia_apoio_header_centro),
+                        Paragraph("<b>Nota</b>",
+                                  metodologia_apoio_header_centro),
                     ]
                 ]
                 for posicao in sorted(set(posicoes_escala)):
                     nome_status = _STATUS_EM_ANDAMENTO_DESEMPENHO[posicao]
                     linhas_escala.append(
                         [
-                            Paragraph(str(nome_status).title(), metodologia_apoio_desc),
-                            Paragraph(f"{posicao + 1}ª de {total_em_andamento}", metodologia_apoio_conta),
+                            Paragraph(str(nome_status).title(),
+                                      metodologia_apoio_desc),
                             Paragraph(
-                                _num_metodologia(_MAPA_SCORE_STATUS_DESEMPENHO[nome_status]),
+                                f"{posicao + 1}ª de {total_em_andamento}", metodologia_apoio_conta),
+                            Paragraph(
+                                _num_metodologia(
+                                    _MAPA_SCORE_STATUS_DESEMPENHO[nome_status]),
                                 metodologia_apoio_valor,
                             ),
                         ]
@@ -7816,7 +8397,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 for nome_status in ("CONCLUÍDA", "INAUGURADA"):
                     linhas_escala.append(
                         [
-                            Paragraph(f"<b>{nome_status.title()}</b>", metodologia_apoio_desc),
+                            Paragraph(
+                                f"<b>{nome_status.title()}</b>", metodologia_apoio_desc),
                             Paragraph("entregue", metodologia_apoio_conta),
                             Paragraph(
                                 f"<b>{_num_metodologia(_MAPA_SCORE_STATUS_DESEMPENHO[nome_status])}</b>",
@@ -7836,7 +8418,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     TableStyle(
                         [
                             ("BACKGROUND", (0, 0), (-1, 0), COR_MARCA_TEAL_CLARA),
-                            ("BACKGROUND", (0, -2), (-1, -1), colors.HexColor("#F2F2F2")),
+                            ("BACKGROUND", (0, -2), (-1, -1),
+                             colors.HexColor("#F2F2F2")),
                             ("BOX", (0, 0), (-1, -1), 0.5, colors.grey),
                             ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
                             ("LINEABOVE", (0, -2), (-1, -2), 0.9, colors.grey),
@@ -7863,7 +8446,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                         [Spacer(1, 8), Spacer(1, 8)],
                         [tabela_exemplo_calculo, tabela_exemplos_metodologia],
                     ],
-                    colWidths=[LARGURA_EXEMPLO_CALCULO_METODOLOGIA, LARGURA_EXEMPLOS_METODOLOGIA],
+                    colWidths=[LARGURA_EXEMPLO_CALCULO_METODOLOGIA,
+                               LARGURA_EXEMPLOS_METODOLOGIA],
                 )
                 faixa_pesos_e_exemplos_metodologia.setStyle(
                     TableStyle(
@@ -7946,7 +8530,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 ),
             ]
 
-            tabela_conteudo_metodologia = Table([[conteudo_metodologia]], colWidths=[LARGURA_METODOLOGIA])
+            tabela_conteudo_metodologia = Table(
+                [[conteudo_metodologia]], colWidths=[LARGURA_METODOLOGIA])
             tabela_conteudo_metodologia.setStyle(
                 TableStyle(
                     [
@@ -7959,7 +8544,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 )
             )
             bloco_metodologia = Table(
-                [[Paragraph("METODOLOGIA — ÍNDICE DE DESEMPENHO", metodologia_titulo)], [Spacer(1, 20)], [tabela_conteudo_metodologia]],
+                [[Paragraph("METODOLOGIA — ÍNDICE DE DESEMPENHO", metodologia_titulo)], [
+                    Spacer(1, 20)], [tabela_conteudo_metodologia]],
                 colWidths=[LARGURA_METODOLOGIA],
             )
             bloco_metodologia.setStyle(
@@ -7972,7 +8558,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     ]
                 )
             )
-            wrapper_metodologia = Table([[bloco_metodologia]], colWidths=[LARGURA_UTIL])
+            wrapper_metodologia = Table(
+                [[bloco_metodologia]], colWidths=[LARGURA_UTIL])
             wrapper_metodologia.setStyle(
                 TableStyle(
                     [
@@ -8056,20 +8643,24 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             # DESMARCADA na janela de seleção (ver _secoes_disponiveis_
             # relatorio). A decisão passa a ser de quem gera o relatório —
             # se marcar, a página sai normalmente.
-            grafico_detalhamento_financeiro = gerar_grafico_detalhamento_secretaria(df)
+            grafico_detalhamento_financeiro = gerar_grafico_detalhamento_secretaria(
+                df)
             if grafico_detalhamento_financeiro is not None:
                 titulo_detalhamento_financeiro = (
                     f"PAC - DETALHAMENTO FINANCEIRO POR SECRETARIA - {sufixo_titulo_painel}"
                 )
-                elements.append(Paragraph(titulo_detalhamento_financeiro, titulo_style))
+                elements.append(
+                    Paragraph(titulo_detalhamento_financeiro, titulo_style))
                 # Mesmo princípio de sinalização do RESUMO FINANCEIRO do Painel
                 # Geral: Valor Apoiado OGU, Recurso Estadual e Financiamento
                 # (marcados na legenda abaixo) são estimativa orçamentária, ainda
                 # não contratada. Nesta página usa-se um único "*" em vez de "**".
-                elements.append(Paragraph("* Previsão Orçamentária", cabecalho_grafico_painel_style_direita))
+                elements.append(Paragraph("* Previsão Orçamentária",
+                                cabecalho_grafico_painel_style_direita))
                 elements.append(Spacer(1, 10))
                 elements.append(
-                    gerar_cards_resumo_detalhamento_financeiro(len(df), _investimento_ajustado(df), df)
+                    gerar_cards_resumo_detalhamento_financeiro(
+                        len(df), _investimento_ajustado(df), df)
                 )
                 elements.append(Spacer(1, 14))
                 elements.append(
@@ -8081,7 +8672,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     )
                 )
                 elements.append(Spacer(1, 10))
-                elements.append(desenhar_legenda_detalhamento_secretaria(detalhado=tem_detalhamento_contratado(df)))
+                elements.append(desenhar_legenda_detalhamento_secretaria(
+                    detalhado=tem_detalhamento_contratado(df)))
                 elements.append(Spacer(1, 10))
                 elements.append(grafico_detalhamento_financeiro)
                 elements.append(PageBreak())
@@ -8099,15 +8691,18 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             # direita (ver gerar_linha_titulo_gestao_com_cards_totais).
             ordem_gestao_of = ["GESTÃO ESTADUAL", "GESTÃO FEDERAL"]
             gestoes_of = sorted(
-                {str(g).strip() for g in df["GESTAO"].dropna().unique() if str(g).strip()},
-                key=lambda g: ordem_gestao_of.index(g) if g in ordem_gestao_of else 99,
+                {str(g).strip()
+                 for g in df["GESTAO"].dropna().unique() if str(g).strip()},
+                key=lambda g: ordem_gestao_of.index(
+                    g) if g in ordem_gestao_of else 99,
             )
             blocos_objeto_financeiro = []
             for gestao_of in gestoes_of:
                 df_gestao_of = df[df["GESTAO"] == gestao_of]
                 if df_gestao_of.empty:
                     continue
-                tabela_of, nota_divergencia_of, totais_of = gerar_tabela_objeto_financeiro(df_gestao_of)
+                tabela_of, nota_divergencia_of, totais_of = gerar_tabela_objeto_financeiro(
+                    df_gestao_of)
                 # Sem o valor de investimento no texto: ele já aparece,
                 # abreviado, no card "INVESTIMENTO" logo ao lado — repetir
                 # aqui seria redundante.
@@ -8118,7 +8713,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 bloco = [linha_titulo_cards_of, Spacer(1, 10), tabela_of]
                 if nota_origem_of:
                     bloco.append(Spacer(1, 4))
-                    bloco.append(Paragraph(nota_origem_of, cabecalho_grafico_painel_style_direita))
+                    bloco.append(Paragraph(nota_origem_of,
+                                 cabecalho_grafico_painel_style_direita))
                 if nota_divergencia_of:
                     bloco.append(Spacer(1, 6))
                     bloco.append(
@@ -8133,7 +8729,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 titulo_objeto_financeiro = (
                     f"PAC - DETALHAMENTO FINANCEIRO POR OBJETO - {sufixo_titulo_painel}"
                 )
-                elements.append(Paragraph(titulo_objeto_financeiro, titulo_style))
+                elements.append(
+                    Paragraph(titulo_objeto_financeiro, titulo_style))
                 elements.append(Spacer(1, 10))
                 for i_bloco, bloco in enumerate(blocos_objeto_financeiro):
                     elements.extend(bloco)
@@ -8155,7 +8752,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     qtd_municipios_com_dado,
                     qtd_municipios_total,
                 ) = gerar_mapa_coropletico_municipios(df, geojson_municipios)
-                desenho_legenda_mapa = gerar_legenda_mapa_municipios(bordas_classes_mapa)
+                desenho_legenda_mapa = gerar_legenda_mapa_municipios(
+                    bordas_classes_mapa)
 
                 tabela_mapa = Table(
                     [[desenho_mapa, desenho_legenda_mapa]],
@@ -8176,7 +8774,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                         [
                             Paragraph(titulo_mapa, titulo_style),
                             Spacer(1, 18),
-                            gerar_cards_resumo(len(df), _investimento_ajustado(df)),
+                            gerar_cards_resumo(
+                                len(df), _investimento_ajustado(df)),
                             Spacer(1, 14),
                             Paragraph(
                                 "A cor de cada município varia conforme o investimento total "
@@ -8212,7 +8811,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                                 titulo_style,
                             ),
                             Spacer(1, 13),
-                            gerar_cards_resumo(len(df), _investimento_ajustado(df)),
+                            gerar_cards_resumo(
+                                len(df), _investimento_ajustado(df)),
                             Spacer(1, 22),
                             gerar_faixa_resumo_eixo_status(df, "GERAL"),
                         ]
@@ -8224,7 +8824,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
         ordem_gestao = ["GESTÃO ESTADUAL", "GESTÃO FEDERAL"]
         gestoes = sorted(
             list(df_agrupado.groupby("GESTAO")),
-            key=lambda x: ordem_gestao.index(x[0]) if x[0] in ordem_gestao else 99,
+            key=lambda x: ordem_gestao.index(
+                x[0]) if x[0] in ordem_gestao else 99,
         )
 
         for i, (gestao, df_gestao) in enumerate(gestoes):
@@ -8262,8 +8863,10 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
 
             if secao_ativa("POR_FASE"):
                 # Página Setorial por Fase
-                paragrafo_titulo_fase = Paragraph(titulo_por_fase, titulo_style)
-                _, altura_titulo_fase = paragrafo_titulo_fase.wrap(LARGURA_UTIL, 10000)
+                paragrafo_titulo_fase = Paragraph(
+                    titulo_por_fase, titulo_style)
+                _, altura_titulo_fase = paragrafo_titulo_fase.wrap(
+                    LARGURA_UTIL, 10000)
                 # Espaço já reservado nesta página antes da tabela: título +
                 # Spacer(9) + cards (cabeçalho+valor) + Spacer(13). O que sobra
                 # de ALTURA_UTIL é o teto que a tabela Secretaria/Fase tem para
@@ -8302,12 +8905,14 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
 
                 # --- ETAPA E: DETALHAMENTO ANALÍTICO POR SECRETARIA ---
                 df_gestao = df_gestao.assign(
-                    _SEC_SORT=df_gestao["SECRETARIA_LIMPA"].apply(remover_acentos)
+                    _SEC_SORT=df_gestao["SECRETARIA_LIMPA"].apply(
+                        remover_acentos)
                 )
                 for _, df_eixo in df_gestao.groupby("_SEC_SORT", sort=True):
                     secretaria = str(df_eixo["SECRETARIA_LIMPA"].iloc[0])
                     df_eixo_contexto = df_contexto[df_contexto["SECRETARIA_LIMPA"] == secretaria]
-                    total_invest_eixo = _investimento_ajustado(df_eixo_contexto)
+                    total_invest_eixo = _investimento_ajustado(
+                        df_eixo_contexto)
 
                     # As colunas exibidas vêm da customização do painel, já
                     # normalizadas (dependências resolvidas, ordem do catálogo,
@@ -8316,8 +8921,10 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     # recuo da coluna INVESTIMENTO, onde a miniatura do
                     # Detalhamento Financeiro precisa cair.
                     colunas_tab = colunas_detalhamento
-                    indice_coluna = {chave: pos for pos, chave in enumerate(colunas_tab)}
-                    LARGURAS_DETALHE = calcular_larguras(LARGURA_UTIL, colunas_tab)
+                    indice_coluna = {chave: pos for pos,
+                                     chave in enumerate(colunas_tab)}
+                    LARGURAS_DETALHE = calcular_larguras(
+                        LARGURA_UTIL, colunas_tab)
                     largura_de = dict(zip(colunas_tab, LARGURAS_DETALHE))
 
                     # Miniatura só quando INVESTIMENTO está entre as colunas
@@ -8338,7 +8945,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                         # notar de relance, o suficiente para o alinhamento não
                         # fechar quando se olha de perto.
                         largura_frame = LARGURA_UTIL - 2 * PADDING_FRAME_DOCUMENTO
-                        deslocamento_tabela = (largura_frame - sum(LARGURAS_DETALHE)) / 2
+                        deslocamento_tabela = (
+                            largura_frame - sum(LARGURAS_DETALHE)) / 2
                         recuo_miniatura = deslocamento_tabela + sum(
                             LARGURAS_DETALHE[: indice_coluna["INVESTIMENTO"]]
                         )
@@ -8349,7 +8957,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     elements.append(
                         _cabecalho_secretaria_detalhamento(
                             f"{secretaria} - ({len(df_eixo_contexto)}) - {moeda_sem_quebra(total_invest_eixo)}",
-                            indices_por_secretaria.get((gestao_str, secretaria)),
+                            indices_por_secretaria.get(
+                                (gestao_str, secretaria)),
                             miniatura=miniatura_financeira,
                             recuo_miniatura=recuo_miniatura,
                         )
@@ -8368,7 +8977,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                         ]
                     ]
 
-                    df_eixo = df_eixo.assign(_OBJETO_SORT=df_eixo[col_objeto].apply(remover_acentos))
+                    df_eixo = df_eixo.assign(
+                        _OBJETO_SORT=df_eixo[col_objeto].apply(remover_acentos))
                     # Hierarquia de mesclas: 1º OBJETO, 2º FASE, 3º STATUS — a
                     # ordenação segue a mesma hierarquia (FASE_ORDEM entra como
                     # critério intermediário), para que as linhas de cada nível
@@ -8397,7 +9007,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                         # só "OGU"), não tem parênteses nenhum.
                         if "FINANCIAMENTO" not in fonte_recurso.upper():
                             return fonte_recurso
-                        origem = fonte_financ if (fonte_financ and fonte_financ.upper() != "NAN") else "A DEFINIR"
+                        origem = fonte_financ if (
+                            fonte_financ and fonte_financ.upper() != "NAN") else "A DEFINIR"
                         return f"{fonte_recurso} ({origem})"
 
                     def _texto_opcional(row, coluna):
@@ -8463,9 +9074,11 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                             + row[col_complementar_ajustado]
                         )
 
-                        fonte_financ = _texto_opcional(row, col_fonte_financiamento)
+                        fonte_financ = _texto_opcional(
+                            row, col_fonte_financiamento)
 
-                        prazo_fase_texto = _texto_opcional(row, "PRAZO_FASE_TEXTO")
+                        prazo_fase_texto = _texto_opcional(
+                            row, "PRAZO_FASE_TEXTO")
                         # Prazo vencido sai em vermelho. A cor é aplicada AQUI,
                         # antes das mesclas: assim duas linhas vizinhas com a
                         # mesma data só se juntam numa célula se estiverem no
@@ -8491,7 +9104,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                             "VALOR_CONTRATADO": moeda_sem_quebra(float(row[col_valor_contratado])),
                             "OGU": moeda_sem_quebra(float(row[col_apoiado_ajustado])),
                             "RECURSO_ESTADUAL": moeda_sem_quebra(
-                                float(row[col_contrapartida_ajustado]) + float(row[col_complementar_ajustado])
+                                float(row[col_contrapartida_ajustado]) +
+                                float(row[col_complementar_ajustado])
                             ),
                             "FINANCIAMENTO": moeda_sem_quebra(float(row[col_financiamento_ajustado])),
                             "FONTE": _combinar_fonte_recurso(_texto_opcional(row, col_fonte), fonte_financ),
@@ -8525,7 +9139,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     alturas_linhas = [
                         estimar_altura_linha(
                             [
-                                (reg["textos"][chave], ESTILO_COLUNA[chave], largura_de[chave])
+                                (reg["textos"][chave],
+                                 ESTILO_COLUNA[chave], largura_de[chave])
                                 for chave in colunas_tab
                             ]
                         )
@@ -8534,12 +9149,15 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
 
                     # --- PASSO 2: blocos de mescla ---
                     seq_obj = [reg["obj"] for reg in registros]
-                    seq_obj_fase = [(reg["obj"], reg["fas"]) for reg in registros]
-                    seq_sta = [(reg["obj"], reg["fas"], reg["sta"]) for reg in registros]
+                    seq_obj_fase = [(reg["obj"], reg["fas"])
+                                    for reg in registros]
+                    seq_sta = [(reg["obj"], reg["fas"], reg["sta"])
+                               for reg in registros]
 
                     # Nível 3 (mais interno): STATUS — bloco atômico, respeita o limite
                     # de altura da página.
-                    id_sta = gerar_ids_subgrupo_altura(seq_sta, alturas_linhas, ALTURA_MAX_BLOCO)
+                    id_sta = gerar_ids_subgrupo_altura(
+                        seq_sta, alturas_linhas, ALTURA_MAX_BLOCO)
                     # Nível 2: FASE — mescla ao longo de vários blocos de STATUS que
                     # compartilham o mesmo OBJETO + FASE, respeitando a altura da página.
                     id_fase_nivel = gerar_id_nivel_alinhado_altura(
@@ -8572,14 +9190,16 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                         if not COLUNAS_DETALHAMENTO_POR_CHAVE[chave].get("mescla_repetido"):
                             continue
                         ids_repeticao[chave] = gerar_ids_subgrupo_aninhado(
-                            [reg["textos"][chave] for reg in registros], id_bloco_ancora
+                            [reg["textos"][chave]
+                                for reg in registros], id_bloco_ancora
                         )
 
                     # --- PASSO 3: montagem das linhas + SPANs ---
                     spans = []
                     linhas_por_bloco = {chave: {} for chave in colunas_tab}
                     id_obj_ant, id_fase_nivel_ant, id_sta_ant = None, None, None
-                    ids_repeticao_ant = {chave: None for chave in ids_repeticao}
+                    ids_repeticao_ant = {
+                        chave: None for chave in ids_repeticao}
                     obj_real_ant, fase_real_ant, sta_real_ant = None, None, None
                     l_idx = 1
 
@@ -8587,9 +9207,12 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                         obj, fas, sta = reg["obj"], reg["fas"], reg["sta"]
                         textos = dict(reg["textos"])
 
-                        qtd_obj = df_counts_objeto.get((gestao_str, reg["eixo"], obj), 1)
-                        qtd_fase = df_counts_fase.get((gestao_str, reg["eixo"], obj, fas), 1)
-                        qtd_sta = df_counts_status.get((gestao_str, reg["eixo"], obj, fas, sta), 1)
+                        qtd_obj = df_counts_objeto.get(
+                            (gestao_str, reg["eixo"], obj), 1)
+                        qtd_fase = df_counts_fase.get(
+                            (gestao_str, reg["eixo"], obj, fas), 1)
+                        qtd_sta = df_counts_status.get(
+                            (gestao_str, reg["eixo"], obj, fas, sta), 1)
 
                         novo_bloco_obj = id_obj[pos] != id_obj_ant
                         novo_bloco_fase = id_fase_nivel[pos] != id_fase_nivel_ant
@@ -8648,27 +9271,33 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                         # que saem os SPANs, sempre com o índice REAL da coluna na
                         # seleção atual (e não mais uma posição fixa).
                         if "OBJETO" in linhas_por_bloco:
-                            linhas_por_bloco["OBJETO"].setdefault(id_obj[pos], []).append(l_idx)
+                            linhas_por_bloco["OBJETO"].setdefault(
+                                id_obj[pos], []).append(l_idx)
                         if "FASE" in linhas_por_bloco:
-                            linhas_por_bloco["FASE"].setdefault(id_fase_nivel[pos], []).append(l_idx)
+                            linhas_por_bloco["FASE"].setdefault(
+                                id_fase_nivel[pos], []).append(l_idx)
                         if "STATUS" in linhas_por_bloco:
-                            linhas_por_bloco["STATUS"].setdefault(id_sta[pos], []).append(l_idx)
+                            linhas_por_bloco["STATUS"].setdefault(
+                                id_sta[pos], []).append(l_idx)
                         for chave, ids in ids_repeticao.items():
-                            linhas_por_bloco[chave].setdefault(ids[pos], []).append(l_idx)
+                            linhas_por_bloco[chave].setdefault(
+                                ids[pos], []).append(l_idx)
 
                         id_obj_ant, id_fase_nivel_ant, id_sta_ant = (
                             id_obj[pos], id_fase_nivel[pos], id_sta[pos]
                         )
                         for chave, ids in ids_repeticao.items():
                             ids_repeticao_ant[chave] = ids[pos]
-                        obj_real_ant, fase_real_ant, sta_real_ant = obj, (obj, fas), (obj, fas, sta)
+                        obj_real_ant, fase_real_ant, sta_real_ant = obj, (
+                            obj, fas), (obj, fas, sta)
                         l_idx += 1
 
                     for chave, blocos in linhas_por_bloco.items():
                         coluna = indice_coluna[chave]
                         for linhas in blocos.values():
                             if len(linhas) > 1:
-                                spans.append(("SPAN", (coluna, linhas[0]), (coluna, linhas[-1])))
+                                spans.append(
+                                    ("SPAN", (coluna, linhas[0]), (coluna, linhas[-1])))
 
                     estilo_tab = [
                         ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
@@ -8678,9 +9307,11 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     for _chave_valor in ("INVESTIMENTO", "VALOR_CONTRATADO", "OGU", "RECURSO_ESTADUAL", "FINANCIAMENTO"):
                         if _chave_valor in indice_coluna:
                             coluna_valor = indice_coluna[_chave_valor]
-                            estilo_tab.append(("ALIGN", (coluna_valor, 1), (coluna_valor, -1), "RIGHT"))
+                            estilo_tab.append(
+                                ("ALIGN", (coluna_valor, 1), (coluna_valor, -1), "RIGHT"))
 
-                    t_obj = Table(data_tab, colWidths=LARGURAS_DETALHE, repeatRows=1)
+                    t_obj = Table(
+                        data_tab, colWidths=LARGURAS_DETALHE, repeatRows=1)
                     t_obj.setStyle(TableStyle(estilo_tab + spans))
 
                     elements.append(t_obj)
@@ -8705,7 +9336,8 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
         # comum e precisa do cabeçalho normal, senão sairia sem os logos e
         # sem a linha teal/gold.
         fundo_primeira_pagina = (
-            desenhar_background_capa if secao_ativa("CAPA") else desenhar_cabecalho
+            desenhar_background_capa if secao_ativa(
+                "CAPA") else desenhar_cabecalho
         )
         doc.build(
             elements,
@@ -8854,7 +9486,8 @@ def _relancar_processo():
             # "python CGAPE - BALANÇO PAC.py [...]" — caminho absoluto do
             # script, porque o cwd abaixo pode não ser a pasta de onde o
             # app foi iniciado (sys.argv[0] pode ser relativo).
-            args = [sys.executable, os.path.abspath(sys.argv[0])] + sys.argv[1:]
+            args = [sys.executable, os.path.abspath(
+                sys.argv[0])] + sys.argv[1:]
         subprocess.Popen(args, cwd=PASTA_BASE, close_fds=True, env=env)
     except Exception:
         import traceback
@@ -8867,7 +9500,8 @@ def montar_html_painel(df_base):
     # (abrir_interface_filtros, logo abaixo, que pega esse HTML e abre numa
     # janela pywebview) quanto pelo servidor web (servidor_web.py, que serve
     # esse mesmo HTML direto num navegador comum, em vez de janela nativa).
-    opcoes_gestao = sorted(df_base["GESTAO"].dropna().astype(str).unique().tolist())
+    opcoes_gestao = sorted(
+        df_base["GESTAO"].dropna().astype(str).unique().tolist())
 
     # EIXO: ordem alfabética insensível a acento (mesma correção usada no
     # detalhamento do relatório, evitando que "Água Para Todos" vá parar no
@@ -8971,16 +9605,23 @@ def montar_html_painel(df_base):
             return None
         return pd.Timestamp(valor).strftime("%Y-%m-%d")
 
-    serie_datas_fase = pd.to_datetime(df_base[col_prazo], errors="coerce") if col_prazo in df_base.columns else None
-    serie_datas_vigencia = pd.to_datetime(df_base[col_vigencia], errors="coerce") if col_vigencia in df_base.columns else None
-    serie_datas_atual = pd.to_datetime(df_base[col_prazo_atual], errors="coerce") if col_prazo_atual in df_base.columns else None
+    serie_datas_fase = pd.to_datetime(
+        df_base[col_prazo], errors="coerce") if col_prazo in df_base.columns else None
+    serie_datas_vigencia = pd.to_datetime(
+        df_base[col_vigencia], errors="coerce") if col_vigencia in df_base.columns else None
+    serie_datas_atual = pd.to_datetime(
+        df_base[col_prazo_atual], errors="coerce") if col_prazo_atual in df_base.columns else None
 
     linhas_filtro = []
     for idx, row in df_base.iterrows():
-        linha = {chave: str(row[coluna]) for chave, coluna in COLUNA_FILTRO.items()}
-        linha["DATAS_CONCLUSAO_FASE"] = _data_para_iso(serie_datas_fase.loc[idx]) if serie_datas_fase is not None else None
-        linha["DATAS_VIGENCIA"] = _data_para_iso(serie_datas_vigencia.loc[idx]) if serie_datas_vigencia is not None else None
-        linha["DATAS_CONCLUSAO_ATUAL"] = _data_para_iso(serie_datas_atual.loc[idx]) if serie_datas_atual is not None else None
+        linha = {chave: str(row[coluna])
+                 for chave, coluna in COLUNA_FILTRO.items()}
+        linha["DATAS_CONCLUSAO_FASE"] = _data_para_iso(
+            serie_datas_fase.loc[idx]) if serie_datas_fase is not None else None
+        linha["DATAS_VIGENCIA"] = _data_para_iso(
+            serie_datas_vigencia.loc[idx]) if serie_datas_vigencia is not None else None
+        linha["DATAS_CONCLUSAO_ATUAL"] = _data_para_iso(
+            serie_datas_atual.loc[idx]) if serie_datas_atual is not None else None
         linhas_filtro.append(linha)
 
     dados_painel = {
@@ -9970,6 +10611,22 @@ def montar_html_painel(df_base):
   }
   .pagina-card-ordem-btn:hover:not(:disabled) { border-color: var(--cor-acento-teal); }
   .pagina-card-ordem-btn:disabled { opacity: 0.3; cursor: default; }
+  /* Arrastar pra reordenar (pedido do usuário em 09/11/2026): o cartão
+     arrastado fica esmaecido e uma barra no lado esquerdo/direito do cartão
+     de destino mostra onde ele vai entrar. As setas continuam valendo. */
+  .pagina-card[draggable="true"] { cursor: grab; }
+  .pagina-card.arrastando { opacity: 0.35; }
+  .pagina-card.alvo-antes::before, .pagina-card.alvo-depois::after {
+    content: "";
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    width: 4px;
+    border-radius: 2px;
+    background: var(--cor-acento-teal);
+  }
+  .pagina-card.alvo-antes::before { left: -9px; }
+  .pagina-card.alvo-depois::after { right: -9px; }
   .pagina-card:hover { border-color: var(--cor-acento-teal); }
   .pagina-card.marcada {
     border-color: var(--cor-acento-teal);
@@ -10853,6 +11510,56 @@ def montar_html_painel(df_base):
     width: auto;
   }
 
+  /* Cláusulas Suspensivas por Eixo — pedido do usuário em 10/11/2026 */
+  .cl-dash-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .cl-dash-kpi { background: var(--cor-card); border-radius: var(--raio-md); box-shadow: var(--sombra-card);
+    border-top: 4px solid; padding: 12px 16px; }
+  .cl-dash-kpi-valor { font-size: 26px; font-weight: 700; }
+  .cl-dash-kpi-rotulo { font-size: 11px; font-weight: 700; color: var(--cor-texto-secundario);
+    text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+  .cl-dash-kpi-sub { font-size: 12px; color: var(--cor-texto-terciario); margin-top: 2px; }
+  .cl-dash-legenda { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12px; color: var(--cor-texto-secundario);
+    margin: 14px 0 4px; }
+  .cl-dash-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  .cl-dash-eixo { margin-top: 20px; }
+  .cl-dash-eixo-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+    border-bottom: 1px solid var(--cor-card-elevado); padding-bottom: 6px; margin-bottom: 12px; }
+  .cl-dash-eixo-cab { cursor: pointer; user-select: none; }
+  .cl-dash-eixo-cab:hover .cl-dash-eixo-nome { color: var(--cor-acento-teal-texto); }
+  .cl-dash-eixo-titulo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .cl-dash-eixo-btn { width: 22px; height: 22px; border-radius: 50%; background: var(--cor-card-elevado);
+    color: var(--cor-texto-primario); display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; flex-shrink: 0; }
+  .cl-dash-eixo-prazo { font-size: 11px; font-weight: 700; }
+  .cl-dash-grade.cl-dash-recolhido { display: none; }
+  .cl-dash-vig { position: relative; overflow: hidden; display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; margin-top: 10px; border: 1px solid; border-left-width: 4px; border-radius: var(--raio-md); padding: 7px 10px; }
+  .cl-dash-vig-fundo { position: absolute; inset: 0; opacity: 0.10; pointer-events: none; }
+  .cl-dash-vig > :not(.cl-dash-vig-fundo) { position: relative; }
+  .cl-dash-vig-rotulo { font-size: 10px; font-weight: 700; color: var(--cor-texto-secundario); text-transform: uppercase; }
+  .cl-dash-vig-data { font-size: 20px; font-weight: 800; line-height: 1.15; }
+  .cl-dash-vig-selo { color: #fff; font-size: 11px; font-weight: 700; border-radius: 12px; padding: 4px 10px; white-space: nowrap; }
+  .cl-dash-eixo-nome { font-size: 14px; font-weight: 700; color: var(--cor-texto-primario); text-transform: uppercase; }
+  .cl-dash-eixo-resumo { font-size: 12px; font-weight: 700; color: var(--cor-acento-mint-texto); white-space: nowrap; }
+  .cl-dash-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .cl-dash-card { background: var(--cor-card); border-radius: var(--raio-md); box-shadow: var(--sombra-card);
+    border-left: 5px solid; padding: 12px 14px; cursor: pointer; transition: background var(--transicao-rapida); }
+  .cl-dash-card:hover { background: var(--cor-card-elevado); }
+  .cl-dash-topo { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .cl-dash-objeto { font-size: 14px; font-weight: 700; color: var(--cor-texto-primario); }
+  .cl-dash-municipio { font-size: 12px; color: var(--cor-texto-secundario); margin-top: 2px; }
+  .cl-dash-valor { font-size: 15px; font-weight: 700; color: var(--cor-acento-mint-texto); white-space: nowrap; }
+  .cl-dash-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .cl-dash-chip { font-size: 10px; font-weight: 700; color: var(--cor-texto-secundario); background: var(--cor-card-elevado);
+    border-radius: 10px; padding: 2px 8px; text-transform: uppercase; }
+  .cl-dash-vigencia { font-size: 12px; font-weight: 700; margin-top: 8px; }
+  .cl-dash-motivo-rotulo { font-size: 10px; font-weight: 700; color: var(--cor-texto-terciario); text-transform: uppercase;
+    margin-top: 8px; }
+  .cl-dash-motivo { font-size: 12px; color: var(--cor-texto-primario); line-height: 1.35; margin-top: 2px; white-space: pre-line;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .cl-dash-sem-motivo { color: var(--cor-texto-terciario); font-style: italic; margin-top: 8px; }
+  @media (max-width: 768px) { .cl-dash-kpis { grid-template-columns: repeat(2, 1fr); } }
+
   .preview-sem-dados {
     color: var(--cor-texto-terciario);
     font-size: 12px;
@@ -11390,7 +12097,7 @@ def montar_html_painel(df_base):
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
       <button class="btn" id="btn-preview">DASHBOARD</button>
       <button class="btn-acento" id="btn-gerar">GERAR RELATÓRIO</button>
-      <button class="btn" id="btn-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx) com os filtros selecionados; os slides são escolhidos em seguida">ANÁLISE FINANCEIRA (PPTX)</button>
+      <button class="btn" id="btn-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
       <button class="btn" id="btn-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
       <button type="button" class="tema-switch" id="tema-switch-filtros" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
         <span class="tema-switch-trilho">
@@ -11574,7 +12281,7 @@ def montar_html_painel(df_base):
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
         <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
-        <button class="btn" id="dash-gerar-pptx" title="Gera a apresentação de Análise Financeira do PAC (.pptx) com os filtros selecionados; os slides são escolhidos em seguida">ANÁLISE FINANCEIRA (PPTX)</button>
+        <button class="btn" id="dash-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
         <button class="btn" id="dash-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
         <button type="button" class="tema-switch" id="tema-switch-dash" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
           <span class="tema-switch-trilho">
@@ -11680,6 +12387,7 @@ def montar_html_painel(df_base):
            reabre a seção-alvo se ela estiver fechada no acordeão (ver
            configurarAccordionSecoes() no JS). -->
       <div class="preview-nav-rapida" id="preview-nav-rapida">
+        <button type="button" data-alvo="secao-clausulas">Cláusulas</button>
         <button type="button" data-alvo="secao-secretaria">Secretaria</button>
         <button type="button" data-alvo="secao-desempenho">Desempenho</button>
         <button type="button" data-alvo="secao-financeiro">Financeiro</button>
@@ -11712,6 +12420,14 @@ def montar_html_painel(df_base):
           <div id="preview-grafico-termo"></div>
         </div>
       </div>
+
+      <!-- Antes do Panorama por Secretaria — pedido do usuário em 10/11/2026 -->
+      <section class="preview-secao" id="secao-clausulas">
+        <h3 class="preview-secao-titulo">Cláusulas Suspensivas por Eixo<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <div class="preview-secao-corpo">
+          <div id="preview-clausulas"></div>
+        </div>
+      </section>
 
       <section class="preview-secao" id="secao-secretaria">
         <h3 class="preview-secao-titulo">Panorama por Secretaria | Executor<span class="secao-seta" aria-hidden="true">▾</span></h3>
@@ -13634,6 +14350,105 @@ def montar_html_painel(df_base):
     montarIndiceDesempenho(dados.desempenho);
     montarDetalhamentoSecretaria(dados.detalhamentoSecretaria);
     montarMapa(dados.mapa);
+    montarClausulas(dados.clausulas);
+  }
+
+  // Seção "Cláusulas Suspensivas por Eixo" — cards por ação, cor pelo prazo
+  // da vigência; clicar no card abre a Ficha Cadastral (pedido do usuário em
+  // 10/11/2026). Dados de _dados_clausulas_dash no Python.
+  function montarClausulas(cl) {
+    var container = document.getElementById("preview-clausulas");
+    if (!container) return;
+    if (!cl) { container.innerHTML = '<div class="preview-sem-dados">Sem dados no filtro atual</div>'; return; }
+    var esc = function (t) {
+      return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    };
+    var cores = { vencida: COR_VERMELHO, proxima: COR_AMARELO, no_prazo: COR_VERDE, sem_data: "var(--cor-texto-terciario)" };
+    var textoPrazo = function (a) {
+      if (a.dias === null || a.dias === undefined) return "sem data";
+      if (a.dias < 0) return "vencida há " + (-a.dias) + (a.dias === -1 ? " dia" : " dias");
+      if (a.dias === 0) return "vence hoje";
+      return "vence em " + a.dias + (a.dias === 1 ? " dia" : " dias");
+    };
+    // Vigência em destaque (pedido do usuário em 10/11/2026): faixa própria
+    // com a data grande e o prazo restante num selo colorido.
+    var blocoVigencia = function (a, cor) {
+      return '<div class="cl-dash-vig" style="border-color:' + cor + '">' +
+        '<div class="cl-dash-vig-fundo" style="background:' + cor + '"></div>' +
+        '<div><div class="cl-dash-vig-rotulo">Vigência da cláusula</div>' +
+        '<div class="cl-dash-vig-data" style="color:' + cor + '">' + esc(a.vigencia || "Não informada") + '</div></div>' +
+        '<span class="cl-dash-vig-selo" style="background:' + cor + '">' + esc(textoPrazo(a)) + '</span></div>';
+    };
+    var rotulosPrazo = [["vencida", "vencida"], ["proxima", "≤ " + cl.diasAlerta + " dias"],
+      ["no_prazo", "no prazo"], ["sem_data", "sem data"]];
+    var kpi = function (rotulo, valor, sub, cor) {
+      return '<div class="cl-dash-kpi" style="border-top-color:' + cor + '"><div class="cl-dash-kpi-valor" style="color:' + cor + '">' +
+        valor + '</div><div class="cl-dash-kpi-rotulo">' + rotulo + '</div><div class="cl-dash-kpi-sub">' + sub + '</div></div>';
+    };
+    var html = '<div class="cl-dash-kpis">' +
+      kpi("Cláusula não retirada", cl.qtd, formatarMiBi(cl.valor) + " em investimento", "var(--cor-acento-teal)") +
+      kpi("Vigência vencida", cl.vencidas, "prazo já expirado", COR_VERMELHO) +
+      kpi("Vence em até " + cl.diasAlerta + " dias", cl.proximas, "pedem prioridade", COR_AMARELO) +
+      kpi("Retirada total", cl.retiradaTotal, "ações já liberadas", COR_VERDE) + '</div>' +
+      '<div class="cl-dash-legenda">' + [["vencida", "Vigência vencida"], ["proxima", "Vence em até " + cl.diasAlerta + " dias"],
+        ["no_prazo", "No prazo"], ["sem_data", "Sem data"]].map(function (p) {
+        return '<span><i style="background:' + cores[p[0]] + '"></i>' + p[1] + '</span>';
+      }).join("") + '</div>';
+    if (!cl.eixos.length) {
+      html += '<div class="preview-sem-dados">Nenhuma ação com cláusula suspensiva pendente no filtro atual</div>';
+    }
+    // Cada eixo com o seu botão de detalhamento (pedido do usuário em
+    // 10/11/2026): cards recolhidos por padrão; o cabeçalho já mostra a
+    // contagem por prazo, pra urgência ficar visível mesmo recolhido.
+    cl.eixos.forEach(function (g) {
+      var prazosEixo = rotulosPrazo.map(function (p) {
+        var n = g.acoes.filter(function (a) { return a.prazo === p[0]; }).length;
+        return n ? '<span class="cl-dash-eixo-prazo" style="color:' + cores[p[0]] + '">● ' + n + ' ' + p[1] + '</span>' : '';
+      }).join("");
+      html += '<div class="cl-dash-eixo"><div class="cl-dash-eixo-cab" role="button" tabindex="0" title="Ver detalhamento do eixo">' +
+        '<span class="cl-dash-eixo-titulo"><span class="cl-dash-eixo-btn">+</span><span class="cl-dash-eixo-nome">' + esc(g.eixo) +
+        '</span>' + prazosEixo + '</span><span class="cl-dash-eixo-resumo">' + g.qtd + (g.qtd === 1 ? " ação" : " ações") + ' · ' +
+        formatarMiBi(g.valor) + '</span></div><div class="cl-dash-grade cl-dash-recolhido">';
+      g.acoes.forEach(function (a) {
+        var cor = cores[a.prazo];
+        var chips = [a.situacao, a.fase, a.status].filter(Boolean).map(function (t) {
+          return '<span class="cl-dash-chip">' + esc(t) + '</span>';
+        }).join("");
+        html += '<div class="cl-dash-card" style="border-left-color:' + cor + '" data-item="' + esc(a.item) + '"' +
+          (a.item ? ' title="Abrir Ficha Cadastral"' : '') + '>' +
+          '<div class="cl-dash-topo"><div><div class="cl-dash-objeto">' + esc(a.objeto) + '</div>' +
+          '<div class="cl-dash-municipio">' + esc(a.municipio || "Município não informado") +
+          (a.secretaria ? ' · ' + esc(a.secretaria) : '') + '</div></div>' +
+          '<div class="cl-dash-valor">' + formatarMiBi(a.valor) + '</div></div>' +
+          '<div class="cl-dash-chips">' + chips + '</div>' +
+          blocoVigencia(a, cor) +
+          (a.motivo
+            ? '<div class="cl-dash-motivo-rotulo">Motivo / pendência</div><div class="cl-dash-motivo" title="' + esc(a.motivo) + '">' + esc(a.motivo) + '</div>'
+            : '<div class="cl-dash-motivo cl-dash-sem-motivo">Motivo não informado na planilha</div>') +
+          '</div>';
+      });
+      html += '</div></div>';
+    });
+    container.innerHTML = html;
+    container.querySelectorAll(".cl-dash-eixo-cab").forEach(function (cab) {
+      var alternar = function () {
+        var grade = cab.nextElementSibling;
+        var abrir = grade.classList.contains("cl-dash-recolhido");
+        grade.classList.toggle("cl-dash-recolhido", !abrir);
+        cab.querySelector(".cl-dash-eixo-btn").textContent = abrir ? "–" : "+";
+        cab.title = abrir ? "Ocultar detalhamento do eixo" : "Ver detalhamento do eixo";
+      };
+      cab.addEventListener("click", alternar);
+      cab.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); alternar(); }
+      });
+    });
+    container.querySelectorAll(".cl-dash-card[data-item]").forEach(function (card) {
+      var item = card.getAttribute("data-item");
+      if (!item) return;
+      card.addEventListener("click", function () { abrirFichaDaBusca(item); });
+    });
   }
 
   // Monta a tabela de detalhamento financeiro por Fonte de Recurso — uma
@@ -14379,6 +15194,27 @@ def montar_html_painel(df_base):
         desenhar();
       }
 
+      // Arrastar e soltar (pedido do usuário em 09/11/2026): tira o cartão
+      // da posição "de" e o insere antes da posição "para" (0..n, contada
+      // na lista ANTES de tirar o cartão).
+      var indiceArrastado = null;
+      function moverPara(de, para) {
+        if (de === null || para === de || para === de + 1) return;
+        var item = lista.secoes.splice(de, 1)[0];
+        lista.secoes.splice(para > de ? para - 1 : para, 0, item);
+        desenhar();
+      }
+      function limparAlvos() {
+        grade.querySelectorAll(".alvo-antes, .alvo-depois").forEach(function (el) {
+          el.classList.remove("alvo-antes", "alvo-depois");
+        });
+      }
+      function soltarDepois(card, ev) {
+        // Grade em linhas: metade direita do cartão = entra depois dele
+        var r = card.getBoundingClientRect();
+        return ev.clientX > r.left + r.width / 2;
+      }
+
       function desenhar() {
         grade.innerHTML = "";
         lista.secoes.forEach(function (sec, indice) {
@@ -14422,6 +15258,40 @@ def montar_html_painel(df_base):
             ordem.appendChild(btnCima);
             ordem.appendChild(btnBaixo);
             card.appendChild(ordem);
+
+            card.draggable = true;
+            card.title = "Clique para marcar/desmarcar · arraste para mudar a ordem";
+            card.addEventListener("dragstart", function (ev) {
+              indiceArrastado = indice;
+              card.classList.add("arrastando");
+              ev.dataTransfer.effectAllowed = "move";
+              try { ev.dataTransfer.setData("text/plain", String(indice)); } catch (e) {}
+            });
+            card.addEventListener("dragend", function () {
+              indiceArrastado = null;
+              card.classList.remove("arrastando");
+              limparAlvos();
+            });
+            card.addEventListener("dragover", function (ev) {
+              if (indiceArrastado === null) return;
+              ev.preventDefault();
+              ev.dataTransfer.dropEffect = "move";
+              var depois = soltarDepois(card, ev);
+              if (!card.classList.contains(depois ? "alvo-depois" : "alvo-antes")) {
+                limparAlvos();
+                if (indiceArrastado !== indice) card.classList.add(depois ? "alvo-depois" : "alvo-antes");
+              }
+            });
+            card.addEventListener("dragleave", function (ev) {
+              if (!card.contains(ev.relatedTarget)) card.classList.remove("alvo-antes", "alvo-depois");
+            });
+            card.addEventListener("drop", function (ev) {
+              ev.preventDefault();
+              var de = indiceArrastado;
+              indiceArrastado = null;
+              limparAlvos();
+              moverPara(de, soltarDepois(card, ev) ? indice + 1 : indice);
+            });
           }
           grade.appendChild(card);
         });
@@ -15051,12 +15921,14 @@ def montar_html_painel(df_base):
     texto_ultima_atualizacao_painel = (
         f"Base de dados atualizada em {ultima_atualizacao.strftime('%d/%m/%Y às %Hh%Mmin')}"
     )
-    html_paginal = html_paginal.replace("__ULTIMA_ATUALIZACAO__", texto_ultima_atualizacao_painel)
+    html_paginal = html_paginal.replace(
+        "__ULTIMA_ATUALIZACAO__", texto_ultima_atualizacao_painel)
     # Diz pro JS do painel se ele está rodando dentro da janela desktop
     # (pywebview) ou servido por um navegador comum (servidor web) — em vez
     # de o JS ter que adivinhar isso por uma corrida entre o carregamento da
     # página e a injeção assíncrona de "window.pywebview" pelo WebView2.
-    html_paginal = html_paginal.replace("__MODO_WEB__", "true" if MODO_WEB else "false")
+    html_paginal = html_paginal.replace(
+        "__MODO_WEB__", "true" if MODO_WEB else "false")
 
     return html_paginal
 
@@ -15091,18 +15963,23 @@ def _construir_arvore_mapa_mental(df):
     raiz = {"nome": "BALANÇO PAC - BAHIA", "tipo": "raiz", "filhos": {}}
 
     for idx, row in df.iterrows():
-        orgao = str(row.get("SECRETARIA_LIMPA") or "").strip() or "Sem órgão definido"
+        orgao = str(row.get("SECRETARIA_LIMPA")
+                    or "").strip() or "Sem órgão definido"
 
         dados = _montar_dados_ficha_acao(row)
         dados["id"] = str(idx)
-        dados["prazo_atual_iso"] = _data_iso_mapa_mental(row.get(col_prazo_atual))
+        dados["prazo_atual_iso"] = _data_iso_mapa_mental(
+            row.get(col_prazo_atual))
 
         executor = dados["executor"] or "Sem executor definido"
         objeto = dados["objeto"] or "Sem objeto"
 
-        n_org = raiz["filhos"].setdefault(orgao, {"nome": orgao, "tipo": "orgao", "filhos": {}})
-        n_exec = n_org["filhos"].setdefault(executor, {"nome": executor, "tipo": "executor", "filhos": {}})
-        n_obj = n_exec["filhos"].setdefault(objeto, {"nome": objeto, "tipo": "objeto", "filhos": {}})
+        n_org = raiz["filhos"].setdefault(
+            orgao, {"nome": orgao, "tipo": "orgao", "filhos": {}})
+        n_exec = n_org["filhos"].setdefault(
+            executor, {"nome": executor, "tipo": "executor", "filhos": {}})
+        n_obj = n_exec["filhos"].setdefault(
+            objeto, {"nome": objeto, "tipo": "objeto", "filhos": {}})
 
         n_obj["filhos"][f"item-{idx}"] = {
             "nome": dados["descricao"] or dados["objeto"],
@@ -15251,7 +16128,8 @@ def _api_buscar_ficha_acao(municipio, descricao, filtros, sempre_lista=False):
             municipio_serie = df_busca[col_municipio].astype(str).apply(
                 lambda v: remover_acentos(v.upper())
             )
-            df_busca = df_busca[municipio_serie.str.contains(municipio_norm, regex=False)]
+            df_busca = df_busca[municipio_serie.str.contains(
+                municipio_norm, regex=False)]
         elif municipio_t:
             df_busca = df_busca.iloc[0:0]
         if descricao_t and col_descricao in df_busca.columns:
@@ -15259,7 +16137,8 @@ def _api_buscar_ficha_acao(municipio, descricao, filtros, sempre_lista=False):
             descricao_serie = df_busca[col_descricao].astype(str).apply(
                 lambda v: remover_acentos(v.upper())
             )
-            df_busca = df_busca[descricao_serie.str.contains(descricao_norm, regex=False)]
+            df_busca = df_busca[descricao_serie.str.contains(
+                descricao_norm, regex=False)]
 
         # sempre_lista: a janela da lupa filtra a lista enquanto a pessoa
         # digita, então ela nunca quer um alerta nem quer que a ficha abra
@@ -15309,7 +16188,8 @@ def _api_buscar_ficha_por_item(item):
     # escolhe qual delas abrir.
     try:
         item_norm = remover_acentos(normalizar_item(item)).upper()
-        item_serie = df_original[col_item].apply(lambda v: remover_acentos(normalizar_item(v)).upper())
+        item_serie = df_original[col_item].apply(
+            lambda v: remover_acentos(normalizar_item(v)).upper())
         linhas = df_original[item_serie == item_norm]
         if linhas.empty:
             return {"ok": False, "erro": "Ação não encontrada."}
@@ -15326,7 +16206,8 @@ def _localizar_acao_por_item(item):
     # devolve os dados já montados para a Ficha Cadastral, ou None se não
     # existir.
     item_norm = remover_acentos(normalizar_item(item)).upper()
-    item_serie = df_original[col_item].apply(lambda v: remover_acentos(normalizar_item(v)).upper())
+    item_serie = df_original[col_item].apply(
+        lambda v: remover_acentos(normalizar_item(v)).upper())
     linhas = df_original[item_serie == item_norm]
     if linhas.empty:
         return None
@@ -15348,7 +16229,8 @@ def _api_gerar_pdf_bytes(filtros, secoes=None):
     # (ao contrário de montar o nome à mão com pid/id de objeto) — importa
     # aqui porque o servidor web pode atender vários pedidos de PDF ao mesmo
     # tempo, cada um numa requisição/thread diferente.
-    descritor, caminho_temp = tempfile.mkstemp(suffix=".pdf", prefix="pac_relatorio_web_")
+    descritor, caminho_temp = tempfile.mkstemp(
+        suffix=".pdf", prefix="pac_relatorio_web_")
     os.close(descritor)
     try:
         _gerar_pdf(
@@ -15391,7 +16273,8 @@ def _modulo_apresentacao():
 
 def _construir_pptx_analise_financeira_bytes(filtros=None, secoes=None):
     modulo = _modulo_apresentacao()
-    conteudo, _metricas = modulo.gerar_pptx_bytes(_df_analise_financeira(filtros), filtros, secoes)
+    conteudo, _metricas = modulo.gerar_pptx_bytes(
+        _df_analise_financeira(filtros), filtros, secoes)
     return conteudo
 
 
@@ -15462,7 +16345,7 @@ def _api_gerar_html_analise_financeira_bytes(filtros=None, secoes=None):
         return {"ok": False, "vazio": True}
     except Exception as erro:
         return {"ok": False, "erro": str(erro)}
-    return {"ok": True, "nome_arquivo": "ANALISE_FINANCEIRA_PAC.html", "conteudo": conteudo}
+    return {"ok": True, "nome_arquivo": NOME_ARQUIVO_HTML_APRESENTACAO, "conteudo": conteudo}
 
 
 def _api_exportar_ficha_pdf_bytes(item):
@@ -15473,7 +16356,8 @@ def _api_exportar_ficha_pdf_bytes(item):
         return {"ok": False, "erro": "Ação não encontrada."}
 
     nome_sugerido = _nome_arquivo_ficha_pdf(dados)
-    descritor, caminho_temp = tempfile.mkstemp(suffix=".pdf", prefix="pac_ficha_web_")
+    descritor, caminho_temp = tempfile.mkstemp(
+        suffix=".pdf", prefix="pac_ficha_web_")
     os.close(descritor)
     try:
         gerar_pdf_ficha_acao(dados, caminho_temp)
@@ -15536,7 +16420,8 @@ def abrir_interface_filtros(df_base):
                     return {"ok": False, "vazio": True}
 
                 pasta_inicial = (
-                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
+                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(
+                        PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
                 )
                 resultado_dialogo = janela.create_file_dialog(
                     webview.SAVE_DIALOG,
@@ -15565,7 +16450,8 @@ def abrir_interface_filtros(df_base):
                     fallback_usado = True
 
                 _gerar_pdf(
-                    df, arquivo_pdf, filtros.get("COLUNAS_DETALHAMENTO"), secoes,
+                    df, arquivo_pdf, filtros.get(
+                        "COLUNAS_DETALHAMENTO"), secoes,
                     financeiro_detalhado=filtros.get("FINANCEIRO_DETALHADO"),
                 )
                 return {"ok": True, "arquivo": arquivo_pdf, "fallback": fallback_usado}
@@ -15588,7 +16474,8 @@ def abrir_interface_filtros(df_base):
                 if filtros and _filtrar_dataframe(filtros).empty:
                     return {"ok": False, "vazio": True}
                 pasta_inicial = (
-                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
+                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(
+                        PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
                 )
                 resultado_dialogo = janela.create_file_dialog(
                     webview.SAVE_DIALOG,
@@ -15607,7 +16494,8 @@ def abrir_interface_filtros(df_base):
                 if not caminho_escolhido.lower().endswith(".pptx"):
                     caminho_escolhido += ".pptx"
 
-                conteudo = _construir_pptx_analise_financeira_bytes(filtros, secoes)
+                conteudo = _construir_pptx_analise_financeira_bytes(
+                    filtros, secoes)
                 with open(caminho_escolhido, "wb") as f:
                     f.write(conteudo)
                 if os.name == "nt":
@@ -15625,11 +16513,14 @@ def abrir_interface_filtros(df_base):
             # direto no navegador padrão. Quem quiser guardar/enviar o
             # arquivo pode "Salvar como" dali do próprio navegador.
             try:
-                conteudo = _construir_html_analise_financeira_bytes(filtros, secoes)
+                conteudo = _construir_html_analise_financeira_bytes(
+                    filtros, secoes)
                 pasta_destino = (
-                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
+                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(
+                        PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
                 )
-                caminho_html = os.path.join(pasta_destino, "ANALISE_FINANCEIRA_PAC.html")
+                caminho_html = os.path.join(
+                    pasta_destino, NOME_ARQUIVO_HTML_APRESENTACAO)
                 with open(caminho_html, "wb") as f:
                     f.write(conteudo)
                 if os.name == "nt":
@@ -15665,7 +16556,8 @@ def abrir_interface_filtros(df_base):
                     return {"ok": False, "erro": "Ação não encontrada."}
 
                 pasta_inicial = (
-                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
+                    PASTA_DOWNLOADS_PADRAO if os.path.isdir(
+                        PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
                 )
                 nome_sugerido = _nome_arquivo_ficha_pdf(dados)
                 resultado_dialogo = janela.create_file_dialog(
@@ -15708,7 +16600,8 @@ def abrir_interface_filtros(df_base):
             try:
                 import urllib.parse
 
-                url = "https://wa.me/?text=" + urllib.parse.quote(str(texto or ""))
+                url = "https://wa.me/?text=" + \
+                    urllib.parse.quote(str(texto or ""))
                 webbrowser.open(url, new=0, autoraise=True)
                 return {"ok": True}
             except Exception as erro:
@@ -15784,3 +16677,4 @@ if __name__ == "__main__":
     # todo o carregamento/ETL da planilha acima ainda roda normalmente
     # (dados prontos em df_original), mas a janela nativa não abre sozinha.
     abrir_interface_filtros(df_original)
+
