@@ -37,6 +37,7 @@ mesma pasta deste script.
 import base64
 import importlib.util
 import io
+import json
 import os
 import re
 import sys
@@ -691,8 +692,16 @@ def _calcular_clausulas(df, m, investimento_linha, eixo, hoje):
             prazo = "proxima"
         else:
             prazo = "no_prazo"
+        # Ficha completa da ação (mesmos campos da Ficha Cadastral do painel),
+        # aberta numa janela ao clicar no card (pedido do usuário em 11/11/2026)
+        try:
+            ficha = pac._montar_dados_ficha_acao(linha)
+        except Exception:
+            ficha = {}
         acoes.append({
             "eixo": eixo.loc[idx],
+            "executor": _texto_celula(linha.get("EXECUTOR")) or "NÃO INFORMADO",
+            "ficha": ficha,
             "objeto": _texto_celula(linha.get(pac.col_objeto)) or "NÃO INFORMADO",
             "municipio": _texto_celula(linha.get(pac.col_municipio)),
             "situacao": situacao.loc[idx],
@@ -706,12 +715,14 @@ def _calcular_clausulas(df, m, investimento_linha, eixo, hoje):
             "prazo": prazo,
         })
 
+    # Agrupado por ÓRGÃO EXECUTOR (antes era por eixo; pedido do usuário em
+    # 11/11/2026)
     grupos = {}
     for acao in acoes:
-        grupos.setdefault(acao["eixo"], []).append(acao)
+        grupos.setdefault(acao["executor"], []).append(acao)
     for lista in grupos.values():
         lista.sort(key=lambda a: (a["vigencia"] is None, a["vigencia"] or hoje, -a["valor"]))
-    m["clausulas_por_eixo"] = sorted(grupos.items(), key=lambda g: (-sum(a["valor"] for a in g[1]), g[0]))
+    m["clausulas_por_executor"] = sorted(grupos.items(), key=lambda g: (-sum(a["valor"] for a in g[1]), g[0]))
     m["clausulas_qtd"] = len(acoes)
     m["clausulas_valor"] = float(sum(a["valor"] for a in acoes))
     m["clausulas_prazo"] = {k: sum(1 for a in acoes if a["prazo"] == k)
@@ -1768,6 +1779,541 @@ def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, reco
     </section>'''
 
 
+# ---------------------------------------------------------------------------
+# Slides institucionais da CGAPE: Organograma e Fluxo de trabalho (pedido do
+# usuário em 11/11/2026). Substituem as páginas 2 e 3 do Canva (imagens) por
+# slides desenhados com a identidade do Balanço PAC, no HTML e no PPTX. O
+# conteúdo abaixo é a transcrição enviada pelo usuário — fonte de verdade;
+# não acrescentar cargo, vínculo ou relação que não esteja nela.
+# ---------------------------------------------------------------------------
+COR_COAHS = LARANJA   # laranja/âmbar no original
+COR_COAPI = AZUL      # azul no original
+COR_COAPI2 = TEAL     # verde-azulado no original
+
+ORGANOGRAMA_DIRECAO = {
+    "geral": ("Armindo Gonzalez", "Coordenador Geral"),
+    "apoio": ("Ana Júlia", "Assistente Administrativa"),
+}
+# Cada pessoa: (nome, cargo, atribuição). Subnúcleo: líder + escopo + membros.
+ORGANOGRAMA_COORDENACOES = [
+    {"sigla": "COAHS", "cor": COR_COAHS, "lider": ("Olavo Fraga", "Coordenador Executivo"),
+     "apoio": [("Neilma Santos", "Assistente Administrativa")],
+     "equipe": [
+         ("Antonio Deiró", "Coordenador I", "Monitoramento: Habitação e ações do NOVO PAC"),
+         ("Marcos Botelho", "Coordenador II", ""),
+         ("Marcelo Pereira", "Assessor Técnico", "Monitoramento: Obras do NOVO PAC (CERB e EMBASA)"),
+         ("Henrique Santana", "Assessor Técnico", "Monitoramento: Obras não NOVO PAC (CERB e EMBASA)"),
+         ("Tomás Neves", "Assessor Técnico",
+          "Monitoramento: AMA (Acompanhamento, Monitoramento, Avaliação)"),
+     ],
+     "subnucleos": []},
+    {"sigla": "COAPI", "cor": COR_COAPI, "lider": ("Cezar Wagner", "Coordenador Executivo"),
+     "apoio": [("Renata Carvalho", "Assistente Administrativa"), ("Vanessa", "Primeiro Emprego"),
+               ("Estéfane", "Estagiária NM")],
+     "equipe": [("Lucitania Brandão", "Coordenador I", "Ações de diversos Eixos e do NOVO PAC")],
+     "subnucleos": [
+         {"lider": ("Renata Lobão", "Coordenador I"),
+          "escopo": "Ações dos Eixos Cultura, Educação e Saúde, Mercados e NOVO PAC",
+          "membros": [
+              ("Juliana Fortunato", "Assessor Adm", "Monitoramento: Obras Turismo, Cultura e NOVO PAC"),
+              ("Joélio Balbino", "Assessor Adm", "Monitoramento: Obras Educação (SEC)"),
+              ("Tatiane Cruz", "Assessor Técnico", "Monitoramento: Obras Saúde, FSJ e Educação (CONDER)"),
+          ]},
+         {"lider": ("Cleidyanne Couto", "Assistente II"),
+          "escopo": "Ações dos Eixos Infraestrutura, Prevenção a Desastres e NOVO PAC",
+          "membros": [
+              ("Mário Sérgio Conceição", "Assessor Técnico",
+               "Monitoramento: Macrodrenagens, Ponte, VLT, Infraestrutura do NOVO PAC"),
+              ("Taís Santos", "Assessor Técnico", "Monitoramento: Encostas, VLT, Ponte"),
+          ]},
+     ]},
+    {"sigla": "COAPI II", "cor": COR_COAPI2, "lider": ("Silvana Mendes", "Coordenador I"),
+     "apoio": [],
+     "equipe": [
+         ("Diego Figueiredo", "Assessor Técnico",
+          "Monitoramento: Obras SSP (Unidades de Segurança) e SEADES (Convive/NOVO PAC)"),
+         ("Suzana Oliveira", "Assessor Técnico",
+          "Monitoramento: SEINFRA-SIT (Aeroportos, Infraestrutura viária, NOVO PAC)"),
+         ("Nélia Barreto", "Coordenador I",
+          "Monitoramento: SUDESB (Equipamentos esportivos) e Gestão do Contrato Monitora/FACILIT"),
+     ],
+     "subnucleos": []},
+]
+# Proporção das colunas COAHS | COAPI | COAPI II — a COAPI é a mais longa e
+# leva os dois subnúcleos lado a lado.
+PESOS_COLUNAS_ORGANOGRAMA = (1.0, 1.75, 1.0)
+
+FLUXO_COORDENACOES = [
+    ("COAPI", COR_COAPI, [
+        "Acompanhamento de obras das diversas Secretarias e monitoramento conforme demanda",
+        "Monitoramento das obras selecionadas no PAC no Estado",
+        "Visita às obras",
+    ]),
+    ("COAHS", COR_COAHS, [
+        "Monitoramento e acompanhamento das obras de Saneamento e Habitação, incluindo obras "
+        "selecionadas no PAC no Estado",
+        "Visita às obras",
+    ]),
+]
+# (nome, uso, resultado, ícone)
+FLUXO_FERRAMENTAS = [
+    ("Planilha Panorama PAC",
+     "Alimentação das informações e consolidação em relatório gerencial criado pela Coordenação",
+     "Relatório gerencial", "planilha"),
+    ("Planilha Template Obras gerais",
+     "Alimentação das informações e consolidação em relatório do Informs/Conder",
+     "Relatório Informs/Conder", "planilha"),
+    # Sem caixa de "Resultado" (pedido do usuário em 11/11/2026).
+    ("Sistema Monitora Bahia", "Consulta de informações", "", "sistema"),
+]
+FLUXO_OUTRAS_FONTES = ["Diários Oficiais", "Transferegov", "Notas Técnicas", "Sites e redes sociais diversas"]
+
+# Órgãos viram etiqueta e "NOVO PAC" vira selo dentro do texto da atribuição
+# (o texto continua o mesmo, só ganha destaque pra varredura).
+_RE_DESTAQUES_ORGANOGRAMA = re.compile(r"(NOVO PAC|\b(?:SEINFRA-SIT|CONDER|EMBASA|CERB|SEADES|SUDESB|SSP|SEC|FSJ)\b)")
+
+
+def _pessoas_coordenacao(coord):
+    n = 1 + len(coord["apoio"]) + len(coord["equipe"])
+    return n + sum(1 + len(s["membros"]) for s in coord["subnucleos"])
+
+
+def nomes_organograma():
+    # Usado na verificação (todos os 25 nomes precisam aparecer).
+    nomes = [ORGANOGRAMA_DIRECAO["geral"][0], ORGANOGRAMA_DIRECAO["apoio"][0]]
+    for c in ORGANOGRAMA_COORDENACOES:
+        nomes += [c["lider"][0]] + [p[0] for p in c["apoio"]] + [p[0] for p in c["equipe"]]
+        for s in c["subnucleos"]:
+            nomes += [s["lider"][0]] + [p[0] for p in s["membros"]]
+    return nomes
+
+
+def _html_atribuicao(texto):
+    saida = []
+    for parte in _RE_DESTAQUES_ORGANOGRAMA.split(texto):
+        if parte == "NOVO PAC":
+            saida.append('<span class="og-selo-pac">NOVO PAC</span>')
+        elif parte and _RE_DESTAQUES_ORGANOGRAMA.fullmatch(parte):
+            saida.append(f'<span class="og-orgao">{_html_esc(parte)}</span>')
+        else:
+            saida.append(_html_esc(parte))
+    return "".join(saida)
+
+
+def _html_membro_organograma(pessoa, cor_c):
+    nome, cargo, atribuicao = pessoa
+    return f'''<div class="og-membro" style="border-left-color:#{cor_c}">
+          <div class="og-nome">{_html_esc(nome)}</div><div class="og-cargo">{_html_esc(cargo)}</div>
+          {f'<div class="og-atrib">{_html_atribuicao(atribuicao)}</div>' if atribuicao else ""}
+        </div>'''
+
+
+def _html_organograma():
+    geral, apoio_geral = ORGANOGRAMA_DIRECAO["geral"], ORGANOGRAMA_DIRECAO["apoio"]
+    colunas = []
+    for c in ORGANOGRAMA_COORDENACOES:
+        cor_c = c["cor"]
+        apoio = "" if not c["apoio"] else f'''<div class="og-bloco-rot">Apoio administrativo</div>
+          <div class="og-apoio">{"".join(f'<span class="og-chip"><b>{_html_esc(n)}</b> · {_html_esc(cg)}</span>' for n, cg in c["apoio"])}</div>'''
+        equipe = "".join(_html_membro_organograma(p, cor_c) for p in c["equipe"])
+        subnucleos = ""
+        if c["subnucleos"]:
+            subnucleos = '<div class="og-subs">' + "".join(f'''<div class="og-sub" style="border-color:#{cor_c}">
+            <div class="og-sub-cab" style="background:#{cor_c}1F">
+              <div class="og-nome">{_html_esc(s["lider"][0])}</div><div class="og-cargo">{_html_esc(s["lider"][1])}</div>
+              <div class="og-atrib">{_html_atribuicao(s["escopo"])}</div>
+            </div>
+            {"".join(_html_membro_organograma(p, cor_c) for p in s["membros"])}
+          </div>''' for s in c["subnucleos"]) + '</div>'
+        qtd = _pessoas_coordenacao(c)
+        colunas.append(f'''<div class="og-col">
+        <div class="og-col-cab" style="background:#{cor_c}">
+          <div class="og-col-topo"><span class="og-sigla">{_html_esc(c["sigla"])}</span>
+            <span class="og-qtd">{qtd} pessoa{"s" if qtd != 1 else ""}</span></div>
+          <div class="og-lider">{_html_esc(c["lider"][0])}</div>
+          <div class="og-lider-cargo">{_html_esc(c["lider"][1])}</div>
+        </div>
+        <div class="og-col-corpo">
+          {apoio}
+          <div class="og-bloco-rot">Equipe</div>
+          {equipe}
+          {subnucleos}
+        </div>
+      </div>''')
+    total = len(nomes_organograma())
+    return f'''<div class="og-direcao">
+        <div class="og-geral"><div class="og-rot">Coordenação Geral</div>
+          <div class="og-geral-nome">{_html_esc(geral[0])}</div><div class="og-geral-cargo">{_html_esc(geral[1])}</div></div>
+        <div class="og-assist"><div class="og-rot">Apoio à Coordenação Geral</div>
+          <div class="og-nome">{_html_esc(apoio_geral[0])}</div><div class="og-cargo">{_html_esc(apoio_geral[1])}</div></div>
+        <div class="og-total">{total} pessoas</div>
+      </div>
+      <div class="og-ramos"><div></div><div></div><div></div></div>
+      <div class="og-colunas">{"".join(colunas)}</div>'''
+
+
+_ICONES_FLUXO = {
+    "planilha": '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" '
+                'stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 4v16M15 4v16"/></svg>',
+    "sistema": '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" '
+               'stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/>'
+               '<path d="M8 21h8M12 17v4"/><circle cx="11" cy="10" r="3"/><path d="M13.2 12.2 15.5 14.5"/></svg>',
+}
+
+
+def _html_fluxo_trabalho():
+    coords = "".join(f'''<div class="fx-coord" style="border-top-color:#{cor_c}">
+          <div class="fx-sigla" style="color:#{cor_c}">{_html_esc(sigla)}</div>
+          <ul>{"".join(f"<li>{_html_esc(t)}</li>" for t in itens)}</ul>
+        </div>''' for sigla, cor_c, itens in FLUXO_COORDENACOES)
+    ferramentas = "".join(f'''<div class="fx-ferr">
+          <div class="fx-ferr-topo"><span class="fx-icone">{_ICONES_FLUXO[icone]}</span>
+            <span class="fx-nome">{_html_esc(nome)}</span></div>
+          <div class="fx-uso">{_html_esc(uso)}</div>
+          {f'<div class="fx-resultado"><span>Resultado</span>{_html_esc(resultado)}</div>' if resultado else ""}
+        </div>''' for nome, uso, resultado, icone in FLUXO_FERRAMENTAS)
+    seta = 'marker-end="url(#fx-ponta)"'
+    return f'''<div class="fx-titulo">Divisão do trabalho das Coordenações</div>
+      <div class="fx-coords">{coords}</div>
+      <svg class="fx-setas" viewBox="0 0 1400 52" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <defs><marker id="fx-ponta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 10 5 0 10z" fill="#5B6576"/></marker></defs>
+        <path d="M335 2 C335 30 700 22 700 48" fill="none" stroke="#5B6576" stroke-width="2" {seta}/>
+        <path d="M1065 2 C1065 30 700 22 700 48" fill="none" stroke="#5B6576" stroke-width="2" {seta}/>
+      </svg>
+      <div class="fx-ferr-cab">Ferramentas utilizadas</div>
+      <svg class="fx-setas" viewBox="0 0 1400 40" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <path d="M700 0V16M225 16H1175" fill="none" stroke="#5B6576" stroke-width="2"/>
+        <path d="M225 16V36" fill="none" stroke="#5B6576" stroke-width="2" {seta}/>
+        <path d="M700 16V36" fill="none" stroke="#5B6576" stroke-width="2" {seta}/>
+        <path d="M1175 16V36" fill="none" stroke="#5B6576" stroke-width="2" {seta}/>
+      </svg>
+      <div class="fx-ferramentas">{ferramentas}</div>
+      <div class="fx-outras"><span class="fx-outras-rot">Outras fontes</span>
+        {" <span class='fx-ponto'>·</span> ".join(_html_esc(f) for f in FLUXO_OUTRAS_FONTES)}</div>'''
+
+
+CSS_SLIDES_INSTITUCIONAIS = '''
+    /* Organograma e Fluxo de trabalho da CGAPE — pedido do usuário em
+       11/11/2026. Mesma paleta do Balanço PAC: COAHS = laranja, COAPI =
+       azul, COAPI II = teal. Fonte mínima de 11px (rótulos em caixa alta). */
+    .og-direcao { display:flex; justify-content:center; align-items:stretch; gap:16px; position:relative; }
+    .og-geral { background:#0B1F3F; color:#fff; border-radius:10px; padding:8px 26px; text-align:center; min-width:300px; }
+    .og-geral-nome { font-size:21px; font-weight:700; }
+    .og-geral-cargo { font-size:13px; font-weight:700; color:#4FA3E0; text-transform:uppercase; }
+    .og-rot { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#C9D6EA; }
+    .og-assist { border:1px solid #D8DCE3; border-left:4px solid #5B6576; border-radius:10px; padding:8px 16px; }
+    .og-assist .og-rot { color:#5B6576; }
+    .og-total { position:absolute; right:0; bottom:0; font-size:13px; font-weight:700; color:#5B6576; }
+    .og-ramos { display:grid; grid-template-columns:1fr 1.75fr 1fr; gap:16px; height:20px; }
+    .og-ramos > div { position:relative; }
+    .og-ramos > div::before { content:""; position:absolute; top:9px; left:-8px; right:-8px; border-top:2px solid #B8C0CC; }
+    .og-ramos > div:first-child::before { left:50%; }
+    .og-ramos > div:last-child::before { right:50%; }
+    .og-ramos > div::after { content:""; position:absolute; left:50%; top:9px; bottom:0; border-left:2px solid #B8C0CC; }
+    .og-ramos > div:nth-child(2)::after { top:-6px; }
+    .og-colunas { display:grid; grid-template-columns:1fr 1.75fr 1fr; gap:16px; align-items:start; }
+    .og-col { border:1px solid #D8DCE3; border-radius:10px; overflow:hidden; background:#fff; }
+    .og-col-cab { color:#fff; padding:7px 14px 8px; }
+    .og-col-topo { display:flex; justify-content:space-between; align-items:center; }
+    .og-sigla { font-size:20px; font-weight:900; letter-spacing:.02em; }
+    .og-qtd { font-size:12px; font-weight:700; background:rgba(255,255,255,.22); border-radius:10px; padding:2px 9px; }
+    .og-lider { font-size:16px; font-weight:700; margin-top:1px; }
+    .og-lider-cargo { font-size:11px; font-weight:700; text-transform:uppercase; opacity:.9; }
+    .og-col-corpo { padding:6px 10px 10px; }
+    .og-bloco-rot { font-size:11px; font-weight:700; color:#5B6576; text-transform:uppercase; letter-spacing:.04em; margin:6px 0 4px; }
+    .og-apoio { display:flex; flex-wrap:wrap; gap:6px; }
+    .og-chip { font-size:12px; color:#5B6576; background:#F2F4F7; border-radius:12px; padding:3px 10px; }
+    .og-chip b { color:#0B1F3F; }
+    .og-membro { border-left:4px solid; background:#F7F8FA; border-radius:6px; padding:5px 10px; margin-bottom:5px; }
+    .og-nome { font-size:14px; font-weight:700; color:#0B1F3F; }
+    .og-cargo { font-size:11px; font-weight:700; color:#5B6576; text-transform:uppercase; }
+    .og-atrib { font-size:12px; color:#0B1F3F; line-height:1.35; margin-top:1px; }
+    .og-orgao { font-size:11px; font-weight:700; color:#0B1F3F; background:#E3E7ED; border-radius:4px; padding:0 4px; }
+    .og-selo-pac { font-size:11px; font-weight:700; color:#2E7D32; border:1px solid #2E7D32; border-radius:8px; padding:0 5px;
+      white-space:nowrap; }
+    .og-subs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
+    .og-sub { border:1px dashed; border-radius:8px; padding:6px; }
+    .og-sub-cab { border-radius:6px; padding:5px 9px; margin-bottom:5px; }
+    .og-sub-rot { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
+    .og-sub .og-membro { background:#fff; }
+
+    .fx-titulo { font-size:22px; font-weight:700; color:#0B1F3F; text-align:center; margin-bottom:12px; }
+    .fx-coords { display:grid; grid-template-columns:1fr 1fr; gap:60px; }
+    .fx-coord { background:#F2F4F7; border-top:6px solid; border-radius:10px; padding:12px 22px 10px; }
+    .fx-sigla { font-size:24px; font-weight:900; }
+    .fx-coord ul { margin:6px 0 0; padding-left:20px; }
+    .fx-coord li { font-size:16px; color:#0B1F3F; line-height:1.4; margin-bottom:3px; }
+    .fx-setas { display:block; width:100%; height:auto; }
+    .fx-ferr-cab { width:440px; margin:0 auto; background:#0B1F3F; color:#fff; text-align:center; border-radius:10px;
+      font-size:20px; font-weight:700; padding:10px 0; }
+    .fx-ferramentas { display:grid; grid-template-columns:repeat(3, 1fr); gap:24px; }
+    .fx-ferr { border:1px solid #D8DCE3; border-radius:10px; padding:14px 18px; display:flex; flex-direction:column; }
+    .fx-ferr-topo { display:flex; align-items:center; gap:12px; }
+    .fx-icone { width:46px; height:46px; border-radius:10px; background:#E8F0FA; color:#0B5CAD; display:flex;
+      align-items:center; justify-content:center; flex-shrink:0; }
+    .fx-nome { font-size:18px; font-weight:700; color:#0B1F3F; }
+    .fx-uso { font-size:15px; color:#5B6576; line-height:1.4; margin-top:10px; flex:1; }
+    .fx-resultado { margin-top:10px; font-size:15px; font-weight:700; color:#0B1F3F; background:#F2F4F7; border-radius:8px;
+      padding:6px 12px; }
+    .fx-resultado span { display:block; font-size:11px; color:#5B6576; text-transform:uppercase; letter-spacing:.04em; }
+    .fx-outras { margin-top:18px; background:#F2F4F7; border-radius:10px; padding:10px 20px; text-align:center;
+      font-size:15px; color:#5B6576; }
+    .fx-outras-rot { font-weight:700; color:#0B1F3F; text-transform:uppercase; font-size:12px; letter-spacing:.04em;
+      margin-right:10px; }
+    .fx-ponto { margin:0 8px; }
+'''
+
+
+# --- versão PPTX dos dois slides (formas nativas, mesma disposição) ---------
+def _add_texto_rico(slide, x, y, w, h, segmentos, alinhar=PP_ALIGN.LEFT, ancorar=MSO_ANCHOR.TOP):
+    # segmentos: [(texto, tam, cor_hex, negrito)] — tudo no mesmo parágrafo.
+    caixa = slide.shapes.add_textbox(pol(x), pol(y), pol(w), pol(h))
+    tf = caixa.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = ancorar
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+    p = tf.paragraphs[0]
+    p.alignment = alinhar
+    for texto, tam, cor_hex, negrito in segmentos:
+        run = p.add_run()
+        run.text = texto
+        run.font.size = Pt(tam)
+        run.font.bold = negrito
+        run.font.name = FONTE
+        run.font.color.rgb = cor(cor_hex)
+    return caixa
+
+
+def _linhas_estimadas(texto, tam_pt, largura_in):
+    # Estimativa conservadora pra Roboto: largura média ~0,53 em por caractere.
+    por_linha = max(1, int(largura_in / (tam_pt * 0.53 / 72)))
+    linhas = 0
+    for trecho in texto.split("\n"):
+        linhas += max(1, -(-len(trecho) // por_linha))
+    return linhas
+
+
+def _segmentos_atribuicao(texto, tam):
+    segs = []
+    for parte in _RE_DESTAQUES_ORGANOGRAMA.split(texto):
+        if not parte:
+            continue
+        if parte == "NOVO PAC":
+            segs.append((parte, tam, VERDE, True))
+        elif _RE_DESTAQUES_ORGANOGRAMA.fullmatch(parte):
+            segs.append((parte, tam, NAVY, True))
+        else:
+            segs.append((parte, tam, CINZA_TEXTO, False))
+    return segs
+
+
+TAM_NOME_OG, TAM_CARGO_OG, TAM_ATRIB_OG = 12.5, 9, 10
+
+
+def _altura_membro_pptx(pessoa, largura):
+    _, _, atribuicao = pessoa
+    h = 0.08 + TAM_NOME_OG * 1.2 / 72 + TAM_CARGO_OG * 1.25 / 72 + 0.07
+    if atribuicao:
+        h += _linhas_estimadas(atribuicao, TAM_ATRIB_OG, largura - 0.25) * TAM_ATRIB_OG * 1.22 / 72 + 0.02
+    return h
+
+
+def _desenhar_membro_pptx(s, x, y, w, pessoa, cor_c, fundo=CINZA_CLARO):
+    nome, cargo, atribuicao = pessoa
+    h = _altura_membro_pptx(pessoa, w)
+    add_rect(s, x, y, w, h, fill=fundo)
+    add_rect(s, x, y, 0.06, h, fill=cor_c)
+    yy = y + 0.05
+    add_text(s, x + 0.15, yy, w - 0.22, 0.22, nome, TAM_NOME_OG, NAVY, negrito=True)
+    yy += TAM_NOME_OG * 1.2 / 72
+    add_text(s, x + 0.15, yy, w - 0.22, 0.18, cargo.upper(), TAM_CARGO_OG, CINZA_TEXTO, negrito=True)
+    yy += TAM_CARGO_OG * 1.25 / 72 + 0.02
+    if atribuicao:
+        add_text_h = h - (yy - y) - 0.04
+        _add_texto_rico(s, x + 0.15, yy, w - 0.25, add_text_h, _segmentos_atribuicao(atribuicao, TAM_ATRIB_OG))
+    return h
+
+
+def slide_organograma(prs, m):
+    s = novo_slide(prs, "ORGANOGRAMA DA CGAPE")
+    x0, largura = 0.56, LARGURA_IN - 1.12
+    # direção
+    geral, apoio_geral = ORGANOGRAMA_DIRECAO["geral"], ORGANOGRAMA_DIRECAO["apoio"]
+    w_geral, w_apoio, y_dir, h_dir = 4.3, 3.3, 1.28, 0.86
+    x_geral = LARGURA_IN / 2 - w_geral / 2
+    add_rect(s, x_geral, y_dir, w_geral, h_dir, fill=NAVY, arredondado=True)
+    add_text(s, x_geral, y_dir + 0.06, w_geral, 0.2, "COORDENAÇÃO GERAL", 9, AZUL_CLARO_TEXTO, negrito=True,
+              alinhar=PP_ALIGN.CENTER)
+    add_text(s, x_geral, y_dir + 0.25, w_geral, 0.34, geral[0], 18, BRANCO, negrito=True, alinhar=PP_ALIGN.CENTER)
+    add_text(s, x_geral, y_dir + 0.58, w_geral, 0.22, geral[1].upper(), 11, AZUL_CLARO_MARCA, negrito=True,
+              alinhar=PP_ALIGN.CENTER)
+    x_apoio = x_geral + w_geral + 0.22
+    add_rect(s, x_apoio, y_dir, w_apoio, h_dir, fill=BRANCO, line=CINZA_BORDA, arredondado=True, line_w=0.75)
+    add_rect(s, x_apoio, y_dir, 0.06, h_dir, fill=CINZA_TEXTO)
+    add_text(s, x_apoio + 0.18, y_dir + 0.06, w_apoio - 0.3, 0.2, "APOIO À COORDENAÇÃO GERAL", 9, CINZA_TEXTO,
+              negrito=True)
+    add_text(s, x_apoio + 0.18, y_dir + 0.27, w_apoio - 0.3, 0.26, apoio_geral[0], TAM_NOME_OG + 1, NAVY, negrito=True)
+    add_text(s, x_apoio + 0.18, y_dir + 0.53, w_apoio - 0.3, 0.2, apoio_geral[1].upper(), TAM_CARGO_OG, CINZA_TEXTO,
+              negrito=True)
+    add_text(s, x0 + largura - 3.0, y_dir + h_dir - 0.24, 3.0, 0.22, f"{len(nomes_organograma())} pessoas", 11,
+              CINZA_TEXTO, negrito=True, alinhar=PP_ALIGN.RIGHT)
+
+    # colunas
+    gap = 0.22
+    unidade = (largura - 2 * gap) / sum(PESOS_COLUNAS_ORGANOGRAMA)
+    larguras = [p * unidade for p in PESOS_COLUNAS_ORGANOGRAMA]
+    xs = [x0, x0 + larguras[0] + gap, x0 + larguras[0] + larguras[1] + 2 * gap]
+    y_ramo, y_col = y_dir + h_dir + 0.14, y_dir + h_dir + 0.32
+    centros = [x + w / 2 for x, w in zip(xs, larguras)]
+    add_rect(s, LARGURA_IN / 2 - 0.013, y_dir + h_dir, 0.026, y_ramo - y_dir - h_dir, fill="B8C0CC")
+    add_rect(s, centros[0], y_ramo, centros[2] - centros[0], 0.026, fill="B8C0CC")
+    for cx in centros:
+        add_rect(s, cx - 0.013, y_ramo, 0.026, y_col - y_ramo, fill="B8C0CC")
+
+    for c, x, w in zip(ORGANOGRAMA_COORDENACOES, xs, larguras):
+        cor_c = c["cor"]
+        pad = 0.12
+        wi = w - 2 * pad
+        # alturas (pra desenhar o fundo da coluna antes do conteúdo)
+        h_cab = 0.92
+        h_apoio = 0.52 if c["apoio"] else 0
+        h_equipe = 0.26 + sum(_altura_membro_pptx(p, wi) + 0.07 for p in c["equipe"])
+        w_sub = (wi - 0.12) / 2 if c["subnucleos"] else 0
+        alturas_sub = []
+        for sub in c["subnucleos"]:
+            h_esc = _linhas_estimadas(sub["escopo"], TAM_ATRIB_OG, w_sub - 0.3) * TAM_ATRIB_OG * 1.22 / 72
+            h_lider = 0.1 + TAM_NOME_OG * 1.2 / 72 + TAM_CARGO_OG * 1.25 / 72 + h_esc + 0.08
+            alturas_sub.append((h_lider, h_lider + 0.1 + sum(_altura_membro_pptx(p, w_sub - 0.16) + 0.07
+                                                             for p in sub["membros"]) + 0.03))
+        h_subs = (max(t for _, t in alturas_sub) + 0.08) if alturas_sub else 0
+        h_total = h_cab + 0.08 + h_apoio + h_equipe + h_subs + 0.06
+        add_rect(s, x, y_col, w, h_total, fill=BRANCO, line=CINZA_BORDA, arredondado=True, line_w=0.75)
+        add_rect(s, x, y_col, w, h_cab, fill=cor_c)
+        qtd = _pessoas_coordenacao(c)
+        add_text(s, x + 0.16, y_col + 0.06, w - 1.6, 0.34, c["sigla"], 18, BRANCO, negrito=True)
+        add_rect(s, x + w - 1.36, y_col + 0.1, 1.2, 0.26, fill=BRANCO, arredondado=True)
+        add_text(s, x + w - 1.36, y_col + 0.1, 1.2, 0.26, f"{qtd} pessoa{'s' if qtd != 1 else ''}", 10, cor_c,
+                  negrito=True, alinhar=PP_ALIGN.CENTER, ancorar=MSO_ANCHOR.MIDDLE)
+        add_text(s, x + 0.16, y_col + 0.42, w - 0.3, 0.26, c["lider"][0], 14, BRANCO, negrito=True)
+        add_text(s, x + 0.16, y_col + 0.68, w - 0.3, 0.2, c["lider"][1].upper(), 9.5, BRANCO, negrito=True)
+        yy = y_col + h_cab + 0.08
+        xi = x + pad
+        if c["apoio"]:
+            add_text(s, xi, yy, wi, 0.18, "APOIO ADMINISTRATIVO", 9, CINZA_TEXTO, negrito=True)
+            xc = xi
+            for nome, cargo in c["apoio"]:
+                w_chip = (len(nome) + len(cargo) + 3) * 9.5 * 0.53 / 72 + 0.26
+                add_rect(s, xc, yy + 0.22, w_chip, 0.26, fill=CINZA_CLARO, arredondado=True)
+                _add_texto_rico(s, xc + 0.1, yy + 0.22, w_chip - 0.12, 0.26,
+                                [(nome, 9.5, NAVY, True), (f" · {cargo}", 9.5, CINZA_TEXTO, False)],
+                                ancorar=MSO_ANCHOR.MIDDLE)
+                xc += w_chip + 0.08
+            yy += h_apoio
+        add_text(s, xi, yy, wi, 0.18, "EQUIPE", 9, CINZA_TEXTO, negrito=True)
+        yy += 0.24
+        for p in c["equipe"]:
+            yy += _desenhar_membro_pptx(s, xi, yy, wi, p, cor_c) + 0.07
+        if c["subnucleos"]:
+            yy += 0.04
+            for i, (sub, (h_lider, h_sub)) in enumerate(zip(c["subnucleos"], alturas_sub)):
+                xs_ = xi + i * (w_sub + 0.12)
+                caixa = add_rect(s, xs_, yy, w_sub, h_sub, fill=BRANCO, line=cor_c, arredondado=True, line_w=1)
+                from pptx.enum.dml import MSO_LINE_DASH_STYLE
+                caixa.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+                add_rect(s, xs_ + 0.06, yy + 0.06, w_sub - 0.12, h_lider, fill="EAF1F8" if cor_c == AZUL else CINZA_CLARO,
+                         arredondado=True)
+                ys = yy + 0.11
+                add_text(s, xs_ + 0.16, ys, w_sub - 0.3, 0.22, sub["lider"][0], TAM_NOME_OG, NAVY, negrito=True)
+                ys += TAM_NOME_OG * 1.2 / 72
+                add_text(s, xs_ + 0.16, ys, w_sub - 0.3, 0.18, sub["lider"][1].upper(), TAM_CARGO_OG, CINZA_TEXTO,
+                         negrito=True)
+                ys += TAM_CARGO_OG * 1.25 / 72 + 0.02
+                _add_texto_rico(s, xs_ + 0.16, ys, w_sub - 0.3, yy + 0.06 + h_lider - ys,
+                                _segmentos_atribuicao(sub["escopo"], TAM_ATRIB_OG))
+                ym = yy + 0.06 + h_lider + 0.08
+                for p in sub["membros"]:
+                    ym += _desenhar_membro_pptx(s, xs_ + 0.08, ym, w_sub - 0.16, p, cor_c) + 0.07
+
+
+def _seta_pptx(s, x1, y1, x2, y2, cor_hex=CINZA_TEXTO, ponta=True):
+    from pptx.enum.shapes import MSO_CONNECTOR
+    from pptx.oxml.ns import qn
+    conector = s.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, pol(x1), pol(y1), pol(x2), pol(y2))
+    conector.line.color.rgb = cor(cor_hex)
+    conector.line.width = Pt(1.75)
+    if ponta:
+        ln = conector.line._get_or_add_ln()
+        cauda = ln.makeelement(qn("a:tailEnd"), {"type": "triangle", "w": "med", "len": "med"})
+        ln.append(cauda)
+    return conector
+
+
+def slide_fluxo_trabalho(prs, m):
+    s = novo_slide(prs, "FLUXO DE TRABALHO")
+    x0, largura = 0.56, LARGURA_IN - 1.12
+    add_text(s, x0, 1.3, largura, 0.4, "Divisão do trabalho das Coordenações", 20, NAVY, negrito=True,
+              alinhar=PP_ALIGN.CENTER)
+    gap_c = 0.8
+    w_c = (largura - gap_c) / 2
+    y_c, h_c = 1.82, 2.3
+    centros_c = []
+    for i, (sigla, cor_c, itens) in enumerate(FLUXO_COORDENACOES):
+        x = x0 + i * (w_c + gap_c)
+        centros_c.append(x + w_c / 2)
+        add_rect(s, x, y_c, w_c, h_c, fill=CINZA_CLARO, arredondado=True)
+        add_rect(s, x, y_c, w_c, 0.08, fill=cor_c)
+        add_text(s, x + 0.3, y_c + 0.18, w_c - 0.6, 0.4, sigla, 22, cor_c, negrito=True)
+        caixa = s.shapes.add_textbox(pol(x + 0.3), pol(y_c + 0.66), pol(w_c - 0.6), pol(h_c - 0.8))
+        tf = caixa.text_frame
+        tf.word_wrap = True
+        tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+        for j, item in enumerate(itens):
+            p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
+            p.space_after = Pt(4)
+            run = p.add_run()
+            run.text = f"•  {item}"
+            run.font.size = Pt(15)
+            run.font.name = FONTE
+            run.font.color.rgb = cor(NAVY)
+    # setas convergindo para "Ferramentas utilizadas"
+    w_f, h_f = 6.0, 0.6
+    x_f, y_f = LARGURA_IN / 2 - w_f / 2, y_c + h_c + 0.62
+    for cx in centros_c:
+        _seta_pptx(s, cx, y_c + h_c + 0.04, LARGURA_IN / 2 + (-0.3 if cx < LARGURA_IN / 2 else 0.3), y_f - 0.04)
+    add_rect(s, x_f, y_f, w_f, h_f, fill=NAVY, arredondado=True)
+    add_text(s, x_f, y_f, w_f, h_f, "Ferramentas utilizadas", 18, BRANCO, negrito=True, alinhar=PP_ALIGN.CENTER,
+              ancorar=MSO_ANCHOR.MIDDLE)
+    # ramificação para as 3 ferramentas
+    gap_t = 0.34
+    w_t = (largura - 2 * gap_t) / 3
+    y_ramo, y_t, h_t = y_f + h_f + 0.22, y_f + h_f + 0.5, 2.55
+    centros_t = [x0 + i * (w_t + gap_t) + w_t / 2 for i in range(3)]
+    _seta_pptx(s, LARGURA_IN / 2, y_f + h_f, LARGURA_IN / 2, y_ramo, ponta=False)
+    _seta_pptx(s, centros_t[0], y_ramo, centros_t[2], y_ramo, ponta=False)
+    for cx in centros_t:
+        _seta_pptx(s, cx, y_ramo, cx, y_t - 0.03)
+    for i, (nome, uso, resultado, icone) in enumerate(FLUXO_FERRAMENTAS):
+        x = x0 + i * (w_t + gap_t)
+        add_rect(s, x, y_t, w_t, h_t, fill=BRANCO, line=CINZA_BORDA, arredondado=True, line_w=0.75)
+        add_rect(s, x + 0.22, y_t + 0.2, 0.56, 0.56, fill="E8F0FA", arredondado=True)
+        add_text(s, x + 0.22, y_t + 0.2, 0.56, 0.56, "▦" if icone == "planilha" else "▭", 20, AZUL, negrito=True,
+                  alinhar=PP_ALIGN.CENTER, ancorar=MSO_ANCHOR.MIDDLE, fonte="Segoe UI Symbol")
+        add_text(s, x + 0.92, y_t + 0.2, w_t - 1.1, 0.56, nome, 16, NAVY, negrito=True, ancorar=MSO_ANCHOR.MIDDLE)
+        add_text(s, x + 0.22, y_t + 0.9, w_t - 0.44, 0.9, uso, 13, CINZA_TEXTO)
+        if resultado:
+            add_rect(s, x + 0.22, y_t + h_t - 0.78, w_t - 0.44, 0.6, fill=CINZA_CLARO, arredondado=True)
+            add_text(s, x + 0.36, y_t + h_t - 0.73, w_t - 0.7, 0.18, "RESULTADO", 9, CINZA_TEXTO, negrito=True)
+            add_text(s, x + 0.36, y_t + h_t - 0.53, w_t - 0.7, 0.3, resultado, 14, NAVY, negrito=True)
+    # outras fontes (faixa de apoio)
+    y_o = y_t + h_t + 0.24
+    add_rect(s, x0, y_o, largura, 0.5, fill=CINZA_CLARO, arredondado=True)
+    _add_texto_rico(s, x0, y_o, largura, 0.5,
+                    [("OUTRAS FONTES   ", 11, NAVY, True),
+                     ("   ·   ".join(FLUXO_OUTRAS_FONTES), 14, CINZA_TEXTO, False)],
+                    alinhar=PP_ALIGN.CENTER, ancorar=MSO_ANCHOR.MIDDLE)
+
+
 def montar_html_apresentacao(df, filtros=None, secoes=None):
     m = calcular_metricas(df)
     # manter_ordem=True: o painel de seleção do HTML permite reordenar os
@@ -1972,6 +2518,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
               <span class="cl-vig-selo" style="background:#{cor_p}">{_html_esc(_texto_prazo(acao))}</span>
             </div>'''
 
+    # Fichas das ações em cards, embutidas uma vez no HTML (JSON) e abertas
+    # numa janela ao clicar no card — índice = data-ficha do card.
+    fichas_clausula = []
+
     def _card_clausula(acao):
         cor_p = cores_prazo[acao["prazo"]]
         chips = "".join(f'<span class="cl-chip">{_html_esc(t)}</span>'
@@ -1979,7 +2529,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         motivo = (f'<div class="cl-motivo-rotulo">Motivo / pendência</div>'
                   f'<div class="cl-motivo" title="{_html_esc(acao["motivo"])}">{_html_esc(acao["motivo"])}</div>'
                   if acao["motivo"] else '<div class="cl-motivo cl-sem-motivo">Motivo não informado na planilha</div>')
-        return f'''<div class="cl-card">
+        fichas_clausula.append(acao["ficha"])
+        return f'''<div class="cl-card" role="button" tabindex="0" title="Clique para ver todas as informações da ação"
+             data-ficha="{len(fichas_clausula) - 1}" data-fase="{_html_esc(acao["fase"] or "NÃO INFORMADA")}"
+             data-prazo="{acao["prazo"]}" data-valor="{acao["valor"]:.2f}">
           <div class="cl-faixa" style="background:#{cor_p}"></div>
           <div class="cl-corpo">
             <div class="cl-topo">
@@ -2003,50 +2556,84 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         (f"VENCE EM ATÉ {DIAS_ALERTA_VIGENCIA} DIAS", str(prazos["proxima"]), "ações que pedem prioridade", LARANJA),
         ("CLÁUSULA RETIRADA (TOTAL)", str(m["qtd_clausula_retirada_total"]), "ações já liberadas", VERDE),
     ]
+    # ids dos três primeiros números: o filtro de fase os recalcula no navegador
+    ids_kpi = ["cl-kpi-qtd", "cl-kpi-vencida", "cl-kpi-proxima", ""]
     kpis_html = "".join(f'''<div class="cartao-status"><div class="cs-barra" style="background:#{c}"></div>
-        <div class="cs-num" style="color:#{c}">{_html_esc(n)}</div>
-        <div class="cs-rotulo">{_html_esc(rot)}<div class="cl-kpi-sub">{_html_esc(sub)}</div></div></div>'''
-                        for rot, n, sub, c in kpis_clausula)
+        <div class="cs-num" style="color:#{c}"{f' id="{i}"' if i else ""}>{_html_esc(n)}</div>
+        <div class="cs-rotulo">{_html_esc(rot)}<div class="cl-kpi-sub"{' id="cl-kpi-valor"' if i == "cl-kpi-qtd" else ""}>{_html_esc(sub)}</div></div></div>'''
+                        for (rot, n, sub, c), i in zip(kpis_clausula, ids_kpi))
     def _resumo_prazos_eixo(acoes_eixo):
         # Mini-contagem por prazo no cabeçalho do eixo — dá pra ver a
         # urgência mesmo com os cards recolhidos.
+        # Todos os prazos entram (os zerados escondidos): o filtro de fase
+        # recalcula as contagens no navegador.
         partes = []
         for chave, rot in (("vencida", "vencida"), ("proxima", f"≤ {DIAS_ALERTA_VIGENCIA} dias"),
                            ("no_prazo", "no prazo"), ("sem_data", "sem data")):
             n = sum(1 for a in acoes_eixo if a["prazo"] == chave)
-            if n:
-                partes.append(f'<span class="cl-eixo-prazo" style="color:#{cores_prazo[chave]}">● {n} {rot}</span>')
+            partes.append(f'<span class="cl-eixo-prazo" data-prazo="{chave}" data-rotulo="{_html_esc(rot)}" '
+                          f'style="color:#{cores_prazo[chave]}{"" if n else ";display:none"}">● {n} {rot}</span>')
         return "".join(partes)
 
-    if m["clausulas_por_eixo"]:
-        # Cada eixo com o seu botão de detalhamento (pedido do usuário em
-        # 10/11/2026): cards recolhidos por padrão, mesmo "+" das outras
+    if m["clausulas_por_executor"]:
+        # Um grupo por ÓRGÃO EXECUTOR, cada um com o seu botão de
+        # detalhamento: cards recolhidos por padrão, mesmo "+" das outras
         # seções; o "Gerar PDF" já expande tudo antes de imprimir.
         grupos_clausula_html = "".join(f'''<div class="cl-eixo">
           <div class="cl-eixo-cabecalho">
             <span class="cl-eixo-titulo">
-              <button type="button" class="btn-icone-detalhamento" title="Ver detalhamento do eixo"
-                      onclick="alternarDetalhamento(this, 'detalhe-clausula-eixo-{i}')">+</button>
-              <span class="cl-eixo-nome">{_html_esc(nome_eixo)}</span>
-              {_resumo_prazos_eixo(acoes_eixo)}
+              <button type="button" class="btn-icone-detalhamento" title="Ver detalhamento do executor"
+                      onclick="alternarDetalhamento(this, 'detalhe-clausula-executor-{i}')">+</button>
+              <span class="cl-eixo-nome">{_html_esc(nome_executor)}</span>
+              <span class="cl-resumo-prazos">{_resumo_prazos_eixo(acoes_executor)}</span>
             </span>
-            <span class="cl-eixo-resumo">{len(acoes_eixo)} aç{"ões" if len(acoes_eixo) != 1 else "ão"} ·
-              {_html_esc(abreviar_moeda(sum(a["valor"] for a in acoes_eixo)))}</span>
+            <span class="cl-eixo-resumo">{len(acoes_executor)} aç{"ões" if len(acoes_executor) != 1 else "ão"} ·
+              {_html_esc(abreviar_moeda(sum(a["valor"] for a in acoes_executor)))}</span>
           </div>
-          <div class="cl-grade oculto" id="detalhe-clausula-eixo-{i}">{"".join(_card_clausula(a) for a in acoes_eixo)}</div>
-        </div>''' for i, (nome_eixo, acoes_eixo) in enumerate(m["clausulas_por_eixo"], 1))
+          <div class="cl-grade oculto" id="detalhe-clausula-executor-{i}">{"".join(_card_clausula(a) for a in acoes_executor)}</div>
+        </div>''' for i, (nome_executor, acoes_executor) in enumerate(m["clausulas_por_executor"], 1))
     else:
         grupos_clausula_html = ('<div class="texto-secundario" style="margin-top:30px">Nenhuma ação com cláusula '
                                 'suspensiva pendente neste recorte.</div>')
+
+    # Filtro por FASE, seleção múltipla (pedido do usuário em 11/11/2026):
+    # nenhuma fase marcada = todas. Filtra só os cards desta seção.
+    fases_clausula = sorted({a["fase"] or "NÃO INFORMADA" for _n, lista in m["clausulas_por_executor"]
+                             for a in lista})
+    filtro_fase_html = ('<div class="cl-filtro"><span class="cl-filtro-rotulo">Fase:</span>'
+                        + "".join(f'<button type="button" class="cl-filtro-btn" data-fase="{_html_esc(f)}" '
+                                  f'onclick="clAlternarFase(this)">{_html_esc(f)}</button>' for f in fases_clausula)
+                        + '<button type="button" class="cl-filtro-limpar" onclick="clLimparFases()">Todas</button>'
+                        + '</div>') if len(fases_clausula) > 1 else ""
+    secoes_ficha = [{"titulo": s["titulo"], "largo": bool(s.get("largo")), "campos": [list(c) for c in s["campos"]]}
+                    for s in (pac._definicao_secoes_ficha() if hasattr(pac, "_definicao_secoes_ficha") else [])]
+    dados_fichas_json = (json.dumps({"fichas": fichas_clausula, "secoes": secoes_ficha}, ensure_ascii=False, default=str)
+                         .replace("</", "<\\/"))
+    janela_ficha_html = f'''<script type="application/json" id="cl-fichas-dados">{dados_fichas_json}</script>
+      <div id="cl-ficha-fundo" class="cl-ficha-fundo" onclick="if (event.target === this) clFecharFicha()">
+        <div class="cl-ficha-janela" role="dialog" aria-modal="true">
+          <div class="cl-ficha-topo">
+            <div><div id="cl-ficha-titulo" class="cl-ficha-titulo"></div>
+                 <div id="cl-ficha-sub" class="cl-ficha-sub"></div></div>
+            <button type="button" class="cl-ficha-fechar" onclick="clFecharFicha()" title="Fechar (Esc)">&times;</button>
+          </div>
+          <div id="cl-ficha-corpo" class="cl-ficha-corpo"></div>
+        </div>
+      </div>'''
     legenda_prazo = "".join(f'<span><i style="background:#{cores_prazo[k]}"></i>{rot}</span>' for k, rot in (
         ("vencida", "Vigência vencida"), ("proxima", f"Vence em até {DIAS_ALERTA_VIGENCIA} dias"),
         ("no_prazo", "No prazo"), ("sem_data", "Sem data")))
     slide_clausulas = _html_cabecalho_rodape("CLÁUSULAS SUSPENSIVAS", f'''
       <div class="cartoes-grade cl-kpis">{kpis_html}</div>
       <div class="cl-legenda">{legenda_prazo}</div>
+      {filtro_fase_html}
       {grupos_clausula_html}
+      <div id="cl-sem-resultado" class="texto-secundario" style="display:none;margin-top:30px">Nenhuma ação
+      com cláusula suspensiva pendente nas fases selecionadas.</div>
       <div class="nota-rodape">* Valor = investimento total da ação (T.C. firmado + não firmado). Cards ordenados
-      pela data de vigência da cláusula (mais urgente primeiro); eixos do maior para o menor valor.</div>
+      pela data de vigência da cláusula (mais urgente primeiro); executores do maior para o menor valor.
+      Clique num card para ver todas as informações da ação.</div>
+      {janela_ficha_html}
     ''', classe_extra="slide-continua")
 
     cabecalho_quadro, linhas_quadro = _sem_colunas_zeradas(CABECALHO_QUADRO_RESUMO,
@@ -2302,6 +2889,39 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .cl-motivo { font-size:13px; color:#0B1F3F; margin-top:3px; line-height:1.35; white-space:pre-line;
       display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
     .cl-sem-motivo { color:#8C8C8C; font-style:italic; margin-top:10px; }
+    .cl-resumo-prazos { display:flex; flex-wrap:wrap; gap:12px; }
+    .cl-card { cursor:pointer; transition:box-shadow .15s, border-color .15s; }
+    .cl-card:hover, .cl-card:focus { border-color:#0B1F3F; box-shadow:0 4px 14px rgba(11,31,63,.15); outline:none; }
+    .cl-card.cl-filtrado, .cl-eixo.cl-filtrado { display:none !important; }
+    /* filtro de fase (seleção múltipla; nenhuma marcada = todas) */
+    .cl-filtro { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:14px 0 4px; }
+    .cl-filtro-rotulo { font-size:13px; font-weight:700; color:#0B1F3F; margin-right:4px; }
+    .cl-filtro-btn, .cl-filtro-limpar { font-family:inherit; font-size:12px; font-weight:700; cursor:pointer;
+      border:1px solid #C9CFD8; background:#fff; color:#5B6576; border-radius:14px; padding:5px 12px;
+      text-transform:uppercase; }
+    .cl-filtro-btn.ativo { background:#0B1F3F; border-color:#0B1F3F; color:#fff; }
+    .cl-filtro-limpar { border-style:dashed; }
+    /* janela com a ficha completa da ação */
+    .cl-ficha-fundo { display:none; position:fixed; inset:0; z-index:1000; background:rgba(11,31,63,.55);
+      align-items:center; justify-content:center; padding:24px; }
+    .cl-ficha-fundo.aberta { display:flex; }
+    .cl-ficha-janela { background:#fff; border-radius:12px; width:min(1100px, 100%); max-height:100%;
+      display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35); overflow:hidden; }
+    .cl-ficha-topo { display:flex; justify-content:space-between; align-items:flex-start; gap:16px;
+      padding:18px 22px; border-bottom:3px solid #E0AB45; background:#F7F8FA; }
+    .cl-ficha-titulo { font-size:22px; font-weight:900; color:#0B1F3F; }
+    .cl-ficha-sub { font-size:14px; color:#5B6576; margin-top:3px; }
+    .cl-ficha-fechar { font-size:28px; line-height:1; border:none; background:none; cursor:pointer; color:#5B6576; }
+    .cl-ficha-corpo { padding:8px 22px 22px; overflow-y:auto; }
+    .cl-ficha-secao { margin-top:16px; }
+    .cl-ficha-secao-titulo { font-size:13px; font-weight:800; color:#1565A3; letter-spacing:.04em;
+      border-bottom:1px solid #E3E7ED; padding-bottom:4px; margin-bottom:8px; }
+    .cl-ficha-campos { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px 18px; }
+    .cl-ficha-campos.largo { grid-template-columns:1fr; }
+    .cl-ficha-rotulo { font-size:11px; font-weight:700; color:#7A8494; text-transform:uppercase; }
+    .cl-ficha-valor { font-size:14px; color:#1A1A1A; white-space:pre-line; overflow-wrap:anywhere; }
+    .cl-ficha-valor.vazio { color:#A0A7B2; }
+    @media print { .cl-filtro, .cl-ficha-fundo { display:none !important; } }
 
     /* Composição por Fase: página contínua (altura livre, sem recortar
        conteúdo) e detalhamento por objeto escondido atrás de um botão. */
@@ -2409,7 +3029,11 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     '''
 
     # só os slides escolhidos, numerados na ordem
-    por_chave = {"PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": [],
+    por_chave = {"ORGANOGRAMA": [_html_cabecalho_rodape("ORGANOGRAMA DA CGAPE", _html_organograma(),
+                                                         classe_extra="slide-institucional")],
+                 "FLUXO_TRABALHO": [_html_cabecalho_rodape("FLUXO DE TRABALHO", _html_fluxo_trabalho(),
+                                                           classe_extra="slide-institucional")],
+                 "PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": [],
                  "STATUS_FASE": [slide2b],
                  "EIXO_FONTE": slides_eixo_fonte, "FONTE_EIXO": slides_fonte_eixo, "EXECUCAO": [slide3],
                  "A_CONTRATAR": [slide4], "CLAUSULAS": [slide_clausulas], "TABELA_RESUMO": [], "QUADRO_FASE": [],
@@ -2437,7 +3061,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 <head>
 <meta charset="utf-8">
 <title>Apresentação CGAPE</title>
-<style>{css}</style>
+<style>{css}{CSS_SLIDES_INSTITUCIONAIS}</style>
 </head>
 <body>
 <button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()">Gerar PDF</button>
@@ -2543,8 +3167,122 @@ function gerarPdfCompleto() {{
   mostrar(atual);
 }})();
 </script>
+<script>{JS_CLAUSULAS}</script>
 </body>
 </html>'''
+
+
+# Seção Cláusulas Suspensivas do HTML: filtro de fase (seleção múltipla) e
+# janela com a ficha completa da ação ao clicar no card (pedido do usuário em
+# 11/11/2026). String comum (não f-string) para o JS não precisar de {{ }}.
+JS_CLAUSULAS = r"""
+(function () {
+  var dadosEl = document.getElementById('cl-fichas-dados');
+  if (!dadosEl) return;
+  var DADOS_CL = JSON.parse(dadosEl.textContent);
+  var fasesMarcadas = new Set();
+
+  function moedaCurta(v) {
+    if (v >= 1e9) return 'R$ ' + (v / 1e9).toFixed(2).replace('.', ',') + ' Bi';
+    if (v >= 1e6) return 'R$ ' + (v / 1e6).toFixed(2).replace('.', ',') + ' Mi';
+    return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function aplicarFiltro() {
+    var totalQtd = 0, totalValor = 0, cont = { vencida: 0, proxima: 0, no_prazo: 0, sem_data: 0 };
+    document.querySelectorAll('.cl-eixo').forEach(function (grupo) {
+      var qtd = 0, valor = 0, pz = { vencida: 0, proxima: 0, no_prazo: 0, sem_data: 0 };
+      grupo.querySelectorAll('.cl-card').forEach(function (card) {
+        var passa = fasesMarcadas.size === 0 || fasesMarcadas.has(card.dataset.fase);
+        card.classList.toggle('cl-filtrado', !passa);
+        if (!passa) return;
+        qtd++; valor += parseFloat(card.dataset.valor) || 0; pz[card.dataset.prazo]++;
+      });
+      grupo.classList.toggle('cl-filtrado', qtd === 0);
+      var resumo = grupo.querySelector('.cl-eixo-resumo');
+      if (resumo) resumo.textContent = qtd + (qtd === 1 ? ' ação · ' : ' ações · ') + moedaCurta(valor);
+      grupo.querySelectorAll('.cl-eixo-prazo').forEach(function (span) {
+        var chave = span.dataset.prazo;
+        if (!chave) return;
+        span.style.display = pz[chave] ? '' : 'none';
+        span.textContent = '● ' + pz[chave] + ' ' + span.dataset.rotulo;
+      });
+      totalQtd += qtd; totalValor += valor;
+      Object.keys(cont).forEach(function (k) { cont[k] += pz[k]; });
+    });
+    var el;
+    if ((el = document.getElementById('cl-kpi-qtd'))) el.textContent = totalQtd;
+    if ((el = document.getElementById('cl-kpi-valor'))) el.textContent = moedaCurta(totalValor) + ' em investimento';
+    if ((el = document.getElementById('cl-kpi-vencida'))) el.textContent = cont.vencida;
+    if ((el = document.getElementById('cl-kpi-proxima'))) el.textContent = cont.proxima;
+    var vazio = document.getElementById('cl-sem-resultado');
+    if (vazio) vazio.style.display = totalQtd === 0 ? '' : 'none';
+  }
+
+  window.clAlternarFase = function (botao) {
+    var fase = botao.dataset.fase;
+    if (fasesMarcadas.has(fase)) fasesMarcadas.delete(fase); else fasesMarcadas.add(fase);
+    botao.classList.toggle('ativo', fasesMarcadas.has(fase));
+    aplicarFiltro();
+  };
+  window.clLimparFases = function () {
+    fasesMarcadas.clear();
+    document.querySelectorAll('.cl-filtro-btn').forEach(function (b) { b.classList.remove('ativo'); });
+    aplicarFiltro();
+  };
+
+  // ---- janela da ficha ----
+  var fundo = document.getElementById('cl-ficha-fundo');
+  // fora dos slides: o carrossel pode transformar/recortar o slide
+  if (fundo) document.body.appendChild(fundo);
+
+  function esc(t) {
+    var d = document.createElement('div');
+    d.textContent = t == null ? '' : String(t);
+    return d.innerHTML;
+  }
+
+  function abrirFicha(indice) {
+    var f = DADOS_CL.fichas[indice] || {};
+    document.getElementById('cl-ficha-titulo').textContent = f.objeto || 'Ação';
+    document.getElementById('cl-ficha-sub').textContent =
+      [f.item ? 'Item ' + f.item : '', f.municipio, f.executor].filter(Boolean).join(' · ');
+    var html = '';
+    DADOS_CL.secoes.forEach(function (s) {
+      html += '<div class="cl-ficha-secao"><div class="cl-ficha-secao-titulo">' + esc(s.titulo) + '</div>'
+        + '<div class="cl-ficha-campos' + (s.largo ? ' largo' : '') + '">';
+      s.campos.forEach(function (c) {
+        var v = f[c[0]];
+        var conteudo;
+        if (!v) conteudo = '<div class="cl-ficha-valor vazio">-</div>';
+        else if (/^https?:\/\//i.test(v)) conteudo = '<div class="cl-ficha-valor"><a href="' + esc(v)
+          + '" target="_blank" rel="noopener">' + esc(v) + '</a></div>';
+        else conteudo = '<div class="cl-ficha-valor">' + esc(v) + '</div>';
+        html += '<div><div class="cl-ficha-rotulo">' + esc(c[1]) + '</div>' + conteudo + '</div>';
+      });
+      html += '</div></div>';
+    });
+    document.getElementById('cl-ficha-corpo').innerHTML = html;
+    fundo.classList.add('aberta');
+  }
+
+  window.clFecharFicha = function () { if (fundo) fundo.classList.remove('aberta'); };
+
+  document.querySelectorAll('.cl-card[data-ficha]').forEach(function (card) {
+    card.addEventListener('click', function () { abrirFicha(+card.dataset.ficha); });
+    card.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirFicha(+card.dataset.ficha); }
+    });
+  });
+  // Esc fecha a janela antes de qualquer outro atalho do carrossel
+  document.addEventListener('keydown', function (e) {
+    if (fundo && fundo.classList.contains('aberta')) {
+      if (e.key === 'Escape') clFecharFicha();
+      e.stopImmediatePropagation();
+    }
+  }, true);
+})();
+"""
 
 
 def gerar_html_bytes(df, filtros=None, secoes=None):
@@ -2559,6 +3297,10 @@ def gerar_html_bytes(df, filtros=None, secoes=None):
 # (mesma do relatório gerencial; "layout" escolhe o desenho da miniatura).
 # ---------------------------------------------------------------------------
 SLIDES_APRESENTACAO = [
+    # Bloco "Quem somos / Como trabalhamos" logo depois da capa (pedido do
+    # usuário em 11/11/2026) — no HTML a capa é a página 1 do Canva.
+    {"chave": "ORGANOGRAMA", "titulo": "Organograma da CGAPE", "layout": "cards_tabela"},
+    {"chave": "FLUXO_TRABALHO", "titulo": "Fluxo de Trabalho", "layout": "texto"},
     {"chave": "PANORAMA", "titulo": "Panorama da Carteira", "layout": "cards_tabela"},
     {"chave": "VISAO_GERAL", "titulo": "Visão Geral da Carteira", "layout": "cards_tabela"},
     {"chave": "COMP_ORIGEM", "titulo": "Composição por Origem do Recurso", "layout": "barras"},
@@ -2664,9 +3406,21 @@ def listar_slides(df, formato=None):
         # fim da lista por padrão, mas o painel deixa reordenar pra
         # intercalar com as seções do dash — pedido do usuário em
         # 08/11/2026.
-        catalogo = catalogo + [{"chave": _chave_canva(numero), "titulo": f"Canva — página {numero}",
-                                "layout": "texto"} for numero, _ in _paginas_canva_disponiveis()]
-    return [dict(s, paginas=paginas.get(s["chave"], 1), marcada=True) for s in catalogo]
+        canva = [{"chave": _chave_canva(numero), "titulo": f"Canva — página {numero}",
+                  "layout": "texto"} for numero, _ in _paginas_canva_disponiveis()]
+        # A capa (página 1 do Canva) abre a apresentação, antes do bloco
+        # Organograma/Fluxo; as páginas 2 e 3 do Canva (organograma e fluxo
+        # antigos, em imagem) chegam desmarcadas — os slides novos as
+        # substituem. Pedido do usuário em 11/11/2026.
+        capa = [c for c in canva if c["chave"] == _chave_canva(1)]
+        catalogo = capa + catalogo + [c for c in canva if c not in capa]
+    return [dict(s, paginas=paginas.get(s["chave"], 1),
+                 marcada=s["chave"] not in {_chave_canva(n) for n in PAGINAS_CANVA_SUBSTITUIDAS})
+            for s in catalogo]
+
+
+# Páginas do Canva que viraram slides próprios (Organograma = 2, Fluxo = 3).
+PAGINAS_CANVA_SUBSTITUIDAS = {2, 3}
 
 
 # ---------------------------------------------------------------------------
@@ -2683,7 +3437,8 @@ def montar_apresentacao(df, filtros=None, secoes=None):
     prs.slide_width = pol(LARGURA_IN)
     prs.slide_height = pol(ALTURA_IN)
 
-    desenhar = {"PANORAMA": slide_1_panorama, "VISAO_GERAL": slide_visao_geral, "COMP_ORIGEM": slide_2_composicao_origem,
+    desenhar = {"ORGANOGRAMA": slide_organograma, "FLUXO_TRABALHO": slide_fluxo_trabalho,
+                "PANORAMA": slide_1_panorama, "VISAO_GERAL": slide_visao_geral, "COMP_ORIGEM": slide_2_composicao_origem,
                 "COMP_FASE": slide_composicao_fase, "STATUS_FASE": slide_status_fase_origem,
                 "EIXO_FONTE": slide_eixo_fonte, "FONTE_EIXO": slide_fonte_eixo,
                 "EXECUCAO": slide_3_execucao_contratado, "A_CONTRATAR": slide_4_a_contratar,

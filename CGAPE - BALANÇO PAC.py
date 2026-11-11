@@ -31,6 +31,7 @@ import colorsys
 import itertools
 import shutil
 import subprocess
+import threading
 import unicodedata
 import webbrowser
 from datetime import datetime, timedelta, timezone
@@ -2558,7 +2559,18 @@ def desenhar_background_capa(canvas, doc):
     canvas.restoreState()
 
 
+# Cabeçalho das páginas da seção MONITORAMENTO (ver relatorio_monitoramento):
+# None = cabeçalho do PAC; "DIVISORIA" = página de abertura da seção;
+# "MONITORAMENTO" = páginas da seção. Trocado por um flowable invisível no
+# fim da página anterior, porque o cabeçalho é desenhado antes do conteúdo.
+MODO_CABECALHO_PDF = None
+
+
 def desenhar_cabecalho(canvas, doc):
+    if MODO_CABECALHO_PDF == "DIVISORIA":
+        return _modulo_monitoramento().desenhar_divisoria(canvas, doc)
+    if MODO_CABECALHO_PDF == "MONITORAMENTO":
+        return _modulo_monitoramento().desenhar_cabecalho(canvas, doc)
     canvas.saveState()
     largura, altura = PAGINA
 
@@ -2664,7 +2676,7 @@ class NumeradorPaginasGestaoCanvas(reportlab_canvas.Canvas):
                 # executor for longo demais, a fonte encolhe até 9 pt e, no
                 # limite, o texto é cortado com reticências, em vez de
                 # encavalar na numeração.
-                if TEXTO_FILTROS_RODAPE:
+                if TEXTO_FILTROS_RODAPE and g != "MONITORAMENTO":
                     largura_pagina_txt = self.stringWidth(
                         texto_pagina, FONTE_PADRAO_NEGRITO, 15)
                     espaco = largura - MARGEM_ESQ - MARGEM_DIR - largura_pagina_txt - 30
@@ -7008,6 +7020,7 @@ def _dados_clausulas_dash(df):
             prazo = "no_prazo"
         acoes.append({
             "eixo": _texto(linha.get(col_eixo)) or "NÃO INFORMADO",
+            "executor": _texto(linha.get("EXECUTOR")) or "NÃO INFORMADO",
             "item": _texto(normalizar_item(linha.get(col_item))),
             "objeto": _texto(linha.get(col_objeto)) or "NÃO INFORMADO",
             "municipio": _texto(linha.get(col_municipio)),
@@ -7022,9 +7035,12 @@ def _dados_clausulas_dash(df):
             "prazo": prazo,
         })
 
+    # Agrupado por ÓRGÃO EXECUTOR (antes era por eixo; pedido do usuário em
+    # 11/11/2026, igual ao HTML da apresentação). A chave "eixos" do
+    # retorno ficou com o nome antigo; cada grupo traz "nome".
     grupos = {}
     for acao in acoes:
-        grupos.setdefault(acao["eixo"], []).append(acao)
+        grupos.setdefault(acao["executor"], []).append(acao)
     for lista in grupos.values():
         lista.sort(key=lambda a: (a["dias"] is None, a["dias"] if a["dias"] is not None else 0, -a["valor"]))
     eixos = sorted(grupos.items(), key=lambda g: (-sum(a["valor"] for a in g[1]), g[0]))
@@ -7035,7 +7051,7 @@ def _dados_clausulas_dash(df):
         "proximas": sum(1 for a in acoes if a["prazo"] == "proxima"),
         "retiradaTotal": int((situacao_up == "RETIRADA TOTAL").sum()),
         "diasAlerta": DIAS_ALERTA_VIGENCIA_CLAUSULA,
-        "eixos": [{"eixo": e, "qtd": len(l), "valor": float(sum(a["valor"] for a in l)), "acoes": l}
+        "eixos": [{"nome": e, "qtd": len(l), "valor": float(sum(a["valor"] for a in l)), "acoes": l}
                   for e, l in eixos],
     }
 
@@ -7575,7 +7591,10 @@ def _secoes_disponiveis_relatorio(df):
     return disponiveis
 
 
-def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financeiro_detalhado=False):
+def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financeiro_detalhado=False,
+               monitoramento=None):
+    # monitoramento: filtros da seção MONITORAMENTO vindos do painel (dict;
+    # {} = base toda). None = relatório só do PAC, como antes.
     # financeiro_detalhado: chave "Detalhar contratado" do Resumo Financeiro
     # no painel — o gráfico do Painel Geral sai com o VALOR CONTRATADO
     # rateado por fonte (ver financeiro_contratado_por_fonte).
@@ -7593,7 +7612,15 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
     colunas_detalhamento = normalizar_colunas_detalhamento(
         colunas_detalhamento)
     # secoes: chaves de SECOES_RELATORIO que devem entrar no PDF. None = tudo.
-    secoes_ativas = normalizar_secoes_relatorio(secoes)
+    # As chaves do MONITORAMENTO (MON_*) seguem à parte; uma seleção só com
+    # páginas do MONITORAMENTO não pode virar "PAC completo".
+    chaves_mon = _modulo_monitoramento().CHAVES_SECOES
+    secoes_mon = None if not secoes else [
+        c for c in secoes if str(c) in chaves_mon]
+    secoes_pac = None if not secoes else [
+        c for c in secoes if str(c) not in chaves_mon]
+    secoes_ativas = (normalizar_secoes_relatorio(secoes_pac)
+                     if (not secoes or secoes_pac) else set())
 
     def secao_ativa(chave):
         return chave in secoes_ativas
@@ -9326,6 +9353,25 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
         # não tem página a que se referir.
         while elements and isinstance(elements[-1], (PageBreak, _MarcadorGestao)):
             elements.pop()
+
+        # --- SEÇÃO MONITORAMENTO (relatorio_monitoramento.py) ---
+        # Entra depois de todo o PAC, aberta por uma divisória própria.
+        global MODO_CABECALHO_PDF
+        MODO_CABECALHO_PDF = None
+        elementos_mon = []
+        if monitoramento is not None:
+            elementos_mon = _modulo_monitoramento().elementos_pdf(
+                monitoramento, secoes_mon, _MarcadorGestao)
+        if elementos_mon:
+            tem_pac = any(not isinstance(e, _MarcadorGestao) for e in elements)
+            if tem_pac:
+                elements += [_modulo_monitoramento()._TrocarCabecalho("DIVISORIA"),
+                             PageBreak()]
+            else:
+                MODO_CABECALHO_PDF = "DIVISORIA"
+            elements += elementos_mon
+            while elements and isinstance(elements[-1], (PageBreak, _MarcadorGestao)):
+                elements.pop()
         if not elements:
             raise ValueError(
                 "Nenhuma página foi selecionada para o relatório. "
@@ -9345,6 +9391,7 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             onLaterPages=desenhar_cabecalho,
             canvasmaker=NumeradorPaginasGestaoCanvas,
         )
+        MODO_CABECALHO_PDF = None
         print(f"PDF GERADO COM SUCESSO: {arquivo_pdf}")
         # No modo web, quem abre o PDF é o navegador de quem está acessando
         # (o servidor devolve os bytes na resposta HTTP) — não o processo
@@ -9899,6 +9946,89 @@ def montar_html_painel(df_base):
     overflow: hidden;
     min-height: 0;
   }
+
+  /* --- Seletor de seção PAC | MONITORAMENTO ---
+     Cada seção tem a sua grade de filtros; a do MONITORAMENTO (#grade-mon)
+     usa os mesmos blocos da do PAC. Dashboard, busca, gerencial e
+     apresentação continuam só do PAC e saem do topo no MONITORAMENTO. */
+  .seletor-secao {
+    display: inline-flex;
+    align-self: flex-start;
+    border: 1px solid var(--cor-acento-teal);
+    border-radius: var(--raio-md);
+    overflow: hidden;
+  }
+  .seletor-secao button {
+    background: transparent;
+    color: var(--cor-texto-primario);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 6px 16px;
+  }
+  .seletor-secao button.ativo {
+    background: var(--cor-acento-teal);
+    color: #16211F;
+  }
+  #grade-mon {
+    flex: 1;
+    display: none;
+    grid-template-columns: repeat(6, 1fr);
+    grid-auto-rows: 1fr;
+    gap: 14px;
+    overflow: hidden;
+    min-height: 0;
+  }
+  body.secao-mon #grade { display: none; }
+  body.secao-mon #grade-mon { display: grid; }
+  body.secao-mon #filtros-busca-btn-lupa,
+  body.secao-mon #filtros-qc-btn,
+  body.secao-mon #btn-gerencial-filtros,
+  body.secao-mon #btn-preview,
+  body.secao-mon #btn-gerar-pptx,
+  body.secao-mon #btn-ver-html,
+  body.secao-mon #acesso-rapido-filtros-wrap { display: none !important; }
+  .mon-aviso {
+    grid-column: 1 / -1;
+    padding: 20px;
+    color: var(--cor-texto-primario);
+  }
+  .mon-conclusao {
+    border-top: 1px solid var(--cor-card-elevado);
+    padding: 6px 12px 8px 12px;
+    max-height: 38%;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .mon-conclusao-titulo {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: var(--cor-texto-primario);
+    margin-bottom: 2px;
+  }
+  .mon-conclusao details > summary { list-style: none; cursor: pointer; }
+  .mon-conclusao details > summary::-webkit-details-marker { display: none; }
+  .mon-conclusao .mon-mes { padding-left: 18px; }
+  .mon-select {
+    margin: 4px 12px 10px 12px;
+    background: var(--cor-card-elevado);
+    color: var(--cor-texto-primario);
+    border: 1px solid var(--cor-card-elevado);
+    border-radius: var(--raio-sm);
+    padding: 6px;
+    font-family: var(--fonte);
+    font-size: 12px;
+  }
+  .mon-sub {
+    padding: 4px 12px 0 12px;
+    font-size: 11px;
+    color: var(--cor-texto-secundario);
+  }
+  .qc-mon-grupo { margin: 10px 0 4px 0; font-weight: 700; color: var(--cor-texto-primario); }
+  .qc-mon-grupo span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  .qc-mon-item { margin: 0 0 6px 16px; font-size: 12px; }
+  .qc-mon-item small { display: block; color: var(--cor-texto-secundario); }
 
   .bloco {
     background: var(--cor-card);
@@ -11558,6 +11688,14 @@ def montar_html_painel(df_base):
   .cl-dash-motivo { font-size: 12px; color: var(--cor-texto-primario); line-height: 1.35; margin-top: 2px; white-space: pre-line;
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .cl-dash-sem-motivo { color: var(--cor-texto-terciario); font-style: italic; margin-top: 8px; }
+  /* filtro de fase da seção (seleção múltipla; nenhuma marcada = todas) */
+  .cl-dash-filtro { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+  .cl-dash-filtro-rotulo { font-size: 12px; font-weight: 700; color: var(--cor-texto-primario); margin-right: 2px; }
+  .cl-dash-filtro button { font-family: var(--fonte); font-size: 11px; font-weight: 700; text-transform: uppercase;
+    background: transparent; color: var(--cor-texto-secundario); border: 1px solid var(--cor-card-elevado);
+    border-radius: 12px; padding: 4px 11px; }
+  .cl-dash-filtro button.ativo { background: var(--cor-acento-teal); border-color: var(--cor-acento-teal); color: #16211F; }
+  .cl-dash-filtro button.cl-dash-filtro-todas { border-style: dashed; }
   @media (max-width: 768px) { .cl-dash-kpis { grid-template-columns: repeat(2, 1fr); } }
 
   .preview-sem-dados {
@@ -12076,6 +12214,10 @@ def montar_html_painel(df_base):
         </span>
       </div>
       <p class="topo-orientacao">Selecione os filtros desejados. Caso nenhum item de um bloco seja selecionado, todos os itens desse bloco serão considerados automaticamente.</p>
+      <div class="seletor-secao" id="seletor-secao" role="tablist" title="Seção do relatório cujos filtros aparecem abaixo. O relatório gerado traz as duas seções.">
+        <button type="button" class="ativo" data-secao="PAC">PAC</button>
+        <button type="button" data-secao="MON">MONITORAMENTO</button>
+      </div>
     </div>
     <div id="botoes-topo">
       <button id="filtros-busca-btn-lupa" class="dash-busca-btn-lupa" title="Buscar ação e abrir a Ficha Cadastral">
@@ -12169,6 +12311,7 @@ def montar_html_painel(df_base):
     </div>
   </div>
   <div id="grade"></div>
+  <div id="grade-mon"><div class="mon-aviso">Carregando a base do MONITORAMENTO...</div></div>
 </div>
 
 <div id="aviso-inatividade"><div class="caixa">Painel fechado por inatividade.</div></div>
@@ -12423,7 +12566,7 @@ def montar_html_painel(df_base):
 
       <!-- Antes do Panorama por Secretaria — pedido do usuário em 10/11/2026 -->
       <section class="preview-secao" id="secao-clausulas">
-        <h3 class="preview-secao-titulo">Cláusulas Suspensivas por Eixo<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo">Cláusulas Suspensivas por Executor<span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div id="preview-clausulas"></div>
         </div>
@@ -14356,10 +14499,48 @@ def montar_html_painel(df_base):
   // Seção "Cláusulas Suspensivas por Eixo" — cards por ação, cor pelo prazo
   // da vigência; clicar no card abre a Ficha Cadastral (pedido do usuário em
   // 10/11/2026). Dados de _dados_clausulas_dash no Python.
+  // Estado da seção: dados do recorte, fases marcadas no filtro de fase
+  // (seleção múltipla; vazio = todas) e executores abertos — o filtro
+  // redesenha a seção sem recolher o que estava aberto.
+  var _clDash = { dados: null, fases: new Set(), abertos: new Set() };
+
   function montarClausulas(cl) {
+    _clDash.dados = cl;
+    if (cl) {
+      var existentes = new Set();
+      cl.eixos.forEach(function (g) { g.acoes.forEach(function (a) { existentes.add(a.fase || "NÃO INFORMADA"); }); });
+      _clDash.fases.forEach(function (f) { if (!existentes.has(f)) _clDash.fases.delete(f); });
+    }
+    desenharClausulasDash();
+  }
+
+  function desenharClausulasDash() {
+    var clOriginal = _clDash.dados;
     var container = document.getElementById("preview-clausulas");
     if (!container) return;
-    if (!cl) { container.innerHTML = '<div class="preview-sem-dados">Sem dados no filtro atual</div>'; return; }
+    if (!clOriginal) { container.innerHTML = '<div class="preview-sem-dados">Sem dados no filtro atual</div>'; return; }
+    var faseDe = function (a) { return a.fase || "NÃO INFORMADA"; };
+    var todasFases = [];
+    clOriginal.eixos.forEach(function (g) {
+      g.acoes.forEach(function (a) { if (todasFases.indexOf(faseDe(a)) === -1) todasFases.push(faseDe(a)); });
+    });
+    todasFases.sort();
+    // recorte pelo filtro de fase: grupos, quantidades e KPIs recalculados
+    var gruposFiltrados = clOriginal.eixos.map(function (g) {
+      var acoes = g.acoes.filter(function (a) { return _clDash.fases.size === 0 || _clDash.fases.has(faseDe(a)); });
+      return { nome: g.nome, acoes: acoes, qtd: acoes.length,
+               valor: acoes.reduce(function (s, a) { return s + a.valor; }, 0) };
+    }).filter(function (g) { return g.qtd > 0; });
+    var todasAcoes = [].concat.apply([], gruposFiltrados.map(function (g) { return g.acoes; }));
+    var cl = {
+      qtd: todasAcoes.length,
+      valor: todasAcoes.reduce(function (s, a) { return s + a.valor; }, 0),
+      vencidas: todasAcoes.filter(function (a) { return a.prazo === "vencida"; }).length,
+      proximas: todasAcoes.filter(function (a) { return a.prazo === "proxima"; }).length,
+      retiradaTotal: clOriginal.retiradaTotal,
+      diasAlerta: clOriginal.diasAlerta,
+      eixos: gruposFiltrados,
+    };
     var esc = function (t) {
       return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;")
         .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -14395,6 +14576,13 @@ def montar_html_painel(df_base):
         ["no_prazo", "No prazo"], ["sem_data", "Sem data"]].map(function (p) {
         return '<span><i style="background:' + cores[p[0]] + '"></i>' + p[1] + '</span>';
       }).join("") + '</div>';
+    if (todasFases.length > 1) {
+      html += '<div class="cl-dash-filtro"><span class="cl-dash-filtro-rotulo">Fase:</span>' +
+        todasFases.map(function (f) {
+          return '<button type="button" data-fase="' + esc(f) + '"' + (_clDash.fases.has(f) ? ' class="ativo"' : '') +
+            '>' + esc(f) + '</button>';
+        }).join("") + '<button type="button" class="cl-dash-filtro-todas">Todas</button></div>';
+    }
     if (!cl.eixos.length) {
       html += '<div class="preview-sem-dados">Nenhuma ação com cláusula suspensiva pendente no filtro atual</div>';
     }
@@ -14406,10 +14594,13 @@ def montar_html_painel(df_base):
         var n = g.acoes.filter(function (a) { return a.prazo === p[0]; }).length;
         return n ? '<span class="cl-dash-eixo-prazo" style="color:' + cores[p[0]] + '">● ' + n + ' ' + p[1] + '</span>' : '';
       }).join("");
-      html += '<div class="cl-dash-eixo"><div class="cl-dash-eixo-cab" role="button" tabindex="0" title="Ver detalhamento do eixo">' +
-        '<span class="cl-dash-eixo-titulo"><span class="cl-dash-eixo-btn">+</span><span class="cl-dash-eixo-nome">' + esc(g.eixo) +
+      var aberto = _clDash.abertos.has(g.nome);
+      html += '<div class="cl-dash-eixo"><div class="cl-dash-eixo-cab" role="button" tabindex="0" data-nome="' + esc(g.nome) +
+        '" title="' + (aberto ? "Ocultar" : "Ver") + ' detalhamento do executor">' +
+        '<span class="cl-dash-eixo-titulo"><span class="cl-dash-eixo-btn">' + (aberto ? "–" : "+") +
+        '</span><span class="cl-dash-eixo-nome">' + esc(g.nome) +
         '</span>' + prazosEixo + '</span><span class="cl-dash-eixo-resumo">' + g.qtd + (g.qtd === 1 ? " ação" : " ações") + ' · ' +
-        formatarMiBi(g.valor) + '</span></div><div class="cl-dash-grade cl-dash-recolhido">';
+        formatarMiBi(g.valor) + '</span></div><div class="cl-dash-grade' + (aberto ? '' : ' cl-dash-recolhido') + '">';
       g.acoes.forEach(function (a) {
         var cor = cores[a.prazo];
         var chips = [a.situacao, a.fase, a.status].filter(Boolean).map(function (t) {
@@ -14437,7 +14628,8 @@ def montar_html_painel(df_base):
         var abrir = grade.classList.contains("cl-dash-recolhido");
         grade.classList.toggle("cl-dash-recolhido", !abrir);
         cab.querySelector(".cl-dash-eixo-btn").textContent = abrir ? "–" : "+";
-        cab.title = abrir ? "Ocultar detalhamento do eixo" : "Ver detalhamento do eixo";
+        cab.title = abrir ? "Ocultar detalhamento do executor" : "Ver detalhamento do executor";
+        if (abrir) _clDash.abertos.add(cab.dataset.nome); else _clDash.abertos.delete(cab.dataset.nome);
       };
       cab.addEventListener("click", alternar);
       cab.addEventListener("keydown", function (ev) {
@@ -14448,6 +14640,15 @@ def montar_html_painel(df_base):
       var item = card.getAttribute("data-item");
       if (!item) return;
       card.addEventListener("click", function () { abrirFichaDaBusca(item); });
+    });
+    container.querySelectorAll(".cl-dash-filtro button").forEach(function (botao) {
+      botao.addEventListener("click", function () {
+        var fase = botao.dataset.fase;
+        if (!fase) _clDash.fases.clear();
+        else if (_clDash.fases.has(fase)) _clDash.fases.delete(fase);
+        else _clDash.fases.add(fase);
+        desenharClausulasDash();
+      });
     });
   }
 
@@ -15745,6 +15946,11 @@ def montar_html_painel(df_base):
       var prosseguir = await mostrarModalQualidade(inicio.aviso);
       if (!prosseguir) return;
     }
+    if (inicio.aviso_mon) {
+      destravarBotaoGerar();
+      var prosseguirMon = await mostrarModalQualidadeMon(inicio.aviso_mon);
+      if (!prosseguirMon) return;
+    }
 
     // Janela de seleção de páginas — entre a checagem de qualidade e o
     // diálogo de salvar. Sai daqui com a lista de seções escolhidas.
@@ -15912,6 +16118,328 @@ def montar_html_painel(df_base):
       carregarDashboard();
     });
   }
+
+  // =====================================================
+  // SEÇÃO MONITORAMENTO (relatorio_monitoramento.py)
+  // Grade de filtros própria, trocada pelo seletor PAC | MONITORAMENTO do
+  // topo. A base é pedida ao Python na primeira troca; até lá o relatório
+  // segue com o MONITORAMENTO inteiro (filtros vazios = base toda).
+  // =====================================================
+  var MON = {
+    dados: null,
+    carregando: false,
+    sel: {},                 // chave do bloco -> Set de opções marcadas
+    conclusao: new Set(),    // anos ("2026"), meses ("2026-03") ou SEM PRAZO
+    ordem: "MUNICIPIO",
+    colunas: null,           // Set das colunas do detalhamento
+  };
+
+  function monFiltrosAtuais() {
+    var f = {};
+    if (MON.dados) {
+      MON.dados.blocos.forEach(function (b) { f[b.chave] = Array.from(MON.sel[b.chave]); });
+      f.CONCLUSAO = Array.from(MON.conclusao);
+      f.ORDEM = MON.ordem;
+      f.COLUNAS = Array.from(MON.colunas);
+    }
+    return f;
+  }
+
+  // O relatório leva sempre os filtros do MONITORAMENTO junto dos do PAC.
+  var _montarFiltrosAtuaisPac = montarFiltrosAtuais;
+  montarFiltrosAtuais = function () {
+    var f = _montarFiltrosAtuaisPac();
+    f.MONITORAMENTO = monFiltrosAtuais();
+    return f;
+  };
+
+  function monLinhaPassa(l, chaveExcluida) {
+    var blocos = MON.dados.blocos;
+    for (var i = 0; i < blocos.length; i++) {
+      var c = blocos[i].chave;
+      if (c === chaveExcluida) continue;
+      var s = MON.sel[c];
+      if (s.size > 0 && !s.has(l[c])) return false;
+    }
+    if (chaveExcluida !== "CONCLUSAO" && MON.conclusao.size > 0
+        && !MON.conclusao.has(l.PRAZO_ANO) && !MON.conclusao.has(l.PRAZO_MES)) {
+      return false;
+    }
+    return true;
+  }
+
+  // Filtragem cruzada (mesma regra do PAC): cada bloco acinzenta as opções
+  // que não sobram com a seleção de todos os OUTROS blocos.
+  function monAtualizarDisponibilidade() {
+    var linhas = MON.dados.linhas;
+    MON.dados.blocos.forEach(function (b) {
+      var disp = new Set();
+      linhas.forEach(function (l) { if (monLinhaPassa(l, b.chave)) disp.add(l[b.chave]); });
+      document.querySelectorAll('#grade-mon .bloco[data-chave="' + b.chave + '"] label.item').forEach(function (label) {
+        var ok = disp.has(label.dataset.valor);
+        label.classList.toggle("indisponivel", !ok);
+        label.querySelector("input").disabled = !ok;
+      });
+    });
+    var dispPrazo = new Set();
+    linhas.forEach(function (l) {
+      if (monLinhaPassa(l, "CONCLUSAO")) { dispPrazo.add(l.PRAZO_ANO); dispPrazo.add(l.PRAZO_MES); }
+    });
+    document.querySelectorAll("#grade-mon .mon-conclusao input").forEach(function (chk) {
+      var ok = dispPrazo.has(chk.dataset.valor);
+      chk.disabled = !ok;
+      chk.closest("label").classList.toggle("indisponivel", !ok);
+    });
+    var total = linhas.filter(function (l) { return monLinhaPassa(l, null); }).length;
+    var contador = document.getElementById("mon-contador");
+    if (contador) contador.textContent = total + " de " + MON.dados.total + " ações no recorte";
+  }
+
+  function monItem(valor, rotulo, marcado, aoMudar) {
+    var label = document.createElement("label");
+    label.className = "item";
+    label.dataset.valor = valor;
+    var input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = marcado;
+    input.dataset.valor = valor;
+    input.onchange = function () { aoMudar(input.checked); };
+    var span = document.createElement("span");
+    span.textContent = rotulo;
+    label.appendChild(input);
+    label.appendChild(span);
+    return label;
+  }
+
+  function monCriarBloco(titulo, chave) {
+    var el = document.createElement("div");
+    el.className = "bloco";
+    if (chave) el.dataset.chave = chave;
+    var t = document.createElement("div");
+    t.className = "bloco-titulo";
+    var ts = document.createElement("span");
+    ts.textContent = titulo;
+    t.appendChild(ts);
+    el.appendChild(t);
+    return el;
+  }
+
+  function monBotoes(el, aoMarcar, aoLimpar) {
+    var botoes = document.createElement("div");
+    botoes.className = "bloco-botoes";
+    [["Marcar tudo", aoMarcar], ["Limpar", aoLimpar]].forEach(function (par) {
+      var b = document.createElement("button");
+      b.className = "btn-mini";
+      b.textContent = par[0];
+      b.onclick = par[1];
+      botoes.appendChild(b);
+    });
+    el.appendChild(botoes);
+  }
+
+  function monRenderizar() {
+    var grade = document.getElementById("grade-mon");
+    grade.innerHTML = "";
+    MON.dados.blocos.forEach(function (bloco) {
+      var el = monCriarBloco(bloco.titulo, bloco.chave);
+      var lista = document.createElement("div");
+      lista.className = "bloco-lista";
+      function desenharLista() {
+        lista.innerHTML = "";
+        bloco.opcoes.forEach(function (op) {
+          lista.appendChild(monItem(op, op, MON.sel[bloco.chave].has(op), function (marcado) {
+            if (marcado) MON.sel[bloco.chave].add(op); else MON.sel[bloco.chave].delete(op);
+            monAtualizarDisponibilidade();
+          }));
+        });
+      }
+      monBotoes(el,
+        function () {
+          lista.querySelectorAll("label.item").forEach(function (l) {
+            if (!l.classList.contains("indisponivel") && l.style.display !== "none") MON.sel[bloco.chave].add(l.dataset.valor);
+          });
+          desenharLista(); monAtualizarDisponibilidade();
+        },
+        function () { MON.sel[bloco.chave].clear(); desenharLista(); monAtualizarDisponibilidade(); });
+      if (bloco.chave === "MUNICIPIO" || bloco.chave === "OBJETO") {
+        var busca = document.createElement("div");
+        busca.className = "bloco-busca";
+        var campo = document.createElement("input");
+        campo.type = "search";
+        campo.placeholder = bloco.chave === "MUNICIPIO" ? "Buscar município..." : "Buscar objeto...";
+        campo.oninput = function () {
+          var termo = normalizarBusca(campo.value);
+          lista.querySelectorAll("label.item").forEach(function (l) {
+            l.style.display = !termo || normalizarBusca(l.dataset.valor).indexOf(termo) !== -1 ? "" : "none";
+          });
+        };
+        busca.appendChild(campo);
+        el.appendChild(busca);
+      }
+      el.appendChild(lista);
+      desenharLista();
+
+      // Menu CONCLUSÃO (ano > mês da Entrega Obra) dentro do bloco Situação
+      if (bloco.chave === "SITUACAO") {
+        var conc = document.createElement("div");
+        conc.className = "mon-conclusao";
+        conc.innerHTML = '<div class="mon-conclusao-titulo">CONCLUSÃO (ENTREGA OBRA)</div>';
+        MON.dados.conclusao.forEach(function (ano) {
+          var det = document.createElement("details");
+          var sum = document.createElement("summary");
+          sum.appendChild(monItem(ano.chave, ano.rotulo, MON.conclusao.has(ano.chave), function (marcado) {
+            if (marcado) MON.conclusao.add(ano.chave); else MON.conclusao.delete(ano.chave);
+            monAtualizarDisponibilidade();
+          }));
+          det.appendChild(sum);
+          ano.meses.forEach(function (mes) {
+            var item = monItem(mes.chave, mes.rotulo, MON.conclusao.has(mes.chave), function (marcado) {
+              if (marcado) MON.conclusao.add(mes.chave); else MON.conclusao.delete(mes.chave);
+              monAtualizarDisponibilidade();
+            });
+            item.classList.add("mon-mes");
+            det.appendChild(item);
+          });
+          conc.appendChild(det);
+        });
+        el.appendChild(conc);
+      }
+      grade.appendChild(el);
+    });
+
+    // Ordenação e colunas do detalhamento (decisões de impressão)
+    var elImp = monCriarBloco("Detalhamento");
+    var sub = document.createElement("div");
+    sub.className = "mon-sub";
+    sub.textContent = "Ordenação";
+    elImp.appendChild(sub);
+    var select = document.createElement("select");
+    select.className = "mon-select";
+    MON.dados.ordens.forEach(function (o) {
+      var opt = document.createElement("option");
+      opt.value = o.chave;
+      opt.textContent = o.rotulo;
+      if (o.chave === MON.ordem) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.onchange = function () { MON.ordem = select.value; };
+    elImp.appendChild(select);
+    var subCol = document.createElement("div");
+    subCol.className = "mon-sub";
+    elImp.appendChild(subCol);
+    var listaCol = document.createElement("div");
+    listaCol.className = "bloco-lista";
+    function desenharColunas() {
+      listaCol.innerHTML = "";
+      subCol.textContent = "Colunas (" + MON.colunas.size + "/" + MON.dados.limiteColunas + ")";
+      MON.dados.colunas.forEach(function (c) {
+        var item = monItem(c.chave, c.chave, MON.colunas.has(c.chave), function (marcado) {
+          if (marcado) MON.colunas.add(c.chave); else MON.colunas.delete(c.chave);
+          desenharColunas();
+        });
+        var cheio = !MON.colunas.has(c.chave) && MON.colunas.size >= MON.dados.limiteColunas;
+        if (cheio) { item.classList.add("indisponivel"); item.querySelector("input").disabled = true; }
+        listaCol.appendChild(item);
+      });
+    }
+    desenharColunas();
+    elImp.appendChild(listaCol);
+    var contador = document.createElement("div");
+    contador.className = "mon-sub";
+    contador.id = "mon-contador";
+    contador.style.paddingBottom = "10px";
+    elImp.appendChild(contador);
+    grade.appendChild(elImp);
+    monAtualizarDisponibilidade();
+  }
+
+  async function monCarregar() {
+    if (MON.dados || MON.carregando) return;
+    MON.carregando = true;
+    var r;
+    try {
+      r = await chamarAPI("mon_dados_painel");
+    } catch (erro) {
+      r = { ok: false, erro: String(erro) };
+    }
+    MON.carregando = false;
+    var grade = document.getElementById("grade-mon");
+    if (!r || !r.ok) {
+      grade.innerHTML = '<div class="mon-aviso">' + escaparHtmlFicha((r && r.erro) || "Não foi possível carregar a base do MONITORAMENTO.") + "</div>";
+      return;
+    }
+    MON.dados = r.dados;
+    MON.dados.blocos.forEach(function (b) { MON.sel[b.chave] = new Set(); });
+    MON.colunas = new Set(MON.dados.colunas.filter(function (c) { return c.padrao; }).map(function (c) { return c.chave; }));
+    monRenderizar();
+  }
+
+  function monLimpar() {
+    if (!MON.dados) return;
+    Object.keys(MON.sel).forEach(function (k) { MON.sel[k].clear(); });
+    MON.conclusao.clear();
+    monRenderizar();
+  }
+
+  document.querySelectorAll("#seletor-secao button").forEach(function (botao) {
+    botao.addEventListener("click", function () {
+      var mon = botao.dataset.secao === "MON";
+      document.body.classList.toggle("secao-mon", mon);
+      document.querySelectorAll("#seletor-secao button").forEach(function (b) {
+        b.classList.toggle("ativo", b === botao);
+      });
+      if (mon) monCarregar();
+    });
+  });
+
+  // LIMPAR FILTROS age só na seção que está à mostra.
+  document.getElementById("btn-limpar-tudo").addEventListener("click", function (ev) {
+    if (!document.body.classList.contains("secao-mon")) return;
+    ev.stopImmediatePropagation();
+    monLimpar();
+  }, true);
+
+  // Controle de qualidade do MONITORAMENTO: mesmo modal do PAC, com a lista
+  // de ações em atraso (coluna "Dias em Atraso (De Marco)") por status.
+  function mostrarModalQualidadeMon(aviso) {
+    return new Promise(function (resolve) {
+      var overlay = document.getElementById("modal-overlay");
+      var titulo = document.querySelector("#modal-qualidade .modal-titulo span");
+      var whats = document.getElementById("modal-btn-whatsapp");
+      var corpo = document.getElementById("modal-qualidade-texto");
+      var btnOk = document.getElementById("modal-btn-ok");
+      var btnCancelar = document.getElementById("modal-btn-cancelar");
+      var tituloAntes = titulo.textContent;
+      titulo.textContent = "MONITORAMENTO - Controle de Qualidade da Base de Dados";
+      whats.style.display = "none";
+      var html = "<p>" + aviso.total + " ação(ões) com prazo de marco em atraso na base do MONITORAMENTO. "
+        + "Verifique se as datas estão desatualizadas na planilha:</p>";
+      aviso.grupos.forEach(function (g) {
+        html += '<div class="qc-mon-grupo"><span style="background:' + g.cor + '"></span>'
+          + escaparHtmlFicha(g.status) + " (" + g.itens.length + ")</div>";
+        g.itens.forEach(function (it) {
+          html += '<div class="qc-mon-item">' + escaparHtmlFicha(it.titulo)
+            + "<small>" + escaparHtmlFicha(it.detalhe) + "</small></div>";
+        });
+      });
+      corpo.innerHTML = html;
+      document.getElementById("modal-contagem").textContent = "";
+      btnOk.disabled = false;
+      btnOk.textContent = "OK";
+      btnCancelar.style.display = "";
+      overlay.style.display = "flex";
+      function finalizar(confirmado) {
+        overlay.style.display = "none";
+        btnOk.onclick = null;
+        btnCancelar.onclick = null;
+        titulo.textContent = tituloAntes;
+        whats.style.display = "";
+        resolve(confirmado);
+      }
+      btnOk.onclick = function () { finalizar(true); };
+      btnCancelar.onclick = function () { finalizar(false); };
+    });
+  }
 </script>
 </body>
 </html>
@@ -16069,7 +16597,13 @@ def _api_iniciar_geracao(filtros):
         if df.empty:
             return {"ok": False, "vazio": True}
         aviso = _montar_aviso_qualidade(df)
-        return {"ok": True, "aviso": aviso}
+        # Controle de qualidade do MONITORAMENTO (prazos em atraso), quando
+        # a seção vai junto no relatório.
+        aviso_mon = None
+        if filtros.get("MONITORAMENTO") is not None:
+            mod = _modulo_monitoramento()
+            aviso_mon = mod.aviso_qualidade(mod.filtrar(filtros["MONITORAMENTO"]))
+        return {"ok": True, "aviso": aviso, "aviso_mon": aviso_mon}
     except Exception as erro:
         import traceback
         traceback.print_exc()
@@ -16102,7 +16636,11 @@ def _api_listar_paginas_relatorio(filtros):
         df = _filtrar_dataframe(filtros)
         if df.empty:
             return {"ok": False, "vazio": True}
-        return {"ok": True, "secoes": _secoes_disponiveis_relatorio(df)}
+        secoes = _secoes_disponiveis_relatorio(df)
+        if filtros.get("MONITORAMENTO") is not None:
+            secoes += _modulo_monitoramento().secoes_disponiveis(
+                filtros["MONITORAMENTO"])
+        return {"ok": True, "secoes": secoes}
     except Exception as erro:
         import traceback
         traceback.print_exc()
@@ -16236,6 +16774,7 @@ def _api_gerar_pdf_bytes(filtros, secoes=None):
         _gerar_pdf(
             df, caminho_temp, filtros.get("COLUNAS_DETALHAMENTO"), secoes,
             financeiro_detalhado=filtros.get("FINANCEIRO_DETALHADO"),
+            monitoramento=filtros.get("MONITORAMENTO"),
         )
         with open(caminho_temp, "rb") as f:
             conteudo_pdf = f.read()
@@ -16269,6 +16808,39 @@ def _modulo_apresentacao():
 
     gerar_pptx_pac.configurar(sys.modules[__name__])
     return gerar_pptx_pac
+
+
+def _modulo_monitoramento():
+    # Seção MONITORAMENTO do relatório (ver relatorio_monitoramento.py),
+    # ligada a este módulo do mesmo jeito que o gerar_pptx_pac acima.
+    import relatorio_monitoramento
+    relatorio_monitoramento.configurar(sys.modules[__name__])
+    return relatorio_monitoramento
+
+
+def _api_mon_dados_painel():
+    # Grade de filtros do MONITORAMENTO: lida na primeira troca do seletor.
+    try:
+        dados = _modulo_monitoramento().dados_painel()
+        if dados is None:
+            return {"ok": False, "erro": "Planilha "
+                    f"'{_modulo_monitoramento().ARQUIVO_PLANILHA}' não "
+                    "encontrada na pasta do programa."}
+        return {"ok": True, "dados": dados}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
+def _api_mon_aviso_qualidade(filtros_mon):
+    try:
+        mod = _modulo_monitoramento()
+        return {"ok": True, "aviso": mod.aviso_qualidade(mod.filtrar(filtros_mon))}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
 
 
 def _construir_pptx_analise_financeira_bytes(filtros=None, secoes=None):
@@ -16379,6 +16951,11 @@ def abrir_interface_filtros(df_base):
     # servidor_web.py).
     html_paginal = montar_html_painel(df_base)
 
+    # Lê a base do MONITORAMENTO em segundo plano, para a primeira troca do
+    # seletor e a primeira geração não esperarem a planilha.
+    threading.Thread(target=lambda: _modulo_monitoramento().base(),
+                     daemon=True).start()
+
     # Marcado pelo botão "Atualizar base de dados" (API.reiniciar_para_atualizar_base):
     # depois que a janela fecha, logo abaixo, o app se relança do zero pra
     # reler a planilha. Holder mutável (não um bool solto) pra funcionar com
@@ -16409,6 +16986,12 @@ def abrir_interface_filtros(df_base):
 
         def listar_paginas_relatorio(self, filtros):
             return _api_listar_paginas_relatorio(filtros)
+
+        def mon_dados_painel(self):
+            return _api_mon_dados_painel()
+
+        def mon_aviso_qualidade(self, filtros_mon):
+            return _api_mon_aviso_qualidade(filtros_mon)
 
         def escolher_local_e_gerar(self, filtros, secoes=None):
             # Segunda etapa: reaplica os mesmos filtros (barato — é só
@@ -16453,6 +17036,7 @@ def abrir_interface_filtros(df_base):
                     df, arquivo_pdf, filtros.get(
                         "COLUNAS_DETALHAMENTO"), secoes,
                     financeiro_detalhado=filtros.get("FINANCEIRO_DETALHADO"),
+                    monitoramento=filtros.get("MONITORAMENTO"),
                 )
                 return {"ok": True, "arquivo": arquivo_pdf, "fallback": fallback_usado}
             except Exception as erro:
