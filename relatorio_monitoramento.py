@@ -1297,8 +1297,10 @@ def secoes_disponiveis(filtros):
     df = filtrar(filtros)
     if df is None or df.empty:
         return []
+    # Chegam desmarcadas na janela (pedido do usuário em 11/11/2026): o
+    # MONITORAMENTO só entra no PDF quando alguém o marca.
     return [dict(s, paginas=None if s["chave"] == "MON_DETALHAMENTO" else 1,
-                 marcada=True) for s in SECOES]
+                 marcada=False) for s in SECOES]
 
 
 def elementos_pdf(filtros, secoes_marcadas, marcador_gestao):
