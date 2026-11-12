@@ -38,11 +38,13 @@ import base64
 import importlib.util
 import io
 import json
+import math
 import os
 import re
 import sys
 from datetime import date
 
+import pandas as pd
 from pptx import Presentation
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
@@ -570,6 +572,47 @@ def calcular_metricas(df):
         for f in m["fases_ordem"]
     }
 
+    # Quantidade de ações por grupo (pedido do usuário em 11/11/2026): cada
+    # ação é inteiramente T.C. firmado OU não firmado (ver _firmado/
+    # _nao_firmado acima), então conta-se quantas ações têm `contratado` ou
+    # `a_contratar_linha` ≥ 0,5 dentro de cada grupo — mesmo recorte usado
+    # pra somar os valores, só que contando linhas em vez de somar. Usado
+    # nas tabelas de detalhamento por objeto/executor do HTML.
+    def _contagem(mascara_externa, serie_chave):
+        return {
+            chave: (int((mascara_externa & (serie_chave == chave) & (contratado >= 0.5)).sum()),
+                    int((mascara_externa & (serie_chave == chave) & (a_contratar_linha >= 0.5)).sum()))
+            for chave in set(serie_chave[mascara_externa])
+        }
+
+    m["fase_objeto_qtd"] = {f: _contagem(fase == f, objeto) for f in m["fases_ordem"]}
+
+    # eixo > executor > fonte > (contratado, a contratar) — Composição por
+    # Eixo/Executor do HTML (pedido do usuário em 11/11/2026), mesmo critério
+    # da composição por fase
+    executor = (df["EXECUTOR"] if "EXECUTOR" in df.columns else df[pac.col_executor]).fillna("NÃO INFORMADO").astype(str)
+    executor = executor.where(executor.str.strip() != "", "NÃO INFORMADO")
+    m["eixo_executor"] = {
+        e: {x: {k: (float(c[(eixo == e) & (executor == x)].sum()), float(a[(eixo == e) & (executor == x)].sum()))
+                for k, (c, a) in fontes_eixo.items()}
+            for x in set(executor[eixo == e])}
+        for e in m["eixos_ordem"]
+    }
+    m["eixo_executor_qtd"] = {e: _contagem(eixo == e, executor) for e in m["eixos_ordem"]}
+    # executor > objeto > fonte > (contratado, a contratar) — Composição por
+    # Executor/Objeto (pedido do usuário em 11/11/2026). Executores do maior
+    # pro menor investimento.
+    m["executor_objeto"] = {
+        x: {o: {k: (float(c[(executor == x) & (objeto == o)].sum()), float(a[(executor == x) & (objeto == o)].sum()))
+                for k, (c, a) in fontes_eixo.items()}
+            for o in set(objeto[executor == x])}
+        for x in set(executor)
+    }
+    m["executor_objeto_qtd"] = {x: _contagem(executor == x, objeto) for x in set(executor)}
+    m["executores_ordem"] = sorted(
+        m["executor_objeto"],
+        key=lambda x: (-sum(c + a for f in m["executor_objeto"][x].values() for c, a in f.values()), x))
+
     soma_detalhado = m["contratado_ogu"] + m["contratado_financiamento"] + m["contratado_estadual"]
     m["contratado_nao_discriminado"] = max(0.0, m["total_contratado"] - soma_detalhado)
     m["cobertura_detalhamento_pct"] = soma_detalhado / m["total_contratado"] if m["total_contratado"] else 0
@@ -636,6 +679,69 @@ def calcular_metricas(df):
 
     m["gestao_estadual_qtd"] = int((df["GESTAO"] == "GESTÃO ESTADUAL").sum())
     m["gestao_federal_qtd"] = int((df["GESTAO"] == "GESTÃO FEDERAL").sum())
+
+    # --- Execução do Objeto: possibilidades de entrega por semestre (pedido
+    # do usuário em 11/11/2026) --- obras já na última fase antes de
+    # concluir, agrupadas pela previsão de conclusão mais atualizada
+    # (PREVISAO DE CONCLUSAO ATUAL, não a data original) em semestres a
+    # partir do atual até o fim do ano que vem. Datas além disso (ou já
+    # vencidas) ficam nos extremos ("após" / fundidas no semestre atual),
+    # em vez de criar dezenas de baldes minúsculos.
+    exec_obj_mask = fase == "EXECUÇÃO DO OBJETO"
+    m["qtd_execucao_objeto"] = int(exec_obj_mask.sum())
+    semestres = []
+    ano_sem, sem_sem = hoje.year, (1 if hoje.month <= 6 else 2)
+    ano_fim_sem = hoje.year + 1
+    while (ano_sem, sem_sem) <= (ano_fim_sem, 2):
+        semestres.append((ano_sem, sem_sem))
+        ano_sem, sem_sem = (ano_sem, sem_sem + 1) if sem_sem == 1 else (ano_sem + 1, 1)
+
+    def _bucket_entrega(data):
+        if pd.isna(data):
+            return "SEM_PREVISAO"
+        par = (data.year, 1 if data.month <= 6 else 2)
+        if par <= semestres[0]:
+            return semestres[0]
+        if par > semestres[-1]:
+            return "APOS"
+        return par
+
+    rotulos_entrega = {par: f"{par[1]}º SEMESTRE DE {par[0]}" for par in semestres}
+    rotulos_entrega["APOS"] = f"ENTREGA PREVISTA APÓS {semestres[-1][0]}"
+    rotulos_entrega["SEM_PREVISAO"] = "SEM PREVISÃO DE CONCLUSÃO"
+
+    sub_exec = df.loc[exec_obj_mask, [pac.col_objeto, pac.col_avanco, pac.col_prazo_atual]].copy()
+    sub_exec["MUNICIPIO"] = df.loc[exec_obj_mask, "MUNICIPIO"] if "MUNICIPIO" in df.columns else ""
+    sub_exec["_INVESTIMENTO"] = investimento_linha.loc[exec_obj_mask]
+    sub_exec["_BUCKET"] = sub_exec[pac.col_prazo_atual].apply(_bucket_entrega)
+
+    grupos_entrega = {}
+    for chave, grupo in sub_exec.groupby("_BUCKET", sort=False):
+        grupo = grupo.sort_values(
+            by=[pac.col_prazo_atual, "_INVESTIMENTO"],
+            ascending=[True, False], na_position="last")
+        itens = []
+        for idx, r in grupo.iterrows():
+            # Ficha completa da obra (mesmos campos da Ficha Cadastral do
+            # painel), aberta numa janela ao clicar no card — pedido do
+            # usuário em 11/11/2026, mesmo recurso já usado nos cards de
+            # Cláusulas Suspensivas.
+            try:
+                ficha = pac._montar_dados_ficha_acao(df.loc[idx])
+            except Exception:
+                ficha = {}
+            itens.append({
+                "objeto": str(r[pac.col_objeto]),
+                "municipio": str(r["MUNICIPIO"]),
+                "avanco": float(r[pac.col_avanco]) if pd.notna(r[pac.col_avanco]) else None,
+                "conclusao": r[pac.col_prazo_atual] if pd.notna(r[pac.col_prazo_atual]) else None,
+                "investimento": float(r["_INVESTIMENTO"]),
+                "ficha": ficha,
+            })
+        grupos_entrega[chave] = itens
+
+    ordem_entrega = [c for c in semestres + ["APOS", "SEM_PREVISAO"] if c in grupos_entrega]
+    m["entregas_execucao"] = {"ordem": ordem_entrega, "rotulos": rotulos_entrega, "grupos": grupos_entrega}
 
     return m
 
@@ -1176,6 +1282,10 @@ def _slides_tabela_eixo(prs, m, tema, rotulo_secao, legenda, grupos):
 # ---------------------------------------------------------------------------
 ROTULO_GRAFICO_FASE = "INVESTIMENTO TOTAL, POR FASE E FONTE (T.C. firmado + T.C. não firmado)*"
 COLUNAS_FONTES_OBJETOS = ["OGU (APOIADO)", "FINANCIAMENTO", "RECURSO ESTADUAL", "NÃO DISCRIMINADO*", "TOTAL"]
+# Coluna de contagem de ações nas tabelas de detalhamento do HTML (pedido do
+# usuário em 11/11/2026) — só no HTML, o PPTX (_tabela_objetos) não passa
+# qtd_grupos e continua sem ela.
+COLUNA_QTD_ACOES = "QTD. AÇÕES"
 LARGURAS_OBJETOS = [4.6, 2.6, 2.6, 2.6, 2.6, 2.6]
 # (título da 1ª coluna, índice em (contratado, a contratar), cor do cabeçalho =
 # a da barra Contratado x A Contratar do panorama)
@@ -1197,17 +1307,50 @@ X_GRAFICO_A_CONTRATAR = 16.9
 LARG_GRAFICO_VALOR = 1.6
 
 
-def _linhas_objetos(m, fase, indice):
+def _linhas_objetos(m, fase, indice, grupos=None, qtd_grupos=None):
     # Linhas de uma tabela de objetos, do maior pro menor, com o TOTAL no fim;
-    # vazia se a fase não tem objeto nessa situação
+    # vazia se a fase não tem objeto nessa situação. `grupos` troca a origem
+    # ({rótulo: {fonte: (c, a)}}) — a Composição por Eixo/Executor usa os
+    # executores do eixo no lugar dos objetos da fase. `qtd_grupos` (mesma
+    # forma, mas {rótulo: (qtd_contratado, qtd_a_contratar)}) acrescenta a
+    # coluna de quantidade de ações quando passado explicitamente — só o
+    # HTML passa (_tabela_objetos, do PPTX, não passa e continua sem essa
+    # coluna) — pedido do usuário em 11/11/2026.
     chaves = [k for _, k, *_ in _fontes_por_fase(m)]
-    objetos = [(objeto, [fontes[k][indice] for k in chaves]) for objeto, fontes in m["fase_objeto"][fase].items()]
+    grupos = m["fase_objeto"][fase] if grupos is None else grupos
+    objetos = [(objeto, [fontes[k][indice] for k in chaves]) for objeto, fontes in grupos.items()]
     objetos = sorted((o for o in objetos if any(abs(v) >= 0.5 for v in o[1])), key=lambda o: (-sum(o[1]), o[0]))
     if not objetos:
         return []
     totais = [sum(coluna) for coluna in zip(*(valores for _, valores in objetos))]
-    return [[rotulo] + [abreviar_moeda(v) for v in valores + [sum(valores)]]
-            for rotulo, valores in objetos + [("TOTAL", totais)]]
+    if qtd_grupos is None:
+        return [[rotulo] + [abreviar_moeda(v) for v in valores + [sum(valores)]]
+                for rotulo, valores in objetos + [("TOTAL", totais)]]
+    qtd_total = sum(qtd_grupos[rotulo][indice] for rotulo, _ in objetos)
+    return [[rotulo, qtd_grupos[rotulo][indice]] + [abreviar_moeda(v) for v in valores + [sum(valores)]]
+            for rotulo, valores in objetos] + [["TOTAL", qtd_total]
+            + [abreviar_moeda(v) for v in totais + [sum(totais)]]]
+
+
+def _blocos_alinhados(blocos):
+    # blocos: [(cabeçalho, linhas, cor), ...] completos (todas as fontes).
+    # Fonte zerada numa tabela continua suprimida nela, mas a coluna fica no
+    # lugar, em branco, sempre que outra tabela do mesmo detalhamento a usa —
+    # assim OGU, Financiamento etc. ficam alinhados entre as tabelas (pedido
+    # do usuário em 11/11/2026). Coluna zerada em todas sai de vez.
+    if not blocos:
+        return []
+    n = len(blocos[0][0])
+
+    def mantidas(linhas):
+        return {i for i in range(n)
+                if i in (0, n - 1) or any(str(linha[i]).strip() not in ("-", "") for linha in linhas)}
+
+    proprias = [mantidas(linhas) for _, linhas, _ in blocos]
+    uniao = sorted(set().union(*proprias))
+    return [([cab[i] if i in own else "" for i in uniao],
+             [[linha[i] if i in own else "" for i in uniao] for linha in linhas], cor)
+            for (cab, linhas, cor), own in zip(blocos, proprias)]
 
 
 def _tabela_objetos(m, fase, titulo, indice):
@@ -1582,6 +1725,61 @@ def slide_7_top10(prs, m):
     return s
 
 
+# ---------------------------------------------------------------------------
+# Execução do Objeto — possibilidades de entrega por semestre (pedido do
+# usuário em 11/11/2026, ver entregas_execucao em calcular_metricas). No
+# HTML vira cards (_html_entregas_execucao); no PPTX, tabela por semestre —
+# com até 133 obras (e crescendo), uma tabela nativa só não paginaria
+# sozinha, por isso o corte manual em páginas de LINHAS_POR_PAGINA_ENTREGA.
+# ---------------------------------------------------------------------------
+LINHAS_POR_PAGINA_ENTREGA = 16
+CABECALHO_ENTREGA = ["OBJETO", "MUNICÍPIO", "AVANÇO", "CONCLUSÃO PREVISTA", "INVESTIMENTO"]
+LARGURAS_ENTREGA = [6.3, 4.2, 2.1, 2.9, 2.7]
+
+
+def _linha_entrega(item):
+    avanco = f"{item['avanco']:.0f}%" if item["avanco"] is not None else "-"
+    conclusao = item["conclusao"].strftime("%d/%m/%Y") if item["conclusao"] is not None else "A definir"
+    return [item["objeto"], item["municipio"] or "Não informado", avanco, conclusao,
+            abreviar_moeda(item["investimento"])]
+
+
+def _paginas_entregas_execucao(m):
+    # [(rótulo do semestre, página, total de páginas do semestre, itens), ...]
+    ent = m["entregas_execucao"]
+    paginas = []
+    for chave in ent["ordem"]:
+        itens = ent["grupos"][chave]
+        total = max(1, -(-len(itens) // LINHAS_POR_PAGINA_ENTREGA))
+        for i in range(total):
+            trecho = itens[i * LINHAS_POR_PAGINA_ENTREGA:(i + 1) * LINHAS_POR_PAGINA_ENTREGA]
+            paginas.append((ent["rotulos"][chave], i + 1, total, trecho))
+    return paginas
+
+
+def slide_entregas_execucao(prs, m):
+    paginas = _paginas_entregas_execucao(m)
+    if not paginas:
+        s = novo_slide(prs, "EXECUÇÃO DO OBJETO — POSSIBILIDADES DE ENTREGA")
+        add_text(s, 0.9, 1.9, 17.6, 0.6,
+                  "Nenhuma obra na fase de Execução do Objeto neste recorte.", 16, CINZA_TEXTO)
+        return
+    for rotulo_semestre, pagina_i, pagina_n, trecho in paginas:
+        tema = f"EXECUÇÃO DO OBJETO — {rotulo_semestre}"
+        if pagina_n > 1:
+            tema += f" ({pagina_i}/{pagina_n})"
+        s = novo_slide(prs, tema)
+        y = 1.55
+        if pagina_i == 1:
+            add_text(s, 0.9, y, 17.6, 0.4,
+                      f"{m['qtd_execucao_objeto']} obras na fase de Execução do Objeto, agrupadas pela previsão "
+                      "de conclusão mais atualizada", 15, CINZA_TEXTO)
+            y += 0.55
+        linhas = [_linha_entrega(item) for item in trecho]
+        tabela_nativa(s, 0.9, y, 17.6, min(0.55 + 0.42 * len(linhas), 9.3 - y),
+                      CABECALHO_ENTREGA, linhas, larguras=LARGURAS_ENTREGA, tam_fonte=13)
+
+
 def slide_8_pendencias(prs, m):
     s = novo_slide(prs, "PENDÊNCIAS QUE CONDICIONAM A CONTRATAÇÃO")
     cards = [
@@ -1760,11 +1958,12 @@ def _html_tabela(cabecalho, linhas, linhas_bold=(), cor_cabecalho=None):
     return f'<table class="pac-tabela"><thead><tr>{ths}</tr></thead><tbody>{"".join(trs)}</tbody></table>'
 
 
-def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, recorte="", classe_extra=""):
+def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, recorte="", classe_extra="", id_html=""):
     nome_planilha = os.path.basename(pac.CAMINHO_PLANILHA) if hasattr(pac, "CAMINHO_PLANILHA") else \
         "PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026"
     posicao = pac.ultima_atualizacao.strftime("%m/%Y") if hasattr(pac, "ultima_atualizacao") else date.today().strftime("%m/%Y")
-    return f'''<section class="slide{(" " + classe_extra) if classe_extra else ""}">
+    atributo_id = f' id="{id_html}"' if id_html else ""
+    return f'''<section class="slide{(" " + classe_extra) if classe_extra else ""}"{atributo_id}>
       <div class="cabecalho">
         <div class="titulo">PAC - {_html_esc(tema)}</div>
         <div class="subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
@@ -2314,6 +2513,138 @@ def slide_fluxo_trabalho(prs, m):
                     alinhar=PP_ALIGN.CENTER, ancorar=MSO_ANCHOR.MIDDLE)
 
 
+# Id do slide no HTML (ver ENTREGAS_EXECUCAO em por_chave) — o card "EM
+# OBRAS / ANDAMENTO" do Panorama usa pra pular direto pra cá, mesmo recurso
+# de navegação do carrossel (mostrarPorId) — pedido do usuário em
+# 11/11/2026.
+ID_HTML_ENTREGAS_EXECUCAO = "slide-entregas-execucao"
+
+
+# Medidor circular (anel aberto de 250°) do % de avanço nos cards de
+# entrega — mesma geometria do gauge de Índice de Desempenho do painel
+# (ver criarGaugeDesempenho em CGAPE - BALANÇO PAC.py), só que gerado em
+# Python (os cards são HTML estático, sem JS por trás) e com as cores já
+# adotadas nesta apresentação (verde = avanço) em vez da paleta de
+# categorias de desempenho — pedido do usuário em 11/11/2026.
+_ANGULO_INICIAL_GAUGE = 215
+_VARREDURA_GAUGE = 250
+
+
+def _ponto_gauge(cx, cy, r, angulo_graus):
+    rad = math.radians(angulo_graus)
+    return (cx + r * math.cos(rad), cy - r * math.sin(rad))
+
+
+def _arco_gauge(cx, cy, r, angulo_ini, angulo_fim, espessura, cor):
+    x1, y1 = _ponto_gauge(cx, cy, r, angulo_ini)
+    x2, y2 = _ponto_gauge(cx, cy, r, angulo_fim)
+    arco_grande = 1 if abs(angulo_fim - angulo_ini) > 180 else 0
+    sentido = 1 if angulo_fim < angulo_ini else 0
+    return (f'<path d="M {x1:.2f} {y1:.2f} A {r} {r} 0 {arco_grande} {sentido} {x2:.2f} {y2:.2f}" '
+            f'fill="none" stroke="#{cor}" stroke-width="{espessura}" stroke-linecap="round"></path>')
+
+
+def _svg_gauge_avanco(percentual, tamanho=76, cor=VERDE, trilho="E9ECF2"):
+    espessura = tamanho * 0.13
+    raio = tamanho / 2 - espessura / 2 - 1
+    cx = cy = tamanho / 2
+    valor = max(0.0, min(100.0, percentual))
+    angulo_valor = _ANGULO_INICIAL_GAUGE - (valor / 100) * _VARREDURA_GAUGE
+    svg = [f'<svg width="{tamanho}" height="{tamanho}" viewBox="0 0 {tamanho} {tamanho}" class="entrega-gauge-svg">']
+    svg.append(_arco_gauge(cx, cy, raio, _ANGULO_INICIAL_GAUGE, _ANGULO_INICIAL_GAUGE - _VARREDURA_GAUGE,
+                           espessura, trilho))
+    if valor > 0.5:
+        svg.append(_arco_gauge(cx, cy, raio, _ANGULO_INICIAL_GAUGE, angulo_valor, espessura, cor))
+    fonte = tamanho * 0.26
+    svg.append(f'<text x="{cx}" y="{cy + fonte * 0.35}" text-anchor="middle" font-size="{fonte:.1f}" '
+               f'font-weight="900" fill="#0B1F3F">{valor:.0f}%</text>')
+    svg.append("</svg>")
+    return "".join(svg)
+
+
+_SVG_ICONE_LOCALIZACAO = ('<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
+                         'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
+                         '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>'
+                         '<circle cx="12" cy="10" r="3"></circle></svg>')
+
+
+def _html_card_entrega(item, fichas_cartoes):
+    avanco = item["avanco"]
+    bloco_gauge = (_svg_gauge_avanco(avanco) if avanco is not None
+                   else '<div class="entrega-sem-gauge">Avanço<br>não<br>informado</div>')
+    conclusao = item["conclusao"].strftime("%d/%m/%Y") if item["conclusao"] is not None else "A definir"
+    ficha = item["ficha"] or {}
+    executor = ficha.get("executor")
+    link_localizacao = ficha.get("link_localizacao")
+    descricao = ficha.get("descricao")
+    # Ícone de localização ao lado do município — abre o link em nova aba,
+    # sem também abrir a ficha do card (stopPropagation) — pedido do
+    # usuário em 11/11/2026.
+    icone_local = (f'''<a href="{_html_esc(link_localizacao)}" target="_blank" rel="noopener"
+             class="entrega-icone-local" title="Ver localização" onclick="event.stopPropagation()">
+          {_SVG_ICONE_LOCALIZACAO}</a>''' if link_localizacao else "")
+    # Mesma janela de ficha completa dos cards de Cláusulas Suspensivas
+    # (lista compartilhada `fichas_cartoes`, índice = data-ficha) — pedido
+    # do usuário em 11/11/2026.
+    fichas_cartoes.append(item["ficha"])
+    indice_ficha = len(fichas_cartoes) - 1
+    return f'''<div class="entrega-card" role="button" tabindex="0" data-ficha="{indice_ficha}"
+         title="Clique para ver todas as informações da ação">
+      <div class="entrega-topo">
+        <div class="entrega-identificacao">
+          <div class="entrega-objeto">{_html_esc(item["objeto"])}</div>
+          <div class="entrega-municipio-linha">
+            <span class="entrega-municipio">{_html_esc(item["municipio"] or "Município não informado")}</span>
+            {icone_local}
+          </div>
+          {f'<div class="entrega-executor">{_html_esc(executor)}</div>' if executor else ""}
+        </div>
+        <div class="entrega-gauge">{bloco_gauge}</div>
+      </div>
+      {f'<div class="entrega-descricao">{_html_esc(descricao)}</div>' if descricao else ""}
+      <div class="entrega-rodape">
+        <div><div class="entrega-destaque-rotulo">Conclusão prevista</div>
+          <div class="entrega-destaque-valor">{_html_esc(conclusao)}</div></div>
+        <div><div class="entrega-destaque-rotulo">Investimento</div>
+          <div class="entrega-destaque-valor entrega-destaque-investimento">{_html_esc(abreviar_moeda(item["investimento"]))}</div></div>
+      </div>
+    </div>'''
+
+
+def _html_entregas_execucao(m, fichas_cartoes):
+    ent = m["entregas_execucao"]
+    if not ent["ordem"]:
+        return '<div class="texto-secundario" style="margin-top:20px">Nenhuma obra na fase de Execução do ' \
+               'Objeto neste recorte.</div>'
+    blocos = []
+    for chave in ent["ordem"]:
+        itens = ent["grupos"][chave]
+        investimento_semestre = sum(it["investimento"] for it in itens)
+        # Quantidade de entregas e investimento do semestre em destaque
+        # (mesma ideia dos cartões de estatística do Panorama/Composição
+        # por Origem) — pedido do usuário em 11/11/2026.
+        blocos.append(f'''<div class="entrega-semestre">
+          <div class="entrega-semestre-cabecalho">
+            <span class="entrega-semestre-titulo">{_html_esc(ent["rotulos"][chave])}</span>
+          </div>
+          <div class="entrega-semestre-stats">
+            <div class="entrega-semestre-stat">
+              <div class="entrega-semestre-stat-valor">{len(itens)}</div>
+              <div class="entrega-semestre-stat-rotulo">entrega{"s" if len(itens) != 1 else ""} prevista{"s" if len(itens) != 1 else ""}</div>
+            </div>
+            <div class="entrega-semestre-stat">
+              <div class="entrega-semestre-stat-valor entrega-semestre-stat-investimento">{_html_esc(abreviar_moeda(investimento_semestre))}</div>
+              <div class="entrega-semestre-stat-rotulo">investidos no período</div>
+            </div>
+          </div>
+          <div class="grade-entrega">{"".join(_html_card_entrega(it, fichas_cartoes) for it in itens)}</div>
+        </div>''')
+    return f'''<div class="texto-secundario" style="margin-bottom:6px">{m["qtd_execucao_objeto"]} obras na fase
+      de Execução do Objeto, agrupadas pela previsão de conclusão mais atualizada (semestre a semestre até o fim
+      do ano que vem; entregas mais distantes ficam agrupadas no fim).</div>
+      {"".join(blocos)}'''
+
+
 def montar_html_apresentacao(df, filtros=None, secoes=None):
     m = calcular_metricas(df)
     # manter_ordem=True: o painel de seleção do HTML permite reordenar os
@@ -2328,9 +2659,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 
     # todo slide abaixo leva o mesmo recorte no rodapé; o número da página é
     # preenchido no fim, quando já se sabe quais slides entram
-    def _html_cabecalho_rodape(tema, conteudo, classe_extra=""):
+    def _html_cabecalho_rodape(tema, conteudo, classe_extra="", id_html=""):
         return _html_cabecalho_rodape_base(tema, "§PAG§", m["total_slides"], conteudo, recorte=recorte,
-                                           classe_extra=classe_extra)
+                                           classe_extra=classe_extra, id_html=id_html)
 
     total_investimento = m["total_investimento"]
 
@@ -2342,8 +2673,18 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         ("PARALISADO", m["qtd_paralisado"], "C62828"),
     ]
     frac_contratado = (m["total_contratado"] / total_investimento * 100) if total_investimento else 0
+    # O card "EM OBRAS / ANDAMENTO" vira atalho pra seção de possibilidades
+    # de entrega (Execução do Objeto) — pedido do usuário em 11/11/2026.
+    # mostrarPorId() é no-op se a seção não estiver na apresentação atual.
+    def _cartao_status(rot, qtd, c):
+        atalho = rot == "EM OBRAS / ANDAMENTO"
+        atributos = (f''' onclick="mostrarPorId('{ID_HTML_ENTREGAS_EXECUCAO}')" role="button" tabindex="0"'''
+                     if atalho else "")
+        classe = "cartao-status cartao-status-link" if atalho else "cartao-status"
+        return (f'<div class="{classe}"{atributos}><div class="cs-barra" style="background:#{c}"></div>'
+                f'<div class="cs-num" style="color:#{c}">{qtd}</div><div class="cs-rotulo">{_html_esc(rot)}</div></div>')
     cartoes_status_html = f'''<div class="cartoes-grade">
-        {"".join(f'<div class="cartao-status"><div class="cs-barra" style="background:#{c}"></div><div class="cs-num" style="color:#{c}">{qtd}</div><div class="cs-rotulo">{_html_esc(rot)}</div></div>' for rot, qtd, c in cards_status if qtd > 0)}
+        {"".join(_cartao_status(rot, qtd, c) for rot, qtd, c in cards_status if qtd > 0)}
       </div>'''
     # panorama_html/slide1 são montados mais abaixo, depois de _html_quadro()
     # e do bloco de T.C. não firmado por fonte (R$12,5Bi) — página única com
@@ -2373,9 +2714,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         grafico = (rotulo_f, c_f, a_f, fontes_f)
         blocos = []
         for titulo, indice, cor in BLOCOS_OBJETOS:
-            cabecalho_obj, linhas = _tabela_objetos(m, fase, titulo, indice)
+            linhas = _linhas_objetos(m, fase, indice, qtd_grupos=m["fase_objeto_qtd"][fase])
             if linhas:
-                blocos.append((cabecalho_obj, linhas, cor))
+                blocos.append(([titulo, COLUNA_QTD_ACOES] + COLUNAS_FONTES_OBJETOS, linhas, cor))
+        blocos = _blocos_alinhados(blocos)
         nota = _nota_objetos(m, fase, [cab for cab, _, _ in blocos])
         id_detalhe = f"detalhe-fase-{idx_fase}"
         detalhamento_html = ""
@@ -2399,6 +2741,94 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         {detalhamento_html}
       </div>''')
     composicao_fase_html = "".join(blocos_fases_html)
+
+    # --- Composição por Eixo/Executor (pedido do usuário em 11/11/2026):
+    # mesmo desenho da Composição por Fase — um gráfico por eixo, aberto por
+    # fonte, e atrás do botão as tabelas dos executores do eixo (T.C. não
+    # firmado e firmado, fontes em colunas). Eixos do maior pro menor.
+    chaves_fonte = [k for _, k, *_ in _fontes_por_fase(m)]
+    blocos_eixos_html = []
+    for idx_eixo, e in enumerate(m["eixos_ordem"], 1):
+        fontes_e = [(ROTULOS_CURTOS_FONTE[k], *m["fonte_eixo"][k][e], cheia, clara)
+                    for _, k, cheia, clara, _, _ in _fontes_por_fase(m)]
+        c_e, a_e = sum(x[1] for x in fontes_e), sum(x[2] for x in fontes_e)
+        if not _linha_com_valor(c_e, a_e):
+            continue
+        blocos = []
+        for titulo, indice, cor in BLOCOS_OBJETOS:
+            linhas = _linhas_objetos(m, None, indice, grupos=m["eixo_executor"][e], qtd_grupos=m["eixo_executor_qtd"][e])
+            if linhas:
+                blocos.append(([titulo.replace("OBJETO", "EXECUTOR"), COLUNA_QTD_ACOES] + COLUNAS_FONTES_OBJETOS,
+                               linhas, cor))
+        blocos = _blocos_alinhados(blocos)
+        nota = ""
+        if any("NÃO DISCRIMINADO*" in cab for cab, _, _ in blocos):
+            nota = _nota_nao_discriminado(m)
+            if any(f["nao_discriminado"][0] <= -0.5 for f in m["eixo_executor"][e].values()):
+                nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
+        id_detalhe = f"detalhe-eixo-executor-{idx_eixo}"
+        detalhamento_html = ""
+        if blocos:
+            detalhamento_html = f'''
+        <button type="button" class="btn-detalhamento"
+                onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por executor ▾</button>
+        <div class="detalhamento-fase oculto" id="{id_detalhe}">
+          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor)
+                   for cab, linhas, cor in blocos)}
+          {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
+        </div>'''
+        separador = '<hr class="separador-fase">' if blocos_eixos_html else ""
+        blocos_eixos_html.append(f'''
+      <div class="composicao-fase">
+        {separador}
+        <div class="grafico-fase-bloco gf-ordem-tc">{_html_grafico_fase(m, (e.upper(), c_e, a_e, fontes_e), rotulo_secao="")}</div>
+        {detalhamento_html}
+      </div>''')
+    composicao_eixo_html = "".join(blocos_eixos_html)
+
+    # --- Composição por Executor/Objeto (pedido do usuário em 11/11/2026):
+    # mesmo desenho — um gráfico por executor, aberto por fonte, e atrás do
+    # botão as tabelas dos objetos do executor.
+    blocos_executores_html = []
+    for idx_ex, x in enumerate(m["executores_ordem"], 1):
+        grupos_x = m["executor_objeto"][x]
+        qtd_x = m["executor_objeto_qtd"][x]
+        fontes_x = [(ROTULOS_CURTOS_FONTE[k], sum(g[k][0] for g in grupos_x.values()),
+                     sum(g[k][1] for g in grupos_x.values()), cheia, clara)
+                    for _, k, cheia, clara, _, _ in _fontes_por_fase(m)]
+        c_x, a_x = sum(f[1] for f in fontes_x), sum(f[2] for f in fontes_x)
+        if not _linha_com_valor(c_x, a_x):
+            continue
+        blocos = []
+        for titulo, indice, cor in BLOCOS_OBJETOS:
+            linhas = _linhas_objetos(m, None, indice, grupos=grupos_x, qtd_grupos=qtd_x)
+            if linhas:
+                blocos.append(([titulo, COLUNA_QTD_ACOES] + COLUNAS_FONTES_OBJETOS, linhas, cor))
+        blocos = _blocos_alinhados(blocos)
+        nota = ""
+        if any("NÃO DISCRIMINADO*" in cab for cab, _, _ in blocos):
+            nota = _nota_nao_discriminado(m)
+            if any(f["nao_discriminado"][0] <= -0.5 for f in grupos_x.values()):
+                nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
+        id_detalhe = f"detalhe-executor-objeto-{idx_ex}"
+        detalhamento_html = ""
+        if blocos:
+            detalhamento_html = f'''
+        <button type="button" class="btn-detalhamento"
+                onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por objeto ▾</button>
+        <div class="detalhamento-fase oculto" id="{id_detalhe}">
+          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor)
+                   for cab, linhas, cor in blocos)}
+          {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
+        </div>'''
+        separador = '<hr class="separador-fase">' if blocos_executores_html else ""
+        blocos_executores_html.append(f'''
+      <div class="composicao-fase">
+        {separador}
+        <div class="grafico-fase-bloco gf-ordem-tc">{_html_grafico_fase(m, (x.upper(), c_x, a_x, fontes_x), rotulo_secao="")}</div>
+        {detalhamento_html}
+      </div>''')
+    composicao_executor_html = "".join(blocos_executores_html)
 
     # --- slide 4 (novo): status por fase e origem do recurso ---
     blocos_fase = []
@@ -2519,8 +2949,11 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
             </div>'''
 
     # Fichas das ações em cards, embutidas uma vez no HTML (JSON) e abertas
-    # numa janela ao clicar no card — índice = data-ficha do card.
-    fichas_clausula = []
+    # numa janela ao clicar no card — índice = data-ficha do card. Lista
+    # compartilhada com os cards de Execução do Objeto (ver
+    # _html_entregas_execucao) — uma única janela de ficha serve as duas
+    # seções — pedido do usuário em 11/11/2026.
+    fichas_cartoes = []
 
     def _card_clausula(acao):
         cor_p = cores_prazo[acao["prazo"]]
@@ -2529,9 +2962,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         motivo = (f'<div class="cl-motivo-rotulo">Motivo / pendência</div>'
                   f'<div class="cl-motivo" title="{_html_esc(acao["motivo"])}">{_html_esc(acao["motivo"])}</div>'
                   if acao["motivo"] else '<div class="cl-motivo cl-sem-motivo">Motivo não informado na planilha</div>')
-        fichas_clausula.append(acao["ficha"])
+        fichas_cartoes.append(acao["ficha"])
         return f'''<div class="cl-card" role="button" tabindex="0" title="Clique para ver todas as informações da ação"
-             data-ficha="{len(fichas_clausula) - 1}" data-fase="{_html_esc(acao["fase"] or "NÃO INFORMADA")}"
+             data-ficha="{len(fichas_cartoes) - 1}" data-fase="{_html_esc(acao["fase"] or "NÃO INFORMADA")}"
              data-prazo="{acao["prazo"]}" data-valor="{acao["valor"]:.2f}">
           <div class="cl-faixa" style="background:#{cor_p}"></div>
           <div class="cl-corpo">
@@ -2605,21 +3038,6 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
                                   f'onclick="clAlternarFase(this)">{_html_esc(f)}</button>' for f in fases_clausula)
                         + '<button type="button" class="cl-filtro-limpar" onclick="clLimparFases()">Todas</button>'
                         + '</div>') if len(fases_clausula) > 1 else ""
-    secoes_ficha = [{"titulo": s["titulo"], "largo": bool(s.get("largo")), "campos": [list(c) for c in s["campos"]]}
-                    for s in (pac._definicao_secoes_ficha() if hasattr(pac, "_definicao_secoes_ficha") else [])]
-    dados_fichas_json = (json.dumps({"fichas": fichas_clausula, "secoes": secoes_ficha}, ensure_ascii=False, default=str)
-                         .replace("</", "<\\/"))
-    janela_ficha_html = f'''<script type="application/json" id="cl-fichas-dados">{dados_fichas_json}</script>
-      <div id="cl-ficha-fundo" class="cl-ficha-fundo" onclick="if (event.target === this) clFecharFicha()">
-        <div class="cl-ficha-janela" role="dialog" aria-modal="true">
-          <div class="cl-ficha-topo">
-            <div><div id="cl-ficha-titulo" class="cl-ficha-titulo"></div>
-                 <div id="cl-ficha-sub" class="cl-ficha-sub"></div></div>
-            <button type="button" class="cl-ficha-fechar" onclick="clFecharFicha()" title="Fechar (Esc)">&times;</button>
-          </div>
-          <div id="cl-ficha-corpo" class="cl-ficha-corpo"></div>
-        </div>
-      </div>'''
     legenda_prazo = "".join(f'<span><i style="background:#{cores_prazo[k]}"></i>{rot}</span>' for k, rot in (
         ("vencida", "Vigência vencida"), ("proxima", f"Vence em até {DIAS_ALERTA_VIGENCIA} dias"),
         ("no_prazo", "No prazo"), ("sem_data", "Sem data")))
@@ -2633,7 +3051,6 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       <div class="nota-rodape">* Valor = investimento total da ação (T.C. firmado + não firmado). Cards ordenados
       pela data de vigência da cláusula (mais urgente primeiro); executores do maior para o menor valor.
       Clique num card para ver todas as informações da ação.</div>
-      {janela_ficha_html}
     ''', classe_extra="slide-continua")
 
     cabecalho_quadro, linhas_quadro = _sem_colunas_zeradas(CABECALHO_QUADRO_RESUMO,
@@ -2696,6 +3113,26 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         </div>
         <div class="oculto" id="detalhe-composicao-fase">
           {composicao_fase_html}
+        </div>
+      </div>
+      <div style="margin-top:40px">
+        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
+          <span>COMPOSIÇÃO POR EIXO/EXECUTOR</span>
+          <button type="button" class="btn-icone-detalhamento" title="Ver composição por eixo/executor"
+                  onclick="alternarDetalhamento(this, 'detalhe-composicao-eixo')">+</button>
+        </div>
+        <div class="oculto" id="detalhe-composicao-eixo">
+          {composicao_eixo_html}
+        </div>
+      </div>
+      <div style="margin-top:40px">
+        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
+          <span>COMPOSIÇÃO POR EXECUTOR/OBJETO</span>
+          <button type="button" class="btn-icone-detalhamento" title="Ver composição por executor/objeto"
+                  onclick="alternarDetalhamento(this, 'detalhe-composicao-executor')">+</button>
+        </div>
+        <div class="oculto" id="detalhe-composicao-executor">
+          {composicao_executor_html}
         </div>
       </div>
     </div>'''
@@ -2978,6 +3415,49 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .slide-canva.ativo { display:flex; padding:0; }
     .img-canva { width:100%; height:100%; object-fit:contain; background:#fff; }
 
+    /* Execução do Objeto — Possibilidades de Entrega: cards por obra,
+       agrupados por semestre de conclusão prevista — pedido do usuário em
+       11/11/2026. */
+    .entrega-semestre { margin-top:26px; }
+    .entrega-semestre:first-of-type { margin-top:14px; }
+    .entrega-semestre-cabecalho { border-bottom:2px solid #0B1F3F; padding-bottom:6px; }
+    .entrega-semestre-titulo { font-size:18px; font-weight:900; color:#0B1F3F; text-transform:uppercase; }
+    /* Quantidade de entregas e investimento do semestre em destaque —
+       pedido do usuário em 11/11/2026. */
+    .entrega-semestre-stats { display:flex; gap:40px; margin:14px 0 18px; }
+    .entrega-semestre-stat-valor { font-size:34px; font-weight:900; color:#0B1F3F; line-height:1.1; }
+    .entrega-semestre-stat-investimento { color:#0B5CAD; }
+    .entrega-semestre-stat-rotulo { font-size:12px; font-weight:700; color:#5B6576; text-transform:uppercase;
+      margin-top:3px; }
+    .grade-entrega { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:16px; }
+    .entrega-card { background:#fff; border:1px solid #D8DCE3; border-top:4px solid #0B5CAD;
+      border-radius:10px; padding:16px 18px; cursor:pointer; transition:box-shadow .15s, border-color .15s;
+      display:flex; flex-direction:column; height:100%; }
+    .entrega-card:hover, .entrega-card:focus { border-color:#0B1F3F; box-shadow:0 4px 14px rgba(11,31,63,.15);
+      outline:none; }
+    .entrega-topo { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+    .entrega-identificacao { min-width:0; }
+    .entrega-objeto { font-size:15px; font-weight:700; color:#0B1F3F; line-height:1.25; }
+    .entrega-municipio-linha { display:flex; align-items:center; gap:6px; margin-top:2px; }
+    .entrega-municipio { font-size:13px; color:#5B6576; }
+    .entrega-icone-local { display:inline-flex; color:#0B5CAD; flex-shrink:0; }
+    .entrega-icone-local:hover { color:#0B1F3F; }
+    .entrega-executor { font-size:12px; color:#8C8C8C; margin-top:3px; }
+    .entrega-descricao { font-size:13px; color:#0B1F3F; line-height:1.35; margin-top:12px;
+      display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    .entrega-gauge { flex-shrink:0; }
+    .entrega-sem-gauge { width:76px; height:76px; display:flex; align-items:center; justify-content:center;
+      text-align:center; font-size:10.5px; font-weight:700; color:#8C8C8C; line-height:1.3; }
+    .entrega-rodape { display:flex; justify-content:space-between; gap:10px; margin-top:auto;
+      border-top:1px solid #F0F2F6; padding-top:10px; }
+    .entrega-destaque-rotulo { font-size:10.5px; font-weight:700; color:#5B6576; text-transform:uppercase; }
+    .entrega-destaque-valor { font-size:14.5px; font-weight:700; color:#0B1F3F; margin-top:2px; }
+    /* Investimento em destaque um pouco maior que a conclusão prevista —
+       pedido do usuário em 11/11/2026. */
+    .entrega-destaque-investimento { font-size:18px; font-weight:900; color:#0B5CAD; }
+    .cartao-status-link { cursor:pointer; transition:box-shadow .15s, transform .15s; }
+    .cartao-status-link:hover { box-shadow:0 4px 14px rgba(0,0,0,.18); transform:translateY(-2px); }
+
     /* Impressão ("Gerar PDF"): página 16:9 do tamanho exato do slide, sem
        margem, pra exibição em tela (projetor/TV) — pedido do usuário em
        09/11/2026; antes era A4 paisagem com 10mm de margem e zoom 0,705.
@@ -3008,7 +3488,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       .slide-continua { break-inside:auto; page-break-inside:auto; }
       .cl-card, .cl-eixo-cabecalho { break-inside:avoid; page-break-inside:avoid; }
       .cl-eixo-cabecalho { break-after:avoid; page-break-after:avoid; }
-      .cl-motivo { -webkit-line-clamp:unset; display:block; }
+      .cl-motivo, .entrega-descricao { -webkit-line-clamp:unset; display:block; }
       .cartao-status, .cartao-destaque, .cartao-pendencia, .grafico-fase-linha,
       .bloco-fonte-fase, .barra-linha, .pac-tabela tr {
         break-inside:avoid; page-break-inside:avoid;
@@ -3036,7 +3516,12 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
                  "PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": [],
                  "STATUS_FASE": [slide2b],
                  "EIXO_FONTE": slides_eixo_fonte, "FONTE_EIXO": slides_fonte_eixo, "EXECUCAO": [slide3],
-                 "A_CONTRATAR": [slide4], "CLAUSULAS": [slide_clausulas], "TABELA_RESUMO": [], "QUADRO_FASE": [],
+                 "A_CONTRATAR": [slide4],
+                 "ENTREGAS_EXECUCAO": [_html_cabecalho_rodape("EXECUÇÃO DO OBJETO — POSSIBILIDADES DE ENTREGA",
+                                                               _html_entregas_execucao(m, fichas_cartoes),
+                                                               classe_extra="slide-continua",
+                                                               id_html=ID_HTML_ENTREGAS_EXECUCAO)],
+                 "CLAUSULAS": [slide_clausulas], "TABELA_RESUMO": [], "QUADRO_FASE": [],
                  "DETALHE_EIXO": [],
                  "MAIORES_ACOES": [], "PENDENCIAS": [], "SINTESE": []}
 
@@ -3056,6 +3541,27 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     corpo = "".join(html_slide.replace("§PAG§", str(numero)) for numero, html_slide in enumerate(
         (h for chave in escolhidas for h in por_chave[chave]), 1))
 
+    # Janela de ficha completa (clique num card de Cláusulas Suspensivas ou
+    # de Execução do Objeto) — fora de qualquer slide específico, pra
+    # existir no documento independente de qual dessas seções foi
+    # escolhida — pedido do usuário em 11/11/2026. O JS (JS_CARTOES) já se
+    # protege sozinho quando a lista de fichas está vazia.
+    secoes_ficha = [{"titulo": s["titulo"], "largo": bool(s.get("largo")), "campos": [list(c) for c in s["campos"]]}
+                    for s in (pac._definicao_secoes_ficha() if hasattr(pac, "_definicao_secoes_ficha") else [])]
+    dados_fichas_json = (json.dumps({"fichas": fichas_cartoes, "secoes": secoes_ficha}, ensure_ascii=False, default=str)
+                         .replace("</", "<\\/"))
+    janela_ficha_html = f'''<script type="application/json" id="cl-fichas-dados">{dados_fichas_json}</script>
+      <div id="cl-ficha-fundo" class="cl-ficha-fundo" onclick="if (event.target === this) clFecharFicha()">
+        <div class="cl-ficha-janela" role="dialog" aria-modal="true">
+          <div class="cl-ficha-topo">
+            <div><div id="cl-ficha-titulo" class="cl-ficha-titulo"></div>
+                 <div id="cl-ficha-sub" class="cl-ficha-sub"></div></div>
+            <button type="button" class="cl-ficha-fechar" onclick="clFecharFicha()" title="Fechar (Esc)">&times;</button>
+          </div>
+          <div id="cl-ficha-corpo" class="cl-ficha-corpo"></div>
+        </div>
+      </div>''' if fichas_cartoes else ""
+
     return f'''<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -3072,6 +3578,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
   <span>F: tela cheia</span>
 </div>
 {corpo}
+{janela_ficha_html}
 <script>
 function alternarDetalhamento(botao, idAlvo) {{
   var alvo = document.getElementById(idAlvo);
@@ -3083,8 +3590,14 @@ function alternarDetalhamento(botao, idAlvo) {{
     botao.title = botao.title.indexOf('Ver') === 0 ? botao.title.replace('Ver', 'Ocultar')
                                                     : botao.title.replace('Ocultar', 'Ver');
   }} else {{
-    botao.textContent = vaiAbrir ? 'Ocultar detalhamento por objeto ▴' : 'Ver detalhamento por objeto ▾';
+    // "Ver detalhamento por objeto/executor ▾" <-> "Ocultar ... ▴"
+    botao.textContent = textoBotaoDetalhamento(botao.textContent, vaiAbrir);
   }}
+}}
+
+function textoBotaoDetalhamento(texto, aberto) {{
+  return aberto ? texto.replace(/^Ver/, 'Ocultar').replace('▾', '▴')
+                : texto.replace(/^Ocultar/, 'Ver').replace('▴', '▾');
 }}
 
 function gerarPdfCompleto() {{
@@ -3093,7 +3606,7 @@ function gerarPdfCompleto() {{
   var ocultos = Array.prototype.slice.call(document.querySelectorAll('.oculto'));
   ocultos.forEach(function (el) {{ el.classList.remove('oculto'); }});
   document.querySelectorAll('.btn-detalhamento').forEach(function (b) {{
-    b.textContent = 'Ocultar detalhamento por objeto ▴';
+    b.textContent = textoBotaoDetalhamento(b.textContent, true);
   }});
   document.querySelectorAll('.btn-icone-detalhamento').forEach(function (b) {{
     b.textContent = '–';
@@ -3103,7 +3616,7 @@ function gerarPdfCompleto() {{
   function restaurar() {{
     ocultos.forEach(function (el) {{ el.classList.add('oculto'); }});
     document.querySelectorAll('.btn-detalhamento').forEach(function (b) {{
-      b.textContent = 'Ver detalhamento por objeto ▾';
+      b.textContent = textoBotaoDetalhamento(b.textContent, false);
     }});
     document.querySelectorAll('.btn-icone-detalhamento').forEach(function (b) {{
       b.textContent = '+';
@@ -3129,6 +3642,15 @@ function gerarPdfCompleto() {{
     if (contador) contador.textContent = (atual + 1) + '/' + slides.length;
     history.replaceState(null, '', '#' + (atual + 1));
   }}
+
+  // Atalho por id (ex.: card "EM OBRAS / ANDAMENTO" pulando pra Execução do
+  // Objeto) — se o slide não estiver nesta apresentação (não foi
+  // selecionado no painel), não faz nada — pedido do usuário em
+  // 11/11/2026.
+  window.mostrarPorId = function (id) {{
+    var indice = slides.findIndex(function (s) {{ return s.id === id; }});
+    if (indice !== -1) mostrar(indice);
+  }};
 
   function telaCheia() {{
     if (document.fullscreenElement) document.exitFullscreen();
@@ -3174,7 +3696,10 @@ function gerarPdfCompleto() {{
 
 # Seção Cláusulas Suspensivas do HTML: filtro de fase (seleção múltipla) e
 # janela com a ficha completa da ação ao clicar no card (pedido do usuário em
-# 11/11/2026). String comum (não f-string) para o JS não precisar de {{ }}.
+# 11/11/2026) — a janela de ficha também é usada pelos cards de Execução do
+# Objeto (ver fichas_cartoes/_html_entregas_execucao), por isso o seletor de
+# clique é genérico ([data-ficha]), não só .cl-card. String comum (não
+# f-string) para o JS não precisar de {{ }}.
 JS_CLAUSULAS = r"""
 (function () {
   var dadosEl = document.getElementById('cl-fichas-dados');
@@ -3268,7 +3793,10 @@ JS_CLAUSULAS = r"""
 
   window.clFecharFicha = function () { if (fundo) fundo.classList.remove('aberta'); };
 
-  document.querySelectorAll('.cl-card[data-ficha]').forEach(function (card) {
+  // Qualquer card com data-ficha abre a mesma janela — além dos cards de
+  // Cláusulas Suspensivas (.cl-card), os de Execução do Objeto
+  // (.entrega-card) também usam — pedido do usuário em 11/11/2026.
+  document.querySelectorAll('[data-ficha]').forEach(function (card) {
     card.addEventListener('click', function () { abrirFicha(+card.dataset.ficha); });
     card.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrirFicha(+card.dataset.ficha); }
@@ -3310,6 +3838,11 @@ SLIDES_APRESENTACAO = [
     {"chave": "FONTE_EIXO", "titulo": "Investimento por Fonte e Eixo", "layout": "barras"},
     {"chave": "EXECUCAO", "titulo": "Execução do T.C. Firmado, por Fonte", "layout": "barras"},
     {"chave": "A_CONTRATAR", "titulo": "Recursos com T.C. Não Firmado", "layout": "barras"},
+    # Possibilidades de entrega das obras em Execução do Objeto, por
+    # semestre — pedido do usuário em 11/11/2026. Cards no HTML, tabela por
+    # semestre no PPTX (ver ENTREGAS_EXECUCAO no desenhar/por_chave).
+    {"chave": "ENTREGAS_EXECUCAO", "titulo": "Execução do Objeto — Possibilidades de Entrega",
+     "layout": "cards_tabela"},
     {"chave": "CLAUSULAS", "titulo": "Cláusulas Suspensivas", "layout": "cards_tabela"},
     {"chave": "TABELA_RESUMO", "titulo": "Tabela-Resumo por Fonte", "layout": "tabela"},
     {"chave": "QUADRO_FASE", "titulo": "Quadro Resumo de Investimentos por Fase", "layout": "tabela"},
@@ -3340,7 +3873,8 @@ def _paginas_por_chave(m):
     return {"CLAUSULAS": 0,
             "COMP_FASE": len(_paginas_composicao_fase(m)),
             "EIXO_FONTE": len(_paginar_grupos(_grupos_eixo_fonte(m))),
-            "FONTE_EIXO": len(_paginar_grupos(_grupos_fonte_eixo(m)))}
+            "FONTE_EIXO": len(_paginar_grupos(_grupos_fonte_eixo(m))),
+            "ENTREGAS_EXECUCAO": len(_paginas_entregas_execucao(m))}
 
 
 def _paginas_por_chave_html(m):
@@ -3348,9 +3882,10 @@ def _paginas_por_chave_html(m):
     # TABELA_RESUMO/QUADRO_FASE/DETALHE_EIXO/MAIORES_ACOES/PENDENCIAS/SINTESE
     # saíram do HTML (pedido do usuário em 08/11/2026) — nenhuma dessas
     # ocupa página própria no HTML; todas continuam existindo como slides
-    # do PPTX.
+    # do PPTX. ENTREGAS_EXECUCAO é várias páginas só no PPTX (tabela
+    # paginada) — no HTML é 1 página contínua, com cards e rolagem.
     return dict(_paginas_por_chave(m), **{chave: 0 for chave in SLIDES_OCULTOS_NO_HTML},
-                **{chave: 1 for chave in SLIDES_SO_NO_HTML})
+                **{chave: 1 for chave in SLIDES_SO_NO_HTML}, ENTREGAS_EXECUCAO=1)
 
 
 def _preparar_plano(m, secoes, contagem_paginas=None, manter_ordem=False, chaves_validas=None):
@@ -3442,6 +3977,7 @@ def montar_apresentacao(df, filtros=None, secoes=None):
                 "COMP_FASE": slide_composicao_fase, "STATUS_FASE": slide_status_fase_origem,
                 "EIXO_FONTE": slide_eixo_fonte, "FONTE_EIXO": slide_fonte_eixo,
                 "EXECUCAO": slide_3_execucao_contratado, "A_CONTRATAR": slide_4_a_contratar,
+                "ENTREGAS_EXECUCAO": slide_entregas_execucao,
                 "TABELA_RESUMO": slide_5_tabela_resumo_fonte, "QUADRO_FASE": slide_quadro_resumo_fase,
                 "DETALHE_EIXO": slide_6_por_eixo,
                 "MAIORES_ACOES": slide_7_top10, "PENDENCIAS": slide_8_pendencias, "SINTESE": slide_9_sintese}
