@@ -328,6 +328,36 @@ def resumo_acoes_dados(caminho, filtros=None):
     total = {"status": "TOTAL",
              "celulas": [celula(df[df["_eixo"] == e]) for e in eixos],
              "total": celula(df)}
+    # quadro Status × Objeto (pedido do usuário em 12/11/2026): colunas
+    # agrupadas pelo eixo a que o objeto pertence, na MESMA ordem de eixos
+    # do quadro acima; dentro do eixo, do maior para o menor investimento.
+    # Objeto presente em mais de um eixo aparece em cada um deles.
+    grupos_obj, colunas_obj = [], []
+    if "_f_objeto" in df.columns:
+        for e in eixos:
+            parte_e = df[df["_eixo"] == e]
+            if not len(parte_e):
+                continue
+            por_obj = parte_e.groupby("_f_objeto")["_valor"].agg(["sum", "size"])
+            nomes = sorted(por_obj.index,
+                           key=lambda o: (-por_obj.loc[o, "sum"], -por_obj.loc[o, "size"], o))
+            grupos_obj.append({"eixo": e, "objetos": nomes})
+            colunas_obj += [(e, o) for o in nomes]
+    vazio = df.iloc[0:0]
+    por_seo = ({k: p for k, p in df.groupby(["_f_status", "_eixo", "_f_objeto"])}
+               if colunas_obj else {})
+    por_eo = ({k: p for k, p in df.groupby(["_eixo", "_f_objeto"])}
+              if colunas_obj else {})
+    linhas_obj = [{"status": l["status"],
+                   "celulas": [celula(por_seo.get((l["status"], e, o), vazio))
+                               for e, o in colunas_obj],
+                   "total": l["total"]}
+                  for l in linhas] if colunas_obj else []
+    total_obj = {"status": "TOTAL",
+                 "celulas": [celula(por_eo.get((e, o), vazio)) for e, o in colunas_obj],
+                 "total": total["total"]}
+    quadro_objeto = {"grupos": grupos_obj, "linhas": linhas_obj, "total": total_obj}
+
     maiores = [e for e in eixos if por_eixo.get(e, 0) > 0][:3]
     cards = [{"rotulo": e.upper(), "cor": RA_CORES_TOP3[i],
               **celula(df[df["_eixo"] == e])}
@@ -368,6 +398,7 @@ def resumo_acoes_dados(caminho, filtros=None):
                  "somam R$ 0.")
     return {"eixos": eixos, "cards": cards,
             "linhas": linhas, "total": total, "nota": nota,
+            "quadro_objeto": quadro_objeto,
             "filtros": painel, "datas": painel_datas,
             "filtrado": filtrado, "vazio": df.empty, "top30": top30,
             "top30_fonte": RA_TOP30_FONTE,
@@ -610,6 +641,115 @@ def gerar_pptx_resumo_acoes(dados, caminho):
     for par in nota.paragraphs:
         for r in par.runs:
             r.font.italic = True
+
+    # ---- Status × Objeto: slide(s) seguinte(s), objetos agrupados pelo
+    # eixo (mesma ordem do quadro Status × Eixo). Com muitos objetos o
+    # quadro é dividido em partes, sem cortar um eixo ao meio; o Total vai
+    # na última parte.
+    q = dados.get("quadro_objeto") or {}
+    if q.get("grupos"):
+        compacto = True
+        larg_st, larg_tot, fs_v = 170, 96, 11
+        linhas_q = q["linhas"] + [q["total"]]
+
+        def larg_col(k, nome):
+            txts = [l["celulas"][k]["txt"] for l in linhas_q if l["celulas"][k]]
+            palavras = [_pe_larg(p, 9.5, "n") for p in str(nome).split()] or [0]
+            return max(max([_pe_larg(t, fs_v, "b") for t in txts] + [0]),
+                       max(palavras)) + 12
+
+        blocos, k = [], 0
+        for g in q["grupos"]:
+            ix = list(range(k, k + len(g["objetos"])))
+            k += len(g["objetos"])
+            blocos.append((g, ix, [max(58, larg_col(i, o))
+                                   for i, o in zip(ix, g["objetos"])]))
+        disp = 1208 - larg_st - larg_tot
+        partes, atual, soma = [], [], 0
+        for b in blocos:
+            w = sum(b[2])
+            if atual and soma + w > disp:
+                partes.append(atual)
+                atual, soma = [], 0
+            atual.append(b)
+            soma += w
+        if atual:
+            partes.append(atual)
+
+        for n_parte, parte in enumerate(partes, 1):
+            slide = prs.slides.add_slide(prs.slide_layouts[6])   # em branco
+            retangulo(0, 0, 1280, 92, navy, "Cabeçalho")
+            texto(36, 16, 960, 38, [("RESUMO DAS AÇÕES PRIORITÁRIAS E PAC", 26,
+                                     branco, "k")], vert=MSO_ANCHOR.MIDDLE)
+            texto(36, 56, 960, 18,
+                  [("COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS "
+                    "ESTRATÉGICAS", 11.5, PE_COR["subcab"], "b")])
+            texto(994, 26, 250, 40,
+                  [("GOVERNO DO ESTADO DA BAHIA", 12, PE_COR["gov"], "b"),
+                   ("CASA CIVIL", 12, PE_COR["gov"], "b")], PP_ALIGN.RIGHT)
+            sufixo = (f"  (parte {n_parte} de {len(partes)})"
+                      if len(partes) > 1 else "")
+            texto(36, 102, 1208, 22,
+                  [("QUADRO RESUMO — STATUS × OBJETO" + sufixo, 15, navy, "b")])
+
+            ultimo = n_parte == len(partes)
+            ix = [i for _g, idx, _w in parte for i in idx]
+            ws = [w for _g, _idx, wl in parte for w in wl]
+            n_col = 1 + len(ix) + (1 if ultimo else 0)
+            n_lin = 2 + len(q["linhas"]) + 1
+            topo = 132
+            h_g, h_o, h_t = 24, 44, 40
+            h_l = min(46, (652 - topo - h_g - h_o - h_t) / max(1, len(q["linhas"])))
+            alturas = [h_g, h_o] + [h_l] * len(q["linhas"]) + [h_t]
+            # o que sobrar da largura vai para as colunas de objeto
+            usado = larg_st + sum(ws) + (larg_tot if ultimo else 0)
+            extra = max(0, 1208 - usado) / (len(ws) + (1 if ultimo else 0))
+            grade = slide.shapes.add_table(n_lin, n_col, px(36), px(topo),
+                                           px(1208), px(sum(alturas)))
+            grade.name = "Quadro Status x Objeto"
+            tab = grade.table
+            tab.first_row = tab.horz_banding = False
+            tab.columns[0].width = px(larg_st)
+            for j, w in enumerate(ws, 1):
+                tab.columns[j].width = px(w + extra)
+            if ultimo:
+                tab.columns[n_col - 1].width = px(larg_tot + extra)
+            for i, a in enumerate(alturas):
+                tab.rows[i].height = px(a)
+
+            fs_st = 10.5 if len(q["linhas"]) > 5 else 13
+            tab.cell(0, 0).merge(tab.cell(1, 0))
+            celula(tab.cell(0, 0), [("Status", 12, navy, "b")], branco, PP_ALIGN.LEFT)
+            j = 1
+            for g, idx, _w in parte:
+                if len(idx) > 1:
+                    tab.cell(0, j).merge(tab.cell(0, j + len(idx) - 1))
+                celula(tab.cell(0, j), [(g["eixo"], 10.5, navy, "b")], RA_CLARO)
+                for o in g["objetos"]:
+                    celula(tab.cell(1, j), [(o, 9.5, cinza, "n")], branco)
+                    j += 1
+            if ultimo:
+                tab.cell(0, n_col - 1).merge(tab.cell(1, n_col - 1))
+                celula(tab.cell(0, n_col - 1), [("Total", 12, branco, "b")], navy)
+
+            for r, l in enumerate(q["linhas"], 2):
+                celula(tab.cell(r, 0), [(l["status"], fs_st, navy, "n")], branco,
+                       PP_ALIGN.LEFT)
+                for j, i in enumerate(ix, 1):
+                    celula(tab.cell(r, j), conteudo(l["celulas"][i], fs_v, RA_AZUL), branco)
+                if ultimo:
+                    celula(tab.cell(r, n_col - 1), conteudo(l["total"], fs_v), branco)
+            ult = n_lin - 1
+            celula(tab.cell(ult, 0), [("TOTAL", 12, navy, "b")], RA_CLARO, PP_ALIGN.LEFT)
+            for j, i in enumerate(ix, 1):
+                celula(tab.cell(ult, j), conteudo(q["total"]["celulas"][i], fs_v), RA_CLARO)
+            if ultimo:
+                celula(tab.cell(ult, n_col - 1),
+                       conteudo(q["total"]["total"], fs_v + 1, branco, branco), navy)
+            nota = texto(36, 664, 1208, 22, [(dados["nota"], 14, cinza, "n")])
+            for par in nota.paragraphs:
+                for r in par.runs:
+                    r.font.italic = True
     prs.save(caminho)
 
 
@@ -764,6 +904,31 @@ def gerar_html_resumo_acoes(caminho_base, dados):
               + "".join(f"<tr>{linha(l)}</tr>" for l in dados["linhas"])
               + f'</tbody><tfoot><tr>{linha(dados["total"], "rod")}</tr></tfoot></table>')
 
+    q = dados.get("quadro_objeto") or {}
+    quadro_obj = ""
+    if q.get("grupos"):
+        inicio, n = set(), 0
+        for g in q["grupos"]:
+            inicio.add(n)
+            n += len(g["objetos"])
+
+        def linha_obj(l, cls=""):
+            return (f"<td>{_esc(l['status'])}</td>"
+                    + "".join(cel(c, (cls + (" ig" if i in inicio else "")).strip())
+                              for i, c in enumerate(l["celulas"]))
+                    + cel(l["total"], "tot ig"))
+
+        quadro_obj = (
+            '<table class="quadro quadro-obj"><thead><tr><th rowspan="2">Status</th>'
+            + "".join(f'<th class="grupo ig" colspan="{len(g["objetos"])}">{_esc(g["eixo"])}</th>'
+                      for g in q["grupos"])
+            + '<th class="tot ig" rowspan="2">Total</th></tr><tr>'
+            + "".join(f'<th class="obj{" ig" if j == 0 else ""}">{_esc(o)}</th>'
+                      for g in q["grupos"] for j, o in enumerate(g["objetos"]))
+            + "</tr></thead><tbody>"
+            + "".join(f"<tr>{linha_obj(l)}</tr>" for l in q["linhas"])
+            + f'</tbody><tfoot><tr>{linha_obj(q["total"], "rod")}</tr></tfoot></table>')
+
     total_mun = sum(1 for i in por_mun.values())
     nota_mapa = (f"{total_mun} municípios com ação no recorte."
                  + (f" Fora do mapa (nome não casa com o IBGE): {', '.join(fora)}." if fora else ""))
@@ -824,6 +989,14 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .quadro tfoot td.tot{{background:var(--navy)}}
 .quadro tfoot td.tot b,.quadro tfoot td.tot small{{color:#fff}}
 .tr{{color:#AAB2BF}}
+h2 small{{font-weight:400;font-size:12px;color:var(--cinza);letter-spacing:0;margin-left:8px}}
+.quadro-obj th.grupo{{background:var(--claro);color:var(--navy);font-weight:700}}
+.quadro-obj th.obj{{font-size:11.5px;min-width:96px;color:var(--cinza)}}
+.quadro-obj .ig{{border-left:2px solid var(--azul)}}
+.quadro-obj td:first-child,.quadro-obj th:first-child{{position:sticky;left:0;background:#fff;z-index:1}}
+.quadro-obj tfoot td:first-child{{background:var(--claro)}}
+.quadro-obj thead tr+tr th:first-child{{position:static;text-align:center;min-width:96px;padding-left:4px;color:var(--cinza);background:transparent}}
+@media print{{.rolagem-obj{{overflow:visible}}}}
 .rolagem{{overflow-x:auto}}
 .nota{{font-size:12.5px;font-style:italic;color:var(--cinza);margin-top:12px}}
 footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
@@ -846,6 +1019,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 <h3>MAIORES INVESTIMENTOS</h3><ol class="ranking">{linhas_rank}</ol>{nota_rank}</div></div></section>
 <section><h2>QUADRO RESUMO — STATUS × EIXO</h2><div class="rolagem">{quadro}</div>
 <div class="nota">{_esc(dados["nota"])}</div></section>
+{f'<section><h2>QUADRO RESUMO — STATUS × OBJETO <small>objetos agrupados pelo eixo, na mesma ordem do quadro acima</small></h2><div class="rolagem rolagem-obj">{quadro_obj}</div><div class="nota">{_esc(dados["nota"])}</div></section>' if quadro_obj else ""}
 </main>
 <footer>CGAPE · Casa Civil · Base Ações do Cronograma</footer>
 <div id="dica"></div>
@@ -1054,6 +1228,20 @@ HTML_JANELA = r"""
   .ra-tab small { color:var(--cor-texto-secundario); }
   .ra-nota { font-size:12px; font-style:italic; color:var(--cor-texto-secundario);
     margin-top:10px; }
+  .ra-quadro-titulo { margin:22px 0 8px; font-size:13px; font-weight:700;
+    letter-spacing:.5px; color:var(--cor-texto-primario); }
+  .ra-quadro-titulo small { font-weight:400; font-size:12px; letter-spacing:0;
+    color:var(--cor-texto-terciario); }
+  .ra-tab-obj th.ra-grupo { background:var(--cor-card-elevado);
+    color:var(--cor-acento-mint-texto); font-size:12px; letter-spacing:.3px; }
+  .ra-tab-obj th.ra-obj { font-weight:600; font-size:11.5px; min-width:92px;
+    color:var(--cor-texto-secundario); }
+  .ra-tab-obj .ra-ini-grupo { border-left:2px solid var(--cor-acento-teal); }
+  .ra-tab-obj td:first-child, .ra-tab-obj th:first-child { position:sticky; left:0;
+    z-index:1; background:var(--cor-card); }
+  .ra-tab-obj tfoot td:first-child { background:var(--cor-card-elevado); }
+  .ra-tab-obj thead tr + tr th:first-child { position:static; text-align:center;
+    min-width:92px; background:transparent; }
   .ra-vazio { padding:40px 0; text-align:center; font-size:14px;
     color:var(--cor-texto-secundario); }
   .ra-filtros { background:var(--cor-card); border-radius:8px;
@@ -1457,7 +1645,40 @@ HTML_JANELA = r"""
       '<th class="tot">Total</th></tr></thead><tbody>' +
       d.linhas.map(function (l) { return "<tr>" + linha(l) + "</tr>"; }).join("") +
       "</tbody><tfoot><tr>" + linha(d.total, "tot") + "</tr></tfoot></table></div>" +
+      raQuadroObjeto(d.quadro_objeto) +
       '<div class="ra-nota">' + esc(d.nota) + "</div>";
+  }
+  // Quadro Status × Objeto: mesmo formato, com o eixo do objeto numa linha
+  // de cabeçalho acima (mesma ordem de eixos do quadro Status × Eixo).
+  function raQuadroObjeto(q) {
+    if (!q || !q.grupos || !q.grupos.length) return "";
+    var inicio = {}, n = 0;
+    q.grupos.forEach(function (g) { inicio[n] = true; n += g.objetos.length; });
+    var cel = function (c, i, classe) {
+      var cl = (classe ? classe + " " : "") + (inicio[i] ? "ra-ini-grupo" : "");
+      return raCelula(c, cl.trim());
+    };
+    var linha = function (l, classeExtra) {
+      return "<td>" + esc(l.status) + "</td>" +
+        l.celulas.map(function (c, i) { return cel(c, i, classeExtra); }).join("") +
+        raCelula(l.total, "tot ra-ini-grupo");
+    };
+    return '<div class="ra-quadro-titulo">QUADRO RESUMO — STATUS × OBJETO ' +
+      "<small>(objetos agrupados pelo eixo, na mesma ordem do quadro acima; role para o lado)</small></div>" +
+      '<div class="ra-rolagem"><table class="ra-tab ra-tab-obj"><thead><tr>' +
+      '<th rowspan="2">Status</th>' +
+      q.grupos.map(function (g) {
+        return '<th class="ra-grupo ra-ini-grupo" colspan="' + g.objetos.length + '">' + esc(g.eixo) + "</th>";
+      }).join("") +
+      '<th class="tot ra-ini-grupo" rowspan="2">Total</th></tr><tr>' +
+      q.grupos.map(function (g) {
+        return g.objetos.map(function (o, j) {
+          return '<th class="ra-obj' + (j === 0 ? " ra-ini-grupo" : "") + '">' + esc(o) + "</th>";
+        }).join("");
+      }).join("") +
+      "</tr></thead><tbody>" +
+      q.linhas.map(function (l) { return "<tr>" + linha(l) + "</tr>"; }).join("") +
+      "</tbody><tfoot><tr>" + linha(q.total, "tot") + "</tr></tfoot></table></div>";
   }
   function raConsultar() {
     var msg = document.getElementById("raMsg");
