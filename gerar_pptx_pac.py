@@ -463,6 +463,86 @@ def rotulo_fase(fase):
     return dict(FASES_ORIGEM).get(fase, str(fase).title())
 
 
+# Paleta cíclica para colorir cada município pelo semestre em que ele tem
+# entregas previstas — reaproveita as cores já adotadas no resto do HTML
+# (pedido do usuário em 12/11/2026, mesma régua de "respeitar as cores já
+# adotadas" do gráfico de avanço).
+_PALETA_SEMESTRES_MAPA = [AZUL, VERDE, LARANJA, TEAL, VERMELHO, "6A3D9A"]
+_COR_MAPA_SEM_ENTREGA = "E0E0E0"
+
+
+def _mapa_entregas_municipios(sub_exec, ordem_entrega, rotulos_entrega):
+    # Mesma projeção equirretangular do mapa coroplético de investimentos do
+    # painel (carregar_geojson_municipios/_bbox_projecao_municipios em
+    # "CGAPE - BALANÇO PAC.py"), reaproveitada aqui só pra desenhar os
+    # polígonos como SVG estático — sem precisar de nenhuma rota de API,
+    # já que esta página é um HTML autônomo. Cada município ganha a cor do
+    # semestre MAIS PRÓXIMO em que tem alguma entrega prevista (funciona
+    # como legenda de "quando"); o tooltip (title do <polygon>) detalha a
+    # quantidade em cada semestre — pedido do usuário em 12/11/2026.
+    geojson_data = pac.carregar_geojson_municipios()
+    if geojson_data is None or not ordem_entrega:
+        return None
+
+    por_municipio = {}
+    for _, r in sub_exec.iterrows():
+        norm = pac.remover_acentos(r["MUNICIPIO"]).strip().upper()
+        if not norm:
+            continue
+        info = por_municipio.setdefault(norm, {
+            "nome": str(r["MUNICIPIO"]).strip() or "Não informado",
+            "total": 0, "investimento": 0.0, "por_semestre": {},
+        })
+        info["total"] += 1
+        info["investimento"] += float(r["_INVESTIMENTO"])
+        info["por_semestre"][r["_BUCKET"]] = info["por_semestre"].get(r["_BUCKET"], 0) + 1
+
+    if not por_municipio:
+        return None
+
+    indice_ordem = {chave: i for i, chave in enumerate(ordem_entrega)}
+    cor_por_bucket = {chave: _PALETA_SEMESTRES_MAPA[i % len(_PALETA_SEMESTRES_MAPA)]
+                       for i, chave in enumerate(ordem_entrega)}
+    for info in por_municipio.values():
+        bucket_mais_proximo = min(info["por_semestre"], key=lambda c: indice_ordem[c])
+        info["cor"] = cor_por_bucket[bucket_mais_proximo]
+
+    minlon, minlat, maxlon, maxlat, correcao_x = pac._bbox_projecao_municipios(geojson_data["features"])
+    largura_mapa = 560
+    largura_bruta = (maxlon - minlon) * correcao_x
+    altura_bruta = maxlat - minlat
+    escala = largura_mapa / largura_bruta
+    altura_mapa = altura_bruta * escala
+
+    def projetar(lon, lat):
+        x = (lon - minlon) * correcao_x * escala
+        y = altura_mapa - (lat - minlat) * escala
+        return x, y
+
+    poligonos = []
+    for feat in geojson_data["features"]:
+        nome_feat = feat["properties"]["name"]
+        norm_feat = pac.remover_acentos(nome_feat).strip().upper()
+        info = por_municipio.get(norm_feat)
+        cor = info["cor"] if info else _COR_MAPA_SEM_ENTREGA
+        if info:
+            titulo = f"{info['nome']} — {info['total']} entrega{'s' if info['total'] != 1 else ''}: " + "; ".join(
+                f"{rotulos_entrega[chave]}: {qtd}" for chave, qtd in
+                sorted(info["por_semestre"].items(), key=lambda par: indice_ordem.get(par[0], 999)))
+        else:
+            titulo = nome_feat
+        for anel in feat["geometry"]["coordinates"]:
+            pontos = " ".join(f"{x:.2f},{y:.2f}" for x, y in (projetar(lon, lat) for lon, lat in anel))
+            poligonos.append({"pontos": pontos, "cor": cor, "titulo": titulo, "com_dado": bool(info)})
+
+    legenda = [{"cor": cor_por_bucket[chave], "rotulo": rotulos_entrega[chave]} for chave in ordem_entrega]
+    return {
+        "largura": round(largura_mapa), "altura": round(altura_mapa),
+        "poligonos": poligonos, "legenda": legenda,
+        "qtd_municipios": len(por_municipio),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Métricas (tudo recalculado a partir de df — nada hardcoded)
 # ---------------------------------------------------------------------------
@@ -638,6 +718,13 @@ def calcular_metricas(df):
     m["qtd_andamento"] = int(andamento_mask.sum())
     m["qtd_preparatoria"] = int(preparatoria_mask.sum())
     m["qtd_paralisado"] = int(paralisado_mask.sum())
+    # Investimento de cada uma das 4 categorias — exibido dentro dos
+    # próprios cartões de status do Panorama (HTML e PPTX) — pedido do
+    # usuário em 12/11/2026.
+    m["investimento_concluido"] = float(investimento_linha.loc[concluido_mask].sum())
+    m["investimento_andamento"] = float(investimento_linha.loc[andamento_mask].sum())
+    m["investimento_preparatoria"] = float(investimento_linha.loc[preparatoria_mask].sum())
+    m["investimento_paralisado"] = float(investimento_linha.loc[paralisado_mask].sum())
 
     # por eixo
     df_tmp = df.assign(_CONTRATADO=contratado, _A_CONTRATAR=a_contratar_linha,
@@ -682,13 +769,26 @@ def calcular_metricas(df):
 
     # --- Execução do Objeto: possibilidades de entrega por semestre (pedido
     # do usuário em 11/11/2026) --- obras já na última fase antes de
-    # concluir, agrupadas pela previsão de conclusão mais atualizada
-    # (PREVISAO DE CONCLUSAO ATUAL, não a data original) em semestres a
-    # partir do atual até o fim do ano que vem. Datas além disso (ou já
-    # vencidas) ficam nos extremos ("após" / fundidas no semestre atual),
-    # em vez de criar dezenas de baldes minúsculos.
+    # concluir, agrupadas em semestres a partir do atual até o fim do ano
+    # que vem. Datas além disso (ou já vencidas) ficam nos extremos ("após"
+    # / fundidas no semestre atual), em vez de criar dezenas de baldes
+    # minúsculos.
+    # Compatibilizado com o cartão "EM OBRAS/ANDAMENTO" do Panorama (que
+    # conta por STATUS, não por FASE) — pedido do usuário em 12/11/2026: o
+    # cartão soma 153 porque inclui ações com status ANDAMENTO que a base
+    # ainda registra numa fase anterior (Captação de Recurso/Licitação),
+    # enquanto esta seção só pegava quem já estava na fase Execução do
+    # Objeto (133). Agora é a união das duas classificações — e a data de
+    # entrega usada por obra muda conforme o critério que a incluiu: quem
+    # já está na fase Execução do Objeto usa o PRAZO DE CONCLUSÃO DA FASE;
+    # quem entra só pelo status ANDAMENTO (ainda em fase anterior) usa a
+    # PREVISÃO DE CONCLUSÃO ATUAL, que é o prazo que de fato existe pra ela
+    # nesse ponto do processo.
     exec_obj_mask = fase == "EXECUÇÃO DO OBJETO"
-    m["qtd_execucao_objeto"] = int(exec_obj_mask.sum())
+    andamento_status_mask = df["STATUS_TEXTO"] == "ANDAMENTO"
+    entrega_mask = exec_obj_mask | andamento_status_mask
+    m["qtd_execucao_objeto"] = int(entrega_mask.sum())
+    m["investimento_execucao_objeto"] = float(investimento_linha.loc[entrega_mask].sum())
     semestres = []
     ano_sem, sem_sem = hoje.year, (1 if hoje.month <= 6 else 2)
     ano_fim_sem = hoje.year + 1
@@ -710,15 +810,20 @@ def calcular_metricas(df):
     rotulos_entrega["APOS"] = f"ENTREGA PREVISTA APÓS {semestres[-1][0]}"
     rotulos_entrega["SEM_PREVISAO"] = "SEM PREVISÃO DE CONCLUSÃO"
 
-    sub_exec = df.loc[exec_obj_mask, [pac.col_objeto, pac.col_avanco, pac.col_prazo_atual]].copy()
-    sub_exec["MUNICIPIO"] = df.loc[exec_obj_mask, "MUNICIPIO"] if "MUNICIPIO" in df.columns else ""
-    sub_exec["_INVESTIMENTO"] = investimento_linha.loc[exec_obj_mask]
-    sub_exec["_BUCKET"] = sub_exec[pac.col_prazo_atual].apply(_bucket_entrega)
+    sub_exec = df.loc[entrega_mask, [pac.col_objeto, pac.col_avanco, pac.col_prazo, pac.col_prazo_atual]].copy()
+    sub_exec["MUNICIPIO"] = df.loc[entrega_mask, "MUNICIPIO"] if "MUNICIPIO" in df.columns else ""
+    sub_exec["_INVESTIMENTO"] = investimento_linha.loc[entrega_mask]
+    # Prazo da fase pra quem já está em Execução do Objeto; previsão atual
+    # pra quem entrou só pelo status ANDAMENTO (ainda em fase anterior) —
+    # pedido do usuário em 12/11/2026.
+    sub_exec["_NA_FASE_EXECUCAO"] = exec_obj_mask.loc[entrega_mask]
+    sub_exec["_DATA_ENTREGA"] = sub_exec[pac.col_prazo].where(sub_exec["_NA_FASE_EXECUCAO"], sub_exec[pac.col_prazo_atual])
+    sub_exec["_BUCKET"] = sub_exec["_DATA_ENTREGA"].apply(_bucket_entrega)
 
     grupos_entrega = {}
     for chave, grupo in sub_exec.groupby("_BUCKET", sort=False):
         grupo = grupo.sort_values(
-            by=[pac.col_prazo_atual, "_INVESTIMENTO"],
+            by=["_DATA_ENTREGA", "_INVESTIMENTO"],
             ascending=[True, False], na_position="last")
         itens = []
         for idx, r in grupo.iterrows():
@@ -734,7 +839,8 @@ def calcular_metricas(df):
                 "objeto": str(r[pac.col_objeto]),
                 "municipio": str(r["MUNICIPIO"]),
                 "avanco": float(r[pac.col_avanco]) if pd.notna(r[pac.col_avanco]) else None,
-                "conclusao": r[pac.col_prazo_atual] if pd.notna(r[pac.col_prazo_atual]) else None,
+                "conclusao": r["_DATA_ENTREGA"] if pd.notna(r["_DATA_ENTREGA"]) else None,
+                "na_fase_execucao": bool(r["_NA_FASE_EXECUCAO"]),
                 "investimento": float(r["_INVESTIMENTO"]),
                 "ficha": ficha,
             })
@@ -742,6 +848,7 @@ def calcular_metricas(df):
 
     ordem_entrega = [c for c in semestres + ["APOS", "SEM_PREVISAO"] if c in grupos_entrega]
     m["entregas_execucao"] = {"ordem": ordem_entrega, "rotulos": rotulos_entrega, "grupos": grupos_entrega}
+    m["entregas_mapa"] = _mapa_entregas_municipios(sub_exec, ordem_entrega, rotulos_entrega)
 
     return m
 
@@ -937,13 +1044,19 @@ def _desenhar_panorama(s, m, y, compacto=False):
             add_text(s, x_texto, y_barra + 0.5, largura_texto, 0.3, percentual, 15, BRANCO)
 
     # contadores por status
-    y_cards = y_barra + (1.1 if compacto else 1.5)
-    alt_card, tam_num, y_num, y_rotulo = (1.3, 34, 0.12, 0.82) if compacto else (2.0, 44, 0.35, 1.3)
+    # Versão compacta (Visão Geral) tem pouco espaço até o rodapé fixo do
+    # slide (y=10.83in) — gap até os cards reduzido de 1.1 pra 1.0 pra
+    # sobrar altura pra 3ª linha do investimento sem encostar no rodapé.
+    y_cards = y_barra + (1.0 if compacto else 1.5)
+    # Investimento de cada categoria, entre o número e o rótulo — pedido do
+    # usuário em 12/11/2026 (cartão cresceu um pouco pra caber a 3ª linha).
+    (alt_card, tam_num, y_num, y_investimento, tam_investimento,
+     y_rotulo) = (1.4, 30, 0.08, 0.56, 13, 0.86) if compacto else (2.3, 44, 0.35, 1.2, 19, 1.65)
     cards = [
-        ("CONCLUÍDO / INAUGURADO", m["qtd_concluido"], VERDE),
-        ("EM OBRAS / ANDAMENTO", m["qtd_andamento"], AZUL),
-        ("SELEÇÃO / PREPARATÓRIA / LICITAÇÃO", m["qtd_preparatoria"], LARANJA),
-        ("PARALISADO", m["qtd_paralisado"], VERMELHO),
+        ("CONCLUÍDO / INAUGURADO", m["qtd_concluido"], m["investimento_concluido"], VERDE),
+        ("EM OBRAS / ANDAMENTO", m["qtd_andamento"], m["investimento_andamento"], AZUL),
+        ("SELEÇÃO / PREPARATÓRIA / LICITAÇÃO", m["qtd_preparatoria"], m["investimento_preparatoria"], LARANJA),
+        ("PARALISADO", m["qtd_paralisado"], m["investimento_paralisado"], VERMELHO),
     ]
     # status sem nenhuma ação no recorte não ganha card (pedido do usuário em
     # 03/11/2026); os que sobram dividem a mesma largura total de 4 cards
@@ -951,11 +1064,13 @@ def _desenhar_panorama(s, m, y, compacto=False):
     espaco = 0.3
     largura_total = 17.6 if compacto else 4 * 4.1 + 3 * espaco
     largura_card = (largura_total - espaco * (len(cards) - 1)) / max(len(cards), 1)
-    for i, (rotulo, qtd, c) in enumerate(cards):
+    for i, (rotulo, qtd, investimento, c) in enumerate(cards):
         x = 0.9 + i * (largura_card + espaco)
         add_rect(s, x, y_cards, largura_card, alt_card, fill=BRANCO, line=CINZA_BORDA, arredondado=True, line_w=1)
         add_rect(s, x, y_cards, largura_card, 0.12, fill=c, arredondado=False)
         add_text(s, x + 0.25, y_cards + y_num, largura_card - 0.5, 0.9, str(qtd), tam_num, c, negrito=True)
+        add_text(s, x + 0.25, y_cards + y_investimento, largura_card - 0.5, 0.4, abreviar_moeda(investimento),
+                  tam_investimento, NAVY, negrito=True)
         add_text(s, x + 0.25, y_cards + y_rotulo, largura_card - 0.5, 0.5, rotulo, 16 if compacto else 14,
                   CINZA_TEXTO, negrito=True)
 
@@ -1739,7 +1854,11 @@ LARGURAS_ENTREGA = [6.3, 4.2, 2.1, 2.9, 2.7]
 
 def _linha_entrega(item):
     avanco = f"{item['avanco']:.0f}%" if item["avanco"] is not None else "-"
-    conclusao = item["conclusao"].strftime("%d/%m/%Y") if item["conclusao"] is not None else "A definir"
+    # "(fase)"/"(atual)" indica qual prazo foi usado — ver comentário em
+    # calcular_metricas sobre a união Execução do Objeto + status Andamento
+    # (pedido do usuário em 12/11/2026).
+    sufixo = " (fase)" if item["na_fase_execucao"] else " (atual)"
+    conclusao = (item["conclusao"].strftime("%d/%m/%Y") + sufixo) if item["conclusao"] is not None else "A definir"
     return [item["objeto"], item["municipio"] or "Não informado", avanco, conclusao,
             abreviar_moeda(item["investimento"])]
 
@@ -1762,7 +1881,7 @@ def slide_entregas_execucao(prs, m):
     if not paginas:
         s = novo_slide(prs, "EXECUÇÃO DO OBJETO — POSSIBILIDADES DE ENTREGA")
         add_text(s, 0.9, 1.9, 17.6, 0.6,
-                  "Nenhuma obra na fase de Execução do Objeto neste recorte.", 16, CINZA_TEXTO)
+                  "Nenhuma obra em execução do objeto ou com status Andamento neste recorte.", 16, CINZA_TEXTO)
         return
     for rotulo_semestre, pagina_i, pagina_n, trecho in paginas:
         tema = f"EXECUÇÃO DO OBJETO — {rotulo_semestre}"
@@ -1772,8 +1891,9 @@ def slide_entregas_execucao(prs, m):
         y = 1.55
         if pagina_i == 1:
             add_text(s, 0.9, y, 17.6, 0.4,
-                      f"{m['qtd_execucao_objeto']} obras na fase de Execução do Objeto, agrupadas pela previsão "
-                      "de conclusão mais atualizada", 15, CINZA_TEXTO)
+                      f"{m['qtd_execucao_objeto']} obras em execução do objeto ou com status Andamento — "
+                      "conclusão (fase) para quem já está em Execução do Objeto, conclusão (atual) para quem "
+                      "ainda está em Andamento numa fase anterior", 15, CINZA_TEXTO)
             y += 0.55
         linhas = [_linha_entrega(item) for item in trecho]
         tabela_nativa(s, 0.9, y, 17.6, min(0.55 + 0.42 * len(linhas), 9.3 - y),
@@ -2567,12 +2687,61 @@ _SVG_ICONE_LOCALIZACAO = ('<svg viewBox="0 0 24 24" width="14" height="14" fill=
                          '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>'
                          '<circle cx="12" cy="10" r="3"></circle></svg>')
 
+_MESES_ABREV = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
+
+
+def _contagem_mensal_semestre(chave, itens):
+    # Só existe linha do tempo por mês para buckets que são de fato um
+    # semestre (tupla ano/semestre) — "APOS"/"SEM_PREVISAO" não têm os 6
+    # meses de um semestre pra distribuir. Entregas atrasadas (data real
+    # anterior ao semestre, já estourada) caem no primeiro mês do bucket;
+    # qualquer sobra além do último mês cai no último — pedido do usuário
+    # em 12/11/2026.
+    if not isinstance(chave, tuple):
+        return None
+    ano, sem = chave
+    meses = [1, 2, 3, 4, 5, 6] if sem == 1 else [7, 8, 9, 10, 11, 12]
+    contagens = {mes: 0 for mes in meses}
+    for it in itens:
+        data = it["conclusao"]
+        if data is None:
+            continue
+        if data.year == ano and data.month in contagens:
+            contagens[data.month] += 1
+        elif (data.year, 1 if data.month <= 6 else 2) < chave:
+            contagens[meses[0]] += 1
+        else:
+            contagens[meses[-1]] += 1
+    return meses, [contagens[mes] for mes in meses]
+
+
+def _html_linha_tempo_mensal(meses, contagens):
+    maximo = max(contagens) if contagens else 0
+    colunas = []
+    # Meses sem nenhuma entrega prevista são suprimidos da linha do tempo —
+    # pedido do usuário em 12/11/2026.
+    for mes, qtd in zip(meses, contagens):
+        if not qtd:
+            continue
+        altura = 4 + round(qtd / maximo * 28) if maximo else 4
+        colunas.append(f'''<div class="entrega-tl-coluna" title="{_MESES_ABREV[mes - 1]}: {qtd} entrega{"s" if qtd != 1 else ""}">
+          <div class="entrega-tl-qtd">{qtd}</div>
+          <div class="entrega-tl-barra" style="height:{altura}px"></div>
+          <div class="entrega-tl-mes">{_MESES_ABREV[mes - 1]}</div>
+        </div>''')
+    return f'<div class="entrega-tl">{"".join(colunas)}</div>'
+
 
 def _html_card_entrega(item, fichas_cartoes):
     avanco = item["avanco"]
     bloco_gauge = (_svg_gauge_avanco(avanco) if avanco is not None
                    else '<div class="entrega-sem-gauge">Avanço<br>não<br>informado</div>')
     conclusao = item["conclusao"].strftime("%d/%m/%Y") if item["conclusao"] is not None else "A definir"
+    # Rótulo indica qual prazo está sendo usado: quem já está na fase
+    # Execução do Objeto usa o prazo DA FASE; quem entrou só pelo status
+    # Andamento (ainda numa fase anterior) usa a previsão ATUAL — pedido do
+    # usuário em 12/11/2026.
+    rotulo_conclusao = "Conclusão prevista (fase)" if item["na_fase_execucao"] else "Conclusão prevista (atual)"
     ficha = item["ficha"] or {}
     executor = ficha.get("executor")
     link_localizacao = ficha.get("link_localizacao")
@@ -2603,7 +2772,7 @@ def _html_card_entrega(item, fichas_cartoes):
       </div>
       {f'<div class="entrega-descricao">{_html_esc(descricao)}</div>' if descricao else ""}
       <div class="entrega-rodape">
-        <div><div class="entrega-destaque-rotulo">Conclusão prevista</div>
+        <div><div class="entrega-destaque-rotulo">{rotulo_conclusao}</div>
           <div class="entrega-destaque-valor">{_html_esc(conclusao)}</div></div>
         <div><div class="entrega-destaque-rotulo">Investimento</div>
           <div class="entrega-destaque-valor entrega-destaque-investimento">{_html_esc(abreviar_moeda(item["investimento"]))}</div></div>
@@ -2611,37 +2780,121 @@ def _html_card_entrega(item, fichas_cartoes):
     </div>'''
 
 
+def _html_mapa_entregas(dados_mapa):
+    # SVG estático (sem JS/API — mesma projeção do mapa coroplético do
+    # painel, calculada em _mapa_entregas_municipios) com um <title> por
+    # polígono pro tooltip nativo do navegador detalhar a quantidade de
+    # entregas em cada semestre — pedido do usuário em 12/11/2026.
+    if not dados_mapa:
+        return ""
+    poligonos_svg = "".join(
+        f'<polygon points="{p["pontos"]}" fill="#{p["cor"]}" '
+        f'class="entrega-mapa-poligono{" entrega-mapa-poligono-com-dado" if p["com_dado"] else ""}">'
+        f'<title>{_html_esc(p["titulo"])}</title></polygon>'
+        for p in dados_mapa["poligonos"]
+    )
+    legenda_html = "".join(
+        f'<div class="entrega-mapa-legenda-item"><span class="entrega-mapa-legenda-swatch" '
+        f'style="background:#{item["cor"]}"></span>{_html_esc(item["rotulo"])}</div>'
+        for item in dados_mapa["legenda"]
+    )
+    qtd = dados_mapa["qtd_municipios"]
+    # Legenda à esquerda, mapa à direita dela — pedido do usuário em
+    # 12/11/2026.
+    return f'''<div class="entrega-mapa-bloco">
+      <div class="entrega-mapa-titulo">Municípios beneficiados, por semestre de entrega</div>
+      <div class="entrega-mapa-conteudo">
+        <div class="entrega-mapa-legenda">
+          {legenda_html}
+          <div class="entrega-mapa-legenda-item entrega-mapa-legenda-sem-dado">
+            <span class="entrega-mapa-legenda-swatch" style="background:#{_COR_MAPA_SEM_ENTREGA}"></span>Sem entrega prevista</div>
+        </div>
+        <svg viewBox="0 0 {dados_mapa["largura"]} {dados_mapa["altura"]}" class="entrega-mapa-svg">{poligonos_svg}</svg>
+      </div>
+      <div class="texto-secundario" style="margin-top:8px">{qtd} município{"s" if qtd != 1 else ""}
+        beneficiado{"s" if qtd != 1 else ""} — passe o mouse sobre o mapa para ver o detalhamento por semestre.</div>
+    </div>'''
+
+
+def _html_panorama_entregas(m):
+    # Panorama geral da seção, acima do detalhamento por semestre: valores
+    # macro à esquerda (empilhados, alinhados verticalmente entre si) e o
+    # mapa de municípios beneficiados à direita — pedido do usuário em
+    # 12/11/2026.
+    total_municipios = m["entregas_mapa"]["qtd_municipios"] if m["entregas_mapa"] else 0
+    return f'''<div class="entrega-panorama">
+      <div class="entrega-panorama-corpo">
+        <div class="entrega-panorama-stats">
+          <div class="entrega-panorama-stat">
+            <div class="entrega-panorama-stat-valor">{m["qtd_execucao_objeto"]}</div>
+            <div class="entrega-panorama-stat-rotulo">obras em execução do objeto ou em andamento</div>
+          </div>
+          <div class="entrega-panorama-stat">
+            <div class="entrega-panorama-stat-valor entrega-panorama-stat-investimento">{_html_esc(abreviar_moeda(m["investimento_execucao_objeto"]))}</div>
+            <div class="entrega-panorama-stat-rotulo">investimento total previsto</div>
+          </div>
+          <div class="entrega-panorama-stat">
+            <div class="entrega-panorama-stat-valor">{total_municipios}</div>
+            <div class="entrega-panorama-stat-rotulo">municípios beneficiados</div>
+          </div>
+        </div>
+        {_html_mapa_entregas(m["entregas_mapa"])}
+      </div>
+    </div>'''
+
+
 def _html_entregas_execucao(m, fichas_cartoes):
     ent = m["entregas_execucao"]
     if not ent["ordem"]:
-        return '<div class="texto-secundario" style="margin-top:20px">Nenhuma obra na fase de Execução do ' \
-               'Objeto neste recorte.</div>'
+        return '<div class="texto-secundario" style="margin-top:20px">Nenhuma obra em execução do objeto ou ' \
+               'com status Andamento neste recorte.</div>'
     blocos = []
-    for chave in ent["ordem"]:
+    for indice, chave in enumerate(ent["ordem"], 1):
         itens = ent["grupos"][chave]
         investimento_semestre = sum(it["investimento"] for it in itens)
-        # Quantidade de entregas e investimento do semestre em destaque
-        # (mesma ideia dos cartões de estatística do Panorama/Composição
-        # por Origem) — pedido do usuário em 11/11/2026.
+        avancos = [it["avanco"] for it in itens if it["avanco"] is not None]
+        media_avanco = sum(avancos) / len(avancos) if avancos else None
+        bloco_gauge_medio = (_svg_gauge_avanco(media_avanco, tamanho=64) if media_avanco is not None
+                             else '<div class="entrega-sem-gauge entrega-sem-gauge-pequeno">Sem<br>informação</div>')
+        # Linha do tempo com a quantidade de entregas por mês, ao lado do
+        # número total de entregas do semestre — pedido do usuário em
+        # 12/11/2026.
+        contagem_mensal = _contagem_mensal_semestre(chave, itens)
+        bloco_linha_tempo = (_html_linha_tempo_mensal(*contagem_mensal) if contagem_mensal else "")
+        # Quantidade de entregas, avanço físico médio e investimento do
+        # semestre em destaque (mesma ideia dos cartões de estatística do
+        # Panorama/Composição por Origem) — pedido do usuário em
+        # 11-12/11/2026.
+        id_detalhe = f"detalhe-entrega-semestre-{indice}"
         blocos.append(f'''<div class="entrega-semestre">
           <div class="entrega-semestre-cabecalho">
             <span class="entrega-semestre-titulo">{_html_esc(ent["rotulos"][chave])}</span>
+            <button type="button" class="btn-icone-detalhamento" title="Ver obras do semestre"
+                    onclick="alternarDetalhamento(this, '{id_detalhe}')">+</button>
           </div>
           <div class="entrega-semestre-stats">
-            <div class="entrega-semestre-stat">
-              <div class="entrega-semestre-stat-valor">{len(itens)}</div>
-              <div class="entrega-semestre-stat-rotulo">entrega{"s" if len(itens) != 1 else ""} prevista{"s" if len(itens) != 1 else ""}</div>
+            <div class="entrega-semestre-stat entrega-semestre-stat-qtd">
+              <div class="entrega-semestre-stat-principal">
+                <div class="entrega-semestre-stat-valor">{len(itens)}</div>
+                <div class="entrega-semestre-stat-rotulo">entrega{"s" if len(itens) != 1 else ""} prevista{"s" if len(itens) != 1 else ""}</div>
+              </div>
+              {bloco_linha_tempo}
+            </div>
+            <div class="entrega-semestre-stat entrega-semestre-stat-gauge">
+              {bloco_gauge_medio}
+              <div class="entrega-semestre-stat-rotulo">avanço físico médio</div>
             </div>
             <div class="entrega-semestre-stat">
               <div class="entrega-semestre-stat-valor entrega-semestre-stat-investimento">{_html_esc(abreviar_moeda(investimento_semestre))}</div>
               <div class="entrega-semestre-stat-rotulo">investidos no período</div>
             </div>
           </div>
-          <div class="grade-entrega">{"".join(_html_card_entrega(it, fichas_cartoes) for it in itens)}</div>
+          <div class="grade-entrega oculto" id="{id_detalhe}">{"".join(_html_card_entrega(it, fichas_cartoes) for it in itens)}</div>
         </div>''')
-    return f'''<div class="texto-secundario" style="margin-bottom:6px">{m["qtd_execucao_objeto"]} obras na fase
-      de Execução do Objeto, agrupadas pela previsão de conclusão mais atualizada (semestre a semestre até o fim
-      do ano que vem; entregas mais distantes ficam agrupadas no fim).</div>
+    return f'''{_html_panorama_entregas(m)}
+      <div class="texto-secundario" style="margin:18px 0 6px">Detalhamento por semestre (até o fim do ano que
+        vem; entregas mais distantes ficam agrupadas no fim) — conclusão (fase) para quem já está em Execução
+        do Objeto, conclusão (atual) para quem ainda está em Andamento numa fase anterior.</div>
       {"".join(blocos)}'''
 
 
@@ -2667,24 +2920,28 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 
     # --- slide 1 ---
     cards_status = [
-        ("CONCLUÍDO / INAUGURADO", m["qtd_concluido"], "2E7D32"),
-        ("EM OBRAS / ANDAMENTO", m["qtd_andamento"], "0B5CAD"),
-        ("SELEÇÃO / PREPARATÓRIA / LICITAÇÃO", m["qtd_preparatoria"], AZUL_CLARO_MARCA),
-        ("PARALISADO", m["qtd_paralisado"], "C62828"),
+        ("CONCLUÍDO / INAUGURADO", m["qtd_concluido"], m["investimento_concluido"], "2E7D32"),
+        ("EM OBRAS / ANDAMENTO", m["qtd_andamento"], m["investimento_andamento"], "0B5CAD"),
+        ("SELEÇÃO / PREPARATÓRIA / LICITAÇÃO", m["qtd_preparatoria"], m["investimento_preparatoria"], AZUL_CLARO_MARCA),
+        ("PARALISADO", m["qtd_paralisado"], m["investimento_paralisado"], "C62828"),
     ]
     frac_contratado = (m["total_contratado"] / total_investimento * 100) if total_investimento else 0
     # O card "EM OBRAS / ANDAMENTO" vira atalho pra seção de possibilidades
     # de entrega (Execução do Objeto) — pedido do usuário em 11/11/2026.
     # mostrarPorId() é no-op se a seção não estiver na apresentação atual.
-    def _cartao_status(rot, qtd, c):
+    # Investimento de cada categoria exibido dentro do próprio cartão —
+    # pedido do usuário em 12/11/2026.
+    def _cartao_status(rot, qtd, investimento, c):
         atalho = rot == "EM OBRAS / ANDAMENTO"
         atributos = (f''' onclick="mostrarPorId('{ID_HTML_ENTREGAS_EXECUCAO}')" role="button" tabindex="0"'''
                      if atalho else "")
         classe = "cartao-status cartao-status-link" if atalho else "cartao-status"
         return (f'<div class="{classe}"{atributos}><div class="cs-barra" style="background:#{c}"></div>'
-                f'<div class="cs-num" style="color:#{c}">{qtd}</div><div class="cs-rotulo">{_html_esc(rot)}</div></div>')
+                f'<div class="cs-num" style="color:#{c}">{qtd}</div>'
+                f'<div class="cs-investimento">{_html_esc(abreviar_moeda(investimento))}</div>'
+                f'<div class="cs-rotulo">{_html_esc(rot)}</div></div>')
     cartoes_status_html = f'''<div class="cartoes-grade">
-        {"".join(_cartao_status(rot, qtd, c) for rot, qtd, c in cards_status if qtd > 0)}
+        {"".join(_cartao_status(rot, qtd, investimento, c) for rot, qtd, investimento, c in cards_status if qtd > 0)}
       </div>'''
     # panorama_html/slide1 são montados mais abaixo, depois de _html_quadro()
     # e do bloco de T.C. não firmado por fonte (R$12,5Bi) — página única com
@@ -3186,7 +3443,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .cartao-status { flex:1; background:#fff; border:1px solid #D8DCE3; border-radius:10px; overflow:hidden; }
     .cs-barra { height:8px; }
     .cs-num { font-size:48px; font-weight:900; padding:14px 18px 0; }
-    .cs-rotulo { font-size:15px; font-weight:700; color:#5B6576; padding:10px 18px 18px; }
+    .cs-investimento { font-size:17px; font-weight:800; color:#0B1F3F; padding:2px 18px 0; }
+    .cs-rotulo { font-size:15px; font-weight:700; color:#5B6576; padding:6px 18px 18px; }
     .bloco-barras { margin-top:10px; }
     .barra-linha { display:flex; align-items:center; gap:18px; margin-bottom:16px; }
     .barra-rotulo { font-weight:700; color:#0B1F3F; font-size:17px; flex-shrink:0; }
@@ -3242,6 +3500,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .visao-geral .barra-empilhada { height:64px; margin-top:6px; }
     .vg-topo { display:flex; justify-content:space-between; }
     .vg-recursos { text-align:right; }
+    /* Hierarquia entre os dois valores do topo: Investimento Total da
+       Carteira é o valor principal; T.C. Não Firmado entra um pouco menor
+       — pedido do usuário em 12/11/2026. */
+    .vg-recursos .valor-principal { font-size:48px; }
     .vg-recurso-linha { font-size:22px; font-weight:700; color:#E68A00; line-height:1.3; text-align:right; }
     .visao-geral .barra-empilhada-seg { white-space:nowrap; overflow:hidden; }
     .visao-geral .barra-empilhada-seg { padding:8px 16px; }
@@ -3420,16 +3682,58 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
        11/11/2026. */
     .entrega-semestre { margin-top:26px; }
     .entrega-semestre:first-of-type { margin-top:14px; }
-    .entrega-semestre-cabecalho { border-bottom:2px solid #0B1F3F; padding-bottom:6px; }
-    .entrega-semestre-titulo { font-size:18px; font-weight:900; color:#0B1F3F; text-transform:uppercase; }
-    /* Quantidade de entregas e investimento do semestre em destaque —
-       pedido do usuário em 11/11/2026. */
-    .entrega-semestre-stats { display:flex; gap:40px; margin:14px 0 18px; }
+    .entrega-semestre-cabecalho { display:flex; align-items:center; gap:10px; border-bottom:2px solid #0B1F3F;
+      padding-bottom:6px; }
+    .entrega-semestre-titulo { font-size:18px; font-weight:400; color:#0B1F3F; text-transform:uppercase; }
+    /* Quantidade de entregas, avanço físico médio e investimento do
+       semestre em destaque — pedido do usuário em 11-12/11/2026. */
+    .entrega-semestre-stats { display:flex; align-items:flex-start; gap:40px; margin:14px 0 18px; }
     .entrega-semestre-stat-valor { font-size:34px; font-weight:900; color:#0B1F3F; line-height:1.1; }
     .entrega-semestre-stat-investimento { color:#0B5CAD; }
     .entrega-semestre-stat-rotulo { font-size:12px; font-weight:700; color:#5B6576; text-transform:uppercase;
       margin-top:3px; }
-    .grade-entrega { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:16px; }
+    .entrega-semestre-stat-gauge { display:flex; flex-direction:column; align-items:flex-start; }
+    .entrega-sem-gauge-pequeno { width:64px; height:64px; font-size:9px; }
+    /* Linha do tempo com a quantidade de entregas por mês, ao lado do total
+       de entregas do semestre — pedido do usuário em 12/11/2026. */
+    .entrega-semestre-stat-qtd { display:flex; align-items:flex-end; gap:18px; }
+    .entrega-tl { display:flex; align-items:flex-end; gap:6px; }
+    .entrega-tl-coluna { display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
+      width:20px; height:58px; }
+    .entrega-tl-qtd { font-size:10px; font-weight:800; color:#0B1F3F; line-height:1; margin-bottom:2px;
+      min-height:11px; }
+    .entrega-tl-barra { width:10px; min-height:3px; border-radius:3px 3px 0 0; background:#0B5CAD; }
+    .entrega-tl-mes { font-size:8.5px; font-weight:700; color:#8C8C8C; text-transform:uppercase; margin-top:4px; }
+    /* Panorama geral da seção Execução do Objeto (valores macro + mapa dos
+       municípios beneficiados por semestre) — pedido do usuário em
+       12/11/2026. */
+    .entrega-panorama { margin-bottom:10px; padding-bottom:22px; border-bottom:2px solid #0B1F3F; }
+    /* Dados macro à esquerda, mapa à direita — pedido do usuário em
+       12/11/2026. */
+    .entrega-panorama-corpo { display:flex; align-items:flex-start; justify-content:space-between; gap:36px; }
+    .entrega-panorama-stats { display:flex; flex-direction:column; gap:20px; flex-shrink:0; }
+    .entrega-panorama-stat-valor { font-size:32px; font-weight:900; color:#0B1F3F; line-height:1.1; }
+    .entrega-panorama-stat-investimento { color:#0B5CAD; }
+    .entrega-panorama-stat-rotulo { font-size:12px; font-weight:700; color:#5B6576; text-transform:uppercase;
+      margin-top:3px; }
+    .entrega-mapa-bloco { flex-shrink:0; }
+    .entrega-mapa-titulo { font-size:13px; font-weight:800; color:#0B1F3F; text-transform:uppercase;
+      margin-bottom:10px; }
+    .entrega-mapa-conteudo { display:flex; align-items:center; gap:24px; }
+    .entrega-mapa-svg { width:360px; height:auto; flex-shrink:0; }
+    .entrega-mapa-poligono { stroke:#fff; stroke-width:0.6; }
+    .entrega-mapa-poligono-com-dado:hover { stroke:#0B1F3F; stroke-width:1.4; }
+    .entrega-mapa-legenda { display:flex; flex-direction:column; gap:7px; min-width:190px; padding-top:4px; }
+    .entrega-mapa-legenda-item { display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600;
+      color:#0B1F3F; }
+    .entrega-mapa-legenda-swatch { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
+    .entrega-mapa-legenda-sem-dado { color:#8C8C8C; }
+    .grade-entrega { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:16px; margin-top:18px; }
+    /* ".oculto" sozinho tem a mesma especificidade de ".grade-entrega" e
+       perde por ordem no CSS (mesmo bug já corrigido em ".slide-canva") —
+       aqui o ".oculto" precisa de uma regra própria, mais específica, pra
+       realmente esconder — pedido do usuário em 12/11/2026. */
+    .grade-entrega.oculto { display:none; }
     .entrega-card { background:#fff; border:1px solid #D8DCE3; border-top:4px solid #0B5CAD;
       border-radius:10px; padding:16px 18px; cursor:pointer; transition:box-shadow .15s, border-color .15s;
       display:flex; flex-direction:column; height:100%; }
@@ -3488,6 +3792,16 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
       .slide-continua { break-inside:auto; page-break-inside:auto; }
       .cl-card, .cl-eixo-cabecalho { break-inside:avoid; page-break-inside:avoid; }
       .cl-eixo-cabecalho { break-after:avoid; page-break-after:avoid; }
+      /* Mesmo problema do .cl-card (corrigido em 08/11/2026) acontecia com
+         os cards de entrega: sem "break-inside:avoid" o navegador cortava o
+         card no meio ao gerar o PDF, deixando o rodapé (conclusão prevista +
+         investimento) órfão no topo da página seguinte, sem o resto do card
+         — bug relatado pelo usuário em 12/11/2026. O cabeçalho do semestre
+         também não pode ficar sozinho no fim de uma página, separado dos
+         cards dele. */
+      .entrega-card, .entrega-semestre-cabecalho, .entrega-semestre-stats, .entrega-panorama {
+        break-inside:avoid; page-break-inside:avoid; }
+      .entrega-semestre-cabecalho, .entrega-semestre-stats { break-after:avoid; page-break-after:avoid; }
       .cl-motivo, .entrega-descricao { -webkit-line-clamp:unset; display:block; }
       .cartao-status, .cartao-destaque, .cartao-pendencia, .grafico-fase-linha,
       .bloco-fonte-fase, .barra-linha, .pac-tabela tr {
