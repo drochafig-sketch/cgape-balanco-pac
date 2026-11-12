@@ -20,7 +20,6 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.units import mm
 from reportlab.lib import colors, pagesizes
-from mapa_mental_html import montar_html_mapa_mental
 import os
 import tempfile
 import sys
@@ -94,12 +93,6 @@ try:
     import webview  # painel de filtros (HTML/CSS/JS) — pip install pywebview
 except Exception:
     webview = None
-
-# Página do mapa mental (botão "MAPA MENTAL", ao lado de GERENCIAL/DASHBOARD
-# no topo do painel) — mesmo componente HTML/CSS/JS já usado no projeto
-# "Controle de Prazos", adaptado para a árvore Secretaria/Órgão > Eixo >
-# Objeto > Ação e para a paleta de FASE já usada no resto deste painel (ver
-# mapa_mental_html.py, montar_html_mapa_mental).
 
 # Ligada pela variável de ambiente PAC_WEB_MODE=1, definida pelo servidor
 # web (servidor_web.py). Controla os pontos do código que só fazem sentido
@@ -10863,31 +10856,6 @@ def montar_html_painel(df_base):
     border-top: 1px solid var(--cor-card-elevado);
   }
 
-  /* --- Página dedicada do Mapa Mental: mesmo padrão de overlay em tela
-     cheia do #app (filtros), só que por cima dele (z-index maior), já que
-     o botão que abre fica dentro do próprio painel de filtros. O conteúdo
-     é uma página HTML autônoma (gerada em Python, ver mapa_mental_html.py)
-     carregada num <iframe> — isolado do CSS/JS deste painel de propósito,
-     para os dois nunca conflitarem entre si (ids repetidos, temas etc.).
-     Sem barra externa aqui: o botão de fechar mora dentro do próprio
-     cabeçalho da página do iframe (mesma linha do título "... Mapa
-     Mental") e avisa esta página por postMessage quando é clicado — ver
-     o listener "message" logo abaixo, e o botão #fechar-mapa em
-     mapa_mental_html.py. */
-  #mapa-mental-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 95;
-    background: var(--cor-fundo);
-  }
-  #mapa-mental-iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-    background: #eef1f6;
-  }
-
   /* --- Modal de Pré-visualização (dashboard) --- */
   #preview-overlay {
     display: flex;
@@ -11041,7 +11009,7 @@ def montar_html_painel(df_base):
   .tema-switch:hover .tema-switch-trilho { border-color: var(--cor-acento-teal); }
 
   /* --- Acesso Rápido: botão de ícone (grade 2x2) que abre um menu com os
-     atalhos MAPA MENTAL, FILTROS e PUBLICAR — mesmo componente nas duas
+     atalhos FILTROS e PUBLICAR — mesmo componente nas duas
      barras (painel de filtros e dash), sempre no fim da fileira de
      botões. O menu (.acesso-rapido-menu) fica escondido (display:none)
      até ganhar a classe "aberto". */
@@ -11461,7 +11429,10 @@ def montar_html_painel(df_base):
     height: 165px;
     min-width: 165px;
     border-radius: 50%;
-    box-shadow: var(--sombra-card);
+    /* Donut (pedido do usuário em 12/11/2026): máscara radial abre o furo
+       central, transparente — mostra o fundo do card. */
+    -webkit-mask: radial-gradient(circle closest-side, transparent 66%, #000 67%);
+    mask: radial-gradient(circle closest-side, transparent 66%, #000 67%);
   }
   .grafico-legenda {
     display: flex;
@@ -12274,16 +12245,6 @@ def montar_html_painel(df_base):
           </svg>
         </button>
         <div class="acesso-rapido-menu" id="acesso-rapido-filtros-menu">
-          <button class="acesso-rapido-item" id="acesso-rapido-filtros-mapa-mental" title="Mapa Mental">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="18" cy="5" r="3"></circle>
-              <circle cx="6" cy="12" r="3"></circle>
-              <circle cx="18" cy="19" r="3"></circle>
-              <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"></line>
-              <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line>
-            </svg>
-            <span>MAPA MENTAL</span>
-          </button>
           <button class="acesso-rapido-item" id="acesso-rapido-filtros-filtros" title="Filtros">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="4" y1="21" x2="4" y2="14"></line>
@@ -12401,10 +12362,6 @@ def montar_html_painel(df_base):
   </div>
 </div>
 
-<div id="mapa-mental-overlay">
-  <iframe id="mapa-mental-iframe" title="Mapa Mental do BALANÇO PAC"></iframe>
-</div>
-
 <div id="preview-overlay">
   <div id="preview-modal">
     <div class="modal-titulo">
@@ -12426,6 +12383,7 @@ def montar_html_painel(df_base):
         <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
         <button class="btn" id="dash-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
         <button class="btn" id="dash-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
+        <button class="btn" id="dash-resumo-acoes" data-abrir-resumo-acoes title="Resumo das ações prioritárias e PAC (base Ações do Cronograma)">RESUMO AÇÕES</button>
         <button type="button" class="tema-switch" id="tema-switch-dash" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
           <span class="tema-switch-trilho">
             <span class="tema-switch-icone tema-switch-sol">
@@ -12459,16 +12417,6 @@ def montar_html_painel(df_base):
             </svg>
           </button>
           <div class="acesso-rapido-menu" id="acesso-rapido-dash-menu">
-            <button class="acesso-rapido-item" id="acesso-rapido-dash-mapa-mental" title="Mapa Mental">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="18" cy="5" r="3"></circle>
-                <circle cx="6" cy="12" r="3"></circle>
-                <circle cx="18" cy="19" r="3"></circle>
-                <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"></line>
-                <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line>
-              </svg>
-              <span>MAPA MENTAL</span>
-            </button>
             <button class="acesso-rapido-item" id="acesso-rapido-dash-filtros" title="Filtros">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="4" y1="21" x2="4" y2="14"></line>
@@ -14950,78 +14898,6 @@ def montar_html_painel(df_base):
     await carregarDashboard();
   };
 
-  // Botão "MAPA MENTAL" (dentro do menu de Acesso Rápido, nas duas barras):
-  // pede ao backend a página autônoma do mapa mental (mesmo recorte dos
-  // filtros atuais) e mostra numa página dedicada, DENTRO do mesmo ambiente
-  // (um <iframe> em tela cheia por cima do painel — ver #mapa-mental-overlay),
-  // em vez de abrir aba/janela separada. Um window.open com Blob de HTML
-  // chegou a ser usado aqui, mas no modo desktop (WebView2/pywebview) isso
-  // faz o Windows tratar o link como um arquivo para "abrir com outro app"
-  // em vez de exibir a página — por isso o iframe embutido, que nunca sai
-  // da janela do programa.
-  var botoesMapaMental = [
-    document.getElementById("acesso-rapido-filtros-mapa-mental"),
-    document.getElementById("acesso-rapido-dash-mapa-mental"),
-  ];
-  var mapaMentalOverlay = document.getElementById("mapa-mental-overlay");
-  var mapaMentalIframe = document.getElementById("mapa-mental-iframe");
-
-  botoesMapaMental.forEach(function (btnMapaMental) {
-    btnMapaMental.onclick = async function () {
-      if (!window.PAC_MODO_WEB && !window.pywebview) {
-        await new Promise(function (resolve) {
-          var jaResolveu = false;
-          var finalizar = function () { if (!jaResolveu) { jaResolveu = true; resolve(); } };
-          window.addEventListener("pywebviewready", finalizar, { once: true });
-          setTimeout(finalizar, 5000);
-        });
-        if (!window.pywebview) {
-          alert("O painel ainda não terminou de carregar — tente novamente em instantes.");
-          return;
-        }
-      }
-
-      var filtros = montarFiltrosAtuais();
-      // o mapa mental é um documento à parte (iframe srcdoc) sem acesso ao
-      // localStorage desta página — manda o tema atual junto pra ele nascer
-      // já na cor certa (ver meta["tema"] em _api_mapa_mental)
-      filtros.tema = obterTemaAtual();
-      botoesMapaMental.forEach(function (b) { b.disabled = true; });
-      var resultado;
-      try {
-        resultado = await chamarAPI("mapa_mental", filtros);
-      } catch (erro) {
-        alert("Ocorreu um erro ao abrir o mapa mental:" + NL + NL + erro);
-        botoesMapaMental.forEach(function (b) { b.disabled = false; });
-        return;
-      }
-      botoesMapaMental.forEach(function (b) { b.disabled = false; });
-
-      if (!resultado || resultado.ok === false) {
-        if (resultado && resultado.vazio) {
-          alert("Nenhum registro encontrado para os filtros selecionados.");
-        } else {
-          alert("Ocorreu um erro ao abrir o mapa mental:" + NL + NL + (resultado ? resultado.erro : "erro desconhecido"));
-        }
-        return;
-      }
-
-      mapaMentalIframe.srcdoc = resultado.html;
-      mapaMentalOverlay.style.display = "flex";
-    };
-  });
-
-  // Botão de fechar mora dentro do próprio iframe (mesma linha do título
-  // "... Mapa Mental", ver #fechar-mapa em mapa_mental_html.py) — como
-  // ele não pode chamar direto o overlay da página pai (documentos
-  // isolados), avisa por postMessage.
-  window.addEventListener("message", function (ev) {
-    if (ev.data && ev.data.tipo === "mapa-mental-fechar") {
-      mapaMentalOverlay.style.display = "none";
-      mapaMentalIframe.srcdoc = "";
-    }
-  });
-
   // Botão "FILTROS" (dentro do menu de Acesso Rápido, nas duas barras):
   // abre o painel de filtros maximizado, por cima do dashboard. No próprio
   // painel de filtros não tem efeito visível (já está aberto) — existe ali
@@ -15036,7 +14912,7 @@ def montar_html_painel(df_base):
   });
 
   // Menu de Acesso Rápido: o botão de ícone (grade 2x2) alterna a exibição
-  // do menu com MAPA MENTAL/FILTROS/PUBLICAR; clicar num item do menu ou
+  // do menu com FILTROS/PUBLICAR; clicar num item do menu ou
   // fora dele fecha de volta. Mesmo componente nas duas barras.
   function configurarAcessoRapido(idWrap) {
     var wrap = document.getElementById(idWrap);
@@ -15079,9 +14955,6 @@ def montar_html_painel(df_base):
   // (é ele que troca as variáveis --cor-* do :root, ver <style> no topo
   // deste HTML), lembra a escolha entre sessões (localStorage) e mantém as
   // duas chaves (barra de filtros e barra do dash) sincronizadas entre si.
-  // O tema atual também vai junto quando o Mapa Mental é aberto (ver
-  // filtros.tema logo abaixo, no botão MAPA MENTAL), já que ele roda num
-  // <iframe> à parte e não teria como puxar isso do localStorage sozinho.
   function obterTemaAtual() {
     return document.documentElement.getAttribute("data-tema") === "claro" ? "claro" : "escuro";
   }
@@ -16446,6 +16319,14 @@ def montar_html_painel(df_base):
 """
 
     html_paginal = html_paginal.replace("__DADOS_PAINEL__", dados_painel_json)
+    # Janela "Resumo das ações prioritárias e PAC" (botão RESUMO AÇÕES do
+    # dash) — ver resumo_acoes.py.
+    try:
+        html_paginal = html_paginal.replace(
+            "</body>", _modulo_resumo_acoes().HTML_JANELA + "\n</body>", 1)
+    except Exception:
+        import traceback
+        traceback.print_exc()
     texto_ultima_atualizacao_painel = (
         f"Base de dados atualizada em {ultima_atualizacao.strftime('%d/%m/%Y às %Hh%Mmin')}"
     )
@@ -16461,69 +16342,6 @@ def montar_html_painel(df_base):
     return html_paginal
 
 
-def _data_iso_mapa_mental(valor):
-    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
-        return None
-    try:
-        ts = pd.Timestamp(valor)
-    except (TypeError, ValueError):
-        return None
-    if pd.isna(ts):
-        return None
-    return ts.date().isoformat()
-
-
-def _construir_arvore_mapa_mental(df):
-    # Secretaria/Órgão > Executor > Objeto > Ação (item) — sem o nível de
-    # Eixo (o Objeto já separa bem as ações dentro de cada Executor, e o
-    # Eixo só acrescentava mais um clique sem separar muita coisa). O nó do
-    # Objeto não expande mais dentro do próprio mapa: clicar nele abre a
-    # lista das ações no painel lateral (ver abrirListaAcoes no JS), e
-    # clicar numa ação da lista abre a Ficha Cadastral completa (ver
-    # abrirPainel) — os nós do tipo "item" continuam existindo nos dados
-    # (para contagem, busca e a lista lateral), só não são mais desenhados
-    # como cartão dentro da árvore. Cada folha reaproveita EXATAMENTE os
-    # mesmos dados já usados na Ficha Cadastral (_montar_dados_ficha_acao)
-    # — uma única fonte de verdade para o que aparece nos dois lugares — e
-    # só acrescenta um "id" (garantidamente único, pelo índice da linha) e
-    # a data em ISO da Previsão de Conclusão Atual (para o JS calcular
-    # dias restantes sem precisar reinterpretar o texto já formatado).
-    raiz = {"nome": "BALANÇO PAC - BAHIA", "tipo": "raiz", "filhos": {}}
-
-    for idx, row in df.iterrows():
-        orgao = str(row.get("SECRETARIA_LIMPA")
-                    or "").strip() or "Sem órgão definido"
-
-        dados = _montar_dados_ficha_acao(row)
-        dados["id"] = str(idx)
-        dados["prazo_atual_iso"] = _data_iso_mapa_mental(
-            row.get(col_prazo_atual))
-
-        executor = dados["executor"] or "Sem executor definido"
-        objeto = dados["objeto"] or "Sem objeto"
-
-        n_org = raiz["filhos"].setdefault(
-            orgao, {"nome": orgao, "tipo": "orgao", "filhos": {}})
-        n_exec = n_org["filhos"].setdefault(
-            executor, {"nome": executor, "tipo": "executor", "filhos": {}})
-        n_obj = n_exec["filhos"].setdefault(
-            objeto, {"nome": objeto, "tipo": "objeto", "filhos": {}})
-
-        n_obj["filhos"][f"item-{idx}"] = {
-            "nome": dados["descricao"] or dados["objeto"],
-            "tipo": "item",
-            "dados": dados,
-            "filhos": {},
-        }
-
-    def para_lista(no):
-        no = dict(no)
-        no["filhos"] = [para_lista(f) for f in no["filhos"].values()]
-        return no
-
-    return para_lista(raiz)
-
-
 # =====================================================
 # API DO PAINEL — funções de módulo compartilhadas pela ponte pywebview
 # (classe APIFiltros, usada no modo desktop) e pelas rotas do servidor web
@@ -16533,37 +16351,6 @@ def _construir_arvore_mapa_mental(df):
 # mesmo contrato que o pywebview já usava, para o JS do painel não precisar
 # saber se está falando com uma janela nativa ou com um servidor HTTP.
 # =====================================================
-
-def _api_mapa_mental(filtros):
-    # Monta a página HTML autônoma do mapa mental (ver mapa_mental_html.py)
-    # a partir do MESMO recorte definido pelos filtros ativos no painel no
-    # momento do clique — igual ao botão DASHBOARD. Devolve o HTML pronto
-    # como texto (em vez de já abrir alguma coisa): quem chamou (JS do
-    # botão "MAPA MENTAL") é quem decide como abrir — sempre numa aba/
-    # janela nova, tanto no desktop quanto no navegador.
-    try:
-        df = _filtrar_dataframe(filtros)
-        if df.empty:
-            return {"ok": False, "vazio": True}
-        arvore = _construir_arvore_mapa_mental(df)
-        meta = {
-            "titulo": "BALANÇO PAC - BAHIA",
-            "titulo_aba": "Mapa Mental — BALANÇO PAC",
-            "subtitulo": "Secretarias/Órgãos, Executores e Objetos com ações do PAC",
-            "total": int(len(df)),
-            "gerado_em": agora_bahia().strftime("%d/%m/%Y %H:%M"),
-            # tema atual do painel (chave claro/escuro no topo) — o mapa
-            # mental é um <iframe srcdoc> isolado, sem acesso ao
-            # localStorage da página principal, então recebe pronto aqui
-            # (ver filtros.tema no JS do botão MAPA MENTAL).
-            "tema": filtros.get("tema"),
-        }
-        return {"ok": True, "html": montar_html_mapa_mental(arvore, meta)}
-    except Exception as erro:
-        import traceback
-        traceback.print_exc()
-        return {"ok": False, "erro": str(erro)}
-
 
 def _api_pre_visualizar(filtros):
     # Filtra os dados e devolve os números já agregados (sem gerar nenhum
@@ -16818,6 +16605,39 @@ def _modulo_monitoramento():
     return relatorio_monitoramento
 
 
+def _modulo_resumo_acoes():
+    # Janela "Resumo das ações prioritárias e PAC" do dash (resumo_acoes.py),
+    # portada do Relatório SSP.
+    import resumo_acoes
+    resumo_acoes.configurar(sys.modules[__name__])
+    return resumo_acoes
+
+
+def _api_resumo_acoes(filtros=None):
+    return _modulo_resumo_acoes().api_dados(filtros)
+
+
+def _api_resumo_acoes_base():
+    return _modulo_resumo_acoes().api_base()
+
+
+def _api_resumo_acoes_pptx(filtros=None):
+    if MODO_WEB:
+        return {"mensagem": "A apresentação é gerada pelo programa desktop."}
+    return _modulo_resumo_acoes().api_pptx(filtros)
+
+
+def _api_resumo_acoes_xlsx(filtros=None):
+    if MODO_WEB:
+        return {"mensagem": "A planilha é gerada pelo programa desktop."}
+    return _modulo_resumo_acoes().api_xlsx(filtros)
+
+
+def _api_resumo_acoes_html(filtros=None):
+    # Desktop grava em Downloads e abre; web devolve o HTML para uma aba.
+    return _modulo_resumo_acoes().api_html(filtros, devolver_conteudo=MODO_WEB)
+
+
 def _api_mon_dados_painel():
     # Grade de filtros do MONITORAMENTO: lida na primeira troca do seletor.
     try:
@@ -16975,9 +16795,6 @@ def abrir_interface_filtros(df_base):
         def pre_visualizar(self, filtros):
             return _api_pre_visualizar(filtros)
 
-        def mapa_mental(self, filtros):
-            return _api_mapa_mental(filtros)
-
         def iniciar_geracao(self, filtros):
             return _api_iniciar_geracao(filtros)
 
@@ -16992,6 +16809,21 @@ def abrir_interface_filtros(df_base):
 
         def mon_aviso_qualidade(self, filtros_mon):
             return _api_mon_aviso_qualidade(filtros_mon)
+
+        def resumo_acoes(self, filtros=None):
+            return _api_resumo_acoes(filtros)
+
+        def resumo_acoes_base(self):
+            return _api_resumo_acoes_base()
+
+        def resumo_acoes_pptx(self, filtros=None):
+            return _api_resumo_acoes_pptx(filtros)
+
+        def resumo_acoes_xlsx(self, filtros=None):
+            return _api_resumo_acoes_xlsx(filtros)
+
+        def resumo_acoes_html(self, filtros=None):
+            return _api_resumo_acoes_html(filtros)
 
         def escolher_local_e_gerar(self, filtros, secoes=None):
             # Segunda etapa: reaplica os mesmos filtros (barato — é só

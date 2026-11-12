@@ -118,9 +118,12 @@ def _rota_pdf(funcao):
 app.add_url_rule(
     "/api/pre_visualizar", view_func=_rota_json(pac._api_pre_visualizar), methods=["POST"]
 )
-app.add_url_rule(
-    "/api/mapa_mental", view_func=_rota_json(pac._api_mapa_mental), methods=["POST"]
-)
+# Janela "Resumo das ações prioritárias e PAC" do dash (resumo_acoes.py).
+for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
+                 "resumo_acoes_xlsx", "resumo_acoes_html"):
+    app.add_url_rule("/api/" + _nome_ra, endpoint="api_" + _nome_ra,
+                     view_func=_rota_json(getattr(pac, "_api_" + _nome_ra)),
+                     methods=["POST"])
 app.add_url_rule(
     "/api/iniciar_geracao", view_func=_rota_json(pac._api_iniciar_geracao), methods=["POST"]
 )
