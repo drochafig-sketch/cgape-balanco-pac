@@ -773,20 +773,19 @@ def calcular_metricas(df):
     # que vem. Datas além disso (ou já vencidas) ficam nos extremos ("após"
     # / fundidas no semestre atual), em vez de criar dezenas de baldes
     # minúsculos.
-    # Compatibilizado com o cartão "EM OBRAS/ANDAMENTO" do Panorama (que
-    # conta por STATUS, não por FASE) — pedido do usuário em 12/11/2026: o
-    # cartão soma 153 porque inclui ações com status ANDAMENTO que a base
-    # ainda registra numa fase anterior (Captação de Recurso/Licitação),
-    # enquanto esta seção só pegava quem já estava na fase Execução do
-    # Objeto (133). Agora é a união das duas classificações — e a data de
-    # entrega usada por obra muda conforme o critério que a incluiu: quem
-    # já está na fase Execução do Objeto usa o PRAZO DE CONCLUSÃO DA FASE;
-    # quem entra só pelo status ANDAMENTO (ainda em fase anterior) usa a
-    # PREVISÃO DE CONCLUSÃO ATUAL, que é o prazo que de fato existe pra ela
-    # nesse ponto do processo.
+    # Compatibilizado com o cartão "EM OBRAS/ANDAMENTO" do Panorama — pedido
+    # do usuário em 12/11/2026 — reaproveita a MESMA máscara do cartão
+    # (andamento_mask, por STATUS=="ANDAMENTO"), pra nunca mais divergir.
+    # AGUARDANDO ORDEM DE SERVIÇO fica de fora dos dois (card e entrega),
+    # mesmo já estando na fase Execução do Objeto — pedido do usuário em
+    # 12/11/2026 ("o.s. vai para o outro card" / "remova a o.s. das
+    # entregas"): só conta quem já está, de fato, com status ANDAMENTO.
+    # exec_obj_mask (fase, não status) ainda é usado abaixo só pra decidir
+    # qual prazo mostrar por obra: quem está na fase Execução do Objeto usa
+    # o PRAZO DE CONCLUSÃO DA FASE; quem está em ANDAMENTO mas ainda numa
+    # fase anterior usa a PREVISÃO DE CONCLUSÃO ATUAL.
     exec_obj_mask = fase == "EXECUÇÃO DO OBJETO"
-    andamento_status_mask = df["STATUS_TEXTO"] == "ANDAMENTO"
-    entrega_mask = exec_obj_mask | andamento_status_mask
+    entrega_mask = andamento_mask
     m["qtd_execucao_objeto"] = int(entrega_mask.sum())
     m["investimento_execucao_objeto"] = float(investimento_linha.loc[entrega_mask].sum())
     semestres = []
