@@ -383,27 +383,20 @@ def resumo_acoes_dados(caminho, filtros=None):
                  "total": total["total"]}
     quadro_objeto = {"grupos": grupos_obj, "linhas": linhas_obj, "total": total_obj}
 
-    # Cards de valores macro: o estado todo — seguem os demais filtros, mas
-    # NÃO a chave dos 30 maiores municípios (decisão do usuário em
-    # 13/11/2026). Quadros, mapa e lista continuam restritos aos 30.
-    df_cards = recorte(com_top30=False) if top30 else df
-    por_eixo_cards = df_cards.groupby("_eixo")["_valor"].sum()
-    maiores = sorted((e for e in set(df_cards["_eixo"]) if por_eixo_cards.get(e, 0) > 0),
-                     key=lambda e: (-por_eixo_cards.get(e, 0), e))[:3]
-    cards = [{"rotulo": e.upper(), "cor": RA_CORES_TOP3[i],
-              **celula(df_cards[df_cards["_eixo"] == e])}
-             for i, e in enumerate(maiores)]
-    cards.append({"rotulo": "VALOR TOTAL", "cor": RA_COR_TOTAL,
-                  **(celula(df_cards) or {"txt": "R$ 0", "qtd": _ra_qtd(0)})})
-    # com a chave ligada, deixa explícito que os cards são do estado todo
-    # (pedido do usuário em 13/11/2026): rótulo "· ESTADO" em cada card e
-    # um aviso acima deles (janela e HTML)
+    # Cards de valor macro (pedido do usuário em 13/11/2026): sem os cards
+    # dos 3 maiores eixos. VALOR TOTAL = estado todo (segue os demais
+    # filtros, mas NÃO a chave dos 30 maiores); com a chave ligada, ao lado
+    # direito entra o total dos 30 maiores municípios (= quadros, mapa, lista).
+    vazio_card = {"txt": "R$ 0", "qtd": _ra_qtd(0)}
+    df_estado = recorte(com_top30=False) if top30 else df
+    cards = [{"rotulo": "VALOR TOTAL · ESTADO" if top30 else "VALOR TOTAL", "cor": RA_COR_TOTAL,
+              **(celula(df_estado) or vazio_card)}]
     aviso_cards = ""
     if top30:
-        for c in cards:
-            c["rotulo"] += " · ESTADO"
-        aviso_cards = ("Cards: investimento em TODO O ESTADO (não seguem a chave dos 30 maiores "
-                       "municípios). Mapa, quadros e lista mostram só os 30 maiores.")
+        cards.append({"rotulo": "VALOR TOTAL · 30 MAIORES MUNICÍPIOS", "cor": RA_CORES_TOP3[2],
+                      **(celula(df) or vazio_card)})
+        aviso_cards = ("O total do estado não segue a chave dos 30 maiores municípios; o total "
+                       "dos 30 maiores, o mapa, os quadros e a lista seguem.")
 
     data_base = datetime.fromtimestamp(os.path.getmtime(caminho))
     nota = (f"Fonte: Ações do Cronograma, coluna {RA_COL_VALOR} "
@@ -428,7 +421,7 @@ def resumo_acoes_dados(caminho, filtros=None):
             escolhidos = resumo_filtros(0)
         nota = f"Filtros: {escolhidos}. {nota}"
         if top30:
-            nota += " Cards de valores: todos os municípios (sem a chave dos 30 maiores)."
+            nota += " Valor total · estado: todos os municípios (sem a chave dos 30 maiores)."
     if juntados:
         nota += (" Status Entregue = "
                  + " + ".join(re.sub(r"^\d+\s*-\s*", "", s) for s in juntados) + ".")
@@ -617,7 +610,7 @@ def gerar_pptx_resumo_acoes(dados, caminho):
            ("CASA CIVIL", 12, PE_COR["gov"], "b")], PP_ALIGN.RIGHT)
 
     cards = dados["cards"]
-    larg = (1208 - 16 * (len(cards) - 1)) / len(cards)
+    larg = min(400, (1208 - 16 * (len(cards) - 1)) / len(cards))
     for i, c in enumerate(cards):
         x = 36 + i * (larg + 16)
         y, h = (104, 82) if compacto else (110, 122)
@@ -1061,7 +1054,7 @@ main{{max-width:1500px;margin:0 auto;padding:20px 36px 36px}}
 .filtros{{font-size:13px;color:var(--cinza);margin-bottom:14px}}
 .filtros b{{color:var(--navy)}}
 .aviso-cards{{display:inline-block;background:#FFF4D6;border:1px solid #F2B632;color:#6B4E00;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;margin-bottom:10px}}
-.cards{{display:grid;grid-template-columns:repeat({len(dados["cards"])},minmax(0,1fr));gap:16px;margin-bottom:22px}}
+.cards{{display:grid;grid-template-columns:repeat({len(dados["cards"])},minmax(0,440px));gap:16px;margin-bottom:22px}}
 .card{{background:var(--claro);border-radius:10px;padding:14px 20px;border-left:6px solid var(--c)}}
 .card span{{display:block;font-size:13px;font-weight:700;color:var(--cinza)}}
 .card b{{display:block;font-size:34px;font-weight:900;color:var(--azul);margin:4px 0;white-space:nowrap}}
@@ -1854,7 +1847,7 @@ HTML_JANELA = r"""
     };
     document.getElementById("raQuadro").innerHTML =
       (d.aviso_cards ? '<div class="ra-aviso-cards">' + esc(d.aviso_cards) + "</div>" : "") +
-      '<div class="ra-cards" style="grid-template-columns:repeat(' + d.cards.length + ', minmax(0, 1fr))">' +
+      '<div class="ra-cards" style="grid-template-columns:repeat(' + d.cards.length + ', minmax(0, 360px))">' +
       d.cards.map(function (c) {
         return '<div class="ra-card" style="--ra-cor:#' + esc(c.cor) + '"><span>' + esc(c.rotulo) +
           "</span><b>" + esc(c.txt) + "</b><span>" + esc(c.qtd) + "</span></div>";
