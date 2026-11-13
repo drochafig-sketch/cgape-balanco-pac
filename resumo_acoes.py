@@ -145,9 +145,10 @@ def _ra_rs(v):
     if v >= 999.95e6:
         return "R$ " + f"{v / 1e9:.2f}".replace(".", ",") + " bi"
     if v >= 1e6:
-        return "R$ " + f"{v / 1e6:.1f}".replace(".", ",") + " mi"
+        # "Mi" e "MIL" (pedido do usuário em 13/11/2026)
+        return "R$ " + f"{v / 1e6:.1f}".replace(".", ",") + " Mi"
     if v > 0:
-        return f"R$ {v / 1e3:.0f} mil"
+        return f"R$ {v / 1e3:.0f} MIL"
     return "R$ 0"
 
 
@@ -1071,9 +1072,9 @@ h2{{margin:0 0 14px;font-size:15px;letter-spacing:.6px;color:var(--navy)}}
 .legenda i{{width:16px;height:16px;border-radius:4px;flex:none}}
 .legenda b{{margin-left:auto;color:var(--cinza);font-weight:600}}
 h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
-.ranking{{list-style:none;padding:0;margin:0;font-size:12.5px}}
+.ranking{{list-style:none;padding:0;margin:0;font-size:14.5px}}
 .ranking li{{border-bottom:1px solid #EEF1F5}}
-.ranking .rk-linha{{display:grid;grid-template-columns:22px minmax(0,1.3fr) minmax(0,1fr) 92px 28px;align-items:center;gap:8px;padding:4px 0}}
+.ranking .rk-linha{{display:grid;grid-template-columns:24px minmax(0,1.3fr) minmax(0,1fr) 108px 28px;align-items:center;gap:8px;padding:4px 0}}
 .ranking .pos{{color:var(--cinza);text-align:right}}
 .ranking .nm{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 .ranking .nm small{{color:var(--cinza);margin-left:6px}}
@@ -1087,19 +1088,19 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .ranking .det:hover{{background:#E6E9EE}}
 .ranking .det:focus-visible{{outline:2px solid var(--azul);outline-offset:1px}}
 .oculto{{display:none}}
-.rk-det{{margin:2px 0 10px 30px;background:#F8FAFC;border-left:3px solid var(--azul);border-radius:0 6px 6px 0;padding:4px 10px 6px;max-height:420px;overflow:auto;font-size:13.5px}}
+.rk-det{{margin:2px 0 10px 30px;background:#F8FAFC;border-left:3px solid var(--azul);border-radius:0 6px 6px 0;padding:4px 10px 6px;max-height:420px;overflow:auto;font-size:15px}}
 .rk-st{{border-bottom:1px solid #E8ECF2}}
 .rk-st:last-child{{border-bottom:none}}
 .rk-st-linha{{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:8px;padding:5px 0}}
 .rk-st-nome{{font-weight:700;color:var(--navy)}}
-.rk-st-nome small{{font-weight:400;color:var(--cinza);margin-left:8px;font-size:12px}}
+.rk-st-nome small{{font-weight:400;color:var(--cinza);margin-left:8px;font-size:13px}}
 .rk-st-linha b{{color:var(--navy);white-space:nowrap}}
 .ranking .det.det-st{{width:22px;height:22px;font-size:14px}}
 .rk-st-obj{{margin:0 0 8px 32px}}
-.rk-det table{{width:100%;border-collapse:collapse;font-size:13.5px}}
-.rk-det th{{text-align:left;color:var(--navy);padding:6px 6px 4px;border-bottom:2px solid var(--navy);font-size:13px}}
+.rk-det table{{width:100%;border-collapse:collapse;font-size:15px}}
+.rk-det th{{text-align:left;color:var(--navy);padding:6px 6px 4px;border-bottom:2px solid var(--navy);font-size:14px}}
 .rk-det td{{padding:5px 6px;border-bottom:1px solid #E8ECF2;vertical-align:top}}
-.rk-det td small{{display:block;color:var(--cinza);font-size:11.5px}}
+.rk-det td small{{display:block;color:var(--cinza);font-size:12.5px}}
 .rk-det .r{{text-align:right;white-space:nowrap}}
 .quadro{{width:100%;border-collapse:collapse;font-size:12px}}
 .quadro th,.quadro td{{border:1px solid var(--linha);padding:8px 4px;text-align:center}}
@@ -1136,7 +1137,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 .btn-pdf:hover{{background:#0A4E92}}
 @media print{{.btn-pdf,.ranking .det{{display:none!important}}.rk-det{{max-height:none;overflow:visible}}section.sec-mapa{{break-inside:auto}}.rk-det tr{{break-inside:avoid}}
 .mapa-grade{{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px}}.mapa{{max-width:330px;margin:0}}.mapa-grade>div:first-child{{break-inside:avoid}}
-.ranking .rk-linha{{grid-template-columns:18px minmax(0,1.9fr) minmax(0,.7fr) 84px;gap:6px}}.ranking .nm small{{margin-left:4px}}}}
+.ranking .rk-linha{{grid-template-columns:18px minmax(0,1.9fr) minmax(0,.7fr) 96px;gap:6px}}.ranking .nm small{{margin-left:4px}}}}
 </style></head><body>
 <button type="button" class="btn-pdf" onclick="gerarPdf()" title="Imprime/salva em PDF com o detalhamento dos {RA_PDF_DETALHADOS} maiores municípios aberto">Gerar PDF</button>
 <header><div><h1>{titulo}</h1><p>COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</p></div>
