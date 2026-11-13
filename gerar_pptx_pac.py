@@ -859,6 +859,15 @@ def calcular_metricas(df):
     m["entregas_execucao"] = {"ordem": ordem_entrega, "rotulos": rotulos_entrega, "grupos": grupos_entrega}
     m["entregas_mapa"] = _mapa_entregas_municipios(sub_exec, ordem_entrega, rotulos_entrega)
 
+    # Base dos cards abertos ao clicar num objeto/executor das tabelas de
+    # detalhamento do HTML (pedido do usuário em 13/11/2026) — mesmas séries
+    # usadas para somar as tabelas, então o filtro do clique bate com a linha.
+    m["_df"] = df
+    m["_acoes_base"] = pd.DataFrame({
+        "o": objeto, "f": fase, "e": eixo, "x": executor,
+        "c": contratado, "a": a_contratar_linha, "inv": investimento_linha,
+        "na_exec": exec_obj_mask})
+
     return m
 
 
@@ -2093,13 +2102,22 @@ def _html_cabecalho_tabela():
             '<div class="barra-col-valor">T.C. NÃO FIRMADO</div><div class="barra-col-valor">TOTAL</div></div>')
 
 
-def _html_tabela(cabecalho, linhas, linhas_bold=(), cor_cabecalho=None):
+def _html_tabela(cabecalho, linhas, linhas_bold=(), cor_cabecalho=None, clique=None):
+    # clique=(filtro base, chave da linha, índice T.C.): o nome na 1ª coluna
+    # vira link que abre a janela com os cards das ações daquela linha
+    # (pedido do usuário em 13/11/2026). A linha de TOTAL não é clicável.
     estilo = f' style="background:#{cor_cabecalho}"' if cor_cabecalho else ""
     ths = "".join(f"<th{estilo}>{_html_esc(c)}</th>" for c in cabecalho)
     trs = []
     for i, linha in enumerate(linhas):
         classe = " class=\"linha-bold\"" if i in linhas_bold else ""
-        tds = "".join(f"<td>{_html_esc(v)}</td>" for v in linha)
+        celulas = [f"<td>{_html_esc(v)}</td>" for v in linha]
+        if clique and i not in linhas_bold and linha:
+            base, chave, indice = clique
+            filtro = dict(base, **{chave: str(linha[0]), "t": indice})
+            celulas[0] = (f'<td class="obj-clic" data-cards="{_html_esc(json.dumps(filtro, ensure_ascii=False))}" '
+                          f'title="Ver os cards das ações">{_html_esc(linha[0])}</td>')
+        tds = "".join(celulas)
         trs.append(f"<tr{classe}>{tds}</tr>")
     return f'<table class="pac-tabela"><thead><tr>{ths}</tr></thead><tbody>{"".join(trs)}</tbody></table>'
 
@@ -3012,12 +3030,17 @@ def _html_entregas_execucao(m, fichas_cartoes):
       {"".join(blocos)}'''
 
 
-def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_gestao=""):
+def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_gestao="",
+                          chave_gestao="todas", metricas_saida=None):
     """Slides de UMA gestão (ou de todas), já numerados. Slides que não
     dependem dos dados (institucionais, páginas do Canva) entram uma vez só
     em `comuns` e aqui viram só um marcador (.slide-ref). Devolve
     (html dos slides, css)."""
     m = calcular_metricas(df)
+    if metricas_saida is not None:
+        metricas_saida[chave_gestao] = m
+    # o clique num objeto/executor das tabelas só procura ações desta gestão
+    filtro_gestao = {} if chave_gestao == "todas" else {"g": chave_gestao}
     # manter_ordem=True: o painel de seleção do HTML permite reordenar os
     # cartões (inclusive intercalando as páginas do Canva), então a ordem
     # final é a que vier em `secoes`, não a ordem fixa do catálogo do PPTX
@@ -3100,7 +3123,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         detalhamento_html = ""
         if blocos:
             tabelas_html = "".join(
-                _html_tabela(cabecalho, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor)
+                _html_tabela(cabecalho, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
+                             clique=(dict(filtro_gestao, f=fase), "o", 1 if cor == LARANJA else 0))
                 for cabecalho, linhas, cor in blocos
             )
             detalhamento_html = f'''
@@ -3150,7 +3174,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         <button type="button" class="btn-detalhamento"
                 onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por executor ▾</button>
         <div class="detalhamento-fase oculto" id="{id_detalhe}">
-          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor)
+          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
+                                clique=(dict(filtro_gestao, e=e), "x", 1 if cor == LARANJA else 0))
                    for cab, linhas, cor in blocos)}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
         </div>'''
@@ -3194,7 +3219,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         <button type="button" class="btn-detalhamento"
                 onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por objeto ▾</button>
         <div class="detalhamento-fase oculto" id="{id_detalhe}">
-          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor)
+          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
+                                clique=(dict(filtro_gestao, x=x), "o", 1 if cor == LARANJA else 0))
                    for cab, linhas, cor in blocos)}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
         </div>'''
@@ -3736,7 +3762,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .cl-filtro-btn.ativo { background:#0B1F3F; border-color:#0B1F3F; color:#fff; }
     .cl-filtro-limpar { border-style:dashed; }
     /* janela com a ficha completa da ação */
-    .cl-ficha-fundo { display:none; position:fixed; inset:0; z-index:1000; background:rgba(11,31,63,.55);
+    .cl-ficha-fundo { display:none; position:fixed; inset:0; z-index:1100; background:rgba(11,31,63,.55);
       align-items:center; justify-content:center; padding:24px; }
     .cl-ficha-fundo.aberta { display:flex; }
     .cl-ficha-janela { background:#fff; border-radius:12px; width:min(1100px, 100%); max-height:100%;
@@ -4031,6 +4057,41 @@ def _recortes_gestao(df):
     return variantes
 
 
+CAMPOS_CARD_ACAO = ["o", "f", "e", "x", "t", "g", "mu", "ex", "ds", "lk", "av", "dt", "fase", "inv", "fi", "v"]
+
+
+def _dados_cards_acoes(m, fichas_cartoes):
+    """Uma linha (lista, na ordem de CAMPOS_CARD_ACAO) por ação, para a janela
+    de cards aberta ao clicar num objeto/executor das tabelas de
+    detalhamento (pedido do usuário em 13/11/2026). t = 0 (T.C. firmado) /
+    1 (não firmado), mesmo critério da contagem das tabelas; g = gestão."""
+    df, base = m["_df"], m["_acoes_base"]
+    federal = (df["GESTAO"].astype(str).str.upper().str.contains("FEDERAL", na=False)
+               if "GESTAO" in df.columns else pd.Series(False, index=df.index))
+    linhas = []
+    for idx, b in base.iterrows():
+        t = 0 if b["c"] >= 0.5 else (1 if b["a"] >= 0.5 else None)
+        if t is None:
+            continue
+        r = df.loc[idx]
+        try:
+            ficha = pac._montar_dados_ficha_acao(r)
+        except Exception:
+            ficha = {}
+        na_exec = bool(b["na_exec"])
+        data = pd.to_datetime(r[pac.col_prazo] if na_exec else r[pac.col_prazo_atual], errors="coerce")
+        avanco = r[pac.col_avanco]
+        linhas.append([
+            b["o"], b["f"], b["e"], b["x"], t, "federal" if federal.loc[idx] else "estadual",
+            str(r["MUNICIPIO"]) if "MUNICIPIO" in df.columns and pd.notna(r["MUNICIPIO"]) else "",
+            ficha.get("executor") or "", ficha.get("descricao") or "", ficha.get("link_localizacao") or "",
+            round(float(avanco), 1) if pd.notna(avanco) else None,
+            data.strftime("%d/%m/%Y") if pd.notna(data) else "A definir",
+            1 if na_exec else 0,
+            abreviar_moeda(b["inv"]), _indice_ficha(fichas_cartoes, ficha), round(float(b["inv"]), 2)])
+    return {"campos": CAMPOS_CARD_ACAO, "acoes": linhas}
+
+
 def _sufixar_ids(html, sufixo):
     """Ids únicos por variante: id="x" vira id="x--sufixo", e as chamadas
     que apontam para ele ('x' em onclick) acompanham."""
@@ -4060,9 +4121,11 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         fichas_cartoes = _FichasCompartilhadas()
         comuns, blocos, botoes, css = {}, [], [], ""
         variantes = _recortes_gestao(df)
+        metricas = {}
         for i, (chave_v, rotulo_v, df_v) in enumerate(variantes):
             slides_v, css = _montar_html_variante(df_v, filtros, secoes, fichas_cartoes, comuns,
-                                                  rotulo_v if chave_v != "todas" else "")
+                                                  rotulo_v if chave_v != "todas" else "",
+                                                  chave_gestao=chave_v, metricas_saida=metricas)
             slides_v = _sufixar_ids(slides_v, chave_v)
             if chave_v != "todas":
                 slides_v = slides_v.replace('<div class="base-atualizada">',
@@ -4073,6 +4136,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
             classe_botao = ' class="ativo"' if i == 0 else ""
             botoes.append(f'<button type="button" data-gestao="{chave_v}"{classe_botao} '
                           f'''onclick="trocarGestao('{chave_v}')">{_html_esc(rotulo_v)}</button>''')
+        cards_acoes_json = json.dumps(_dados_cards_acoes(metricas["todas"], fichas_cartoes),
+                                      ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+        registro["gauge"] = True    # os cards da janela usam o mesmo velocímetro
     finally:
         _CTX_HTML.registro = None
     corpo = "".join(blocos)
@@ -4088,7 +4154,13 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     # protege sozinho quando a lista de fichas está vazia.
     secoes_ficha = [{"titulo": s["titulo"], "largo": bool(s.get("largo")), "campos": [list(c) for c in s["campos"]]}
                     for s in (pac._definicao_secoes_ficha() if hasattr(pac, "_definicao_secoes_ficha") else [])]
-    dados_fichas_json = (json.dumps({"fichas": fichas_cartoes, "secoes": secoes_ficha}, ensure_ascii=False, default=str)
+    # fichas em formato de tabela (nomes dos campos uma vez só, cada ficha
+    # vira uma lista na mesma ordem) — o JS remonta o objeto ao abrir
+    campos_ficha = list(dict.fromkeys(k for f in fichas_cartoes for k in (f or {})))
+    dados_fichas_json = (json.dumps({"campos": campos_ficha,
+                                     "fichas": [[(f or {}).get(k) for k in campos_ficha] for f in fichas_cartoes],
+                                     "secoes": secoes_ficha},
+                                    ensure_ascii=False, default=str, separators=(",", ":"))
                          .replace("</", "<\\/"))
     janela_ficha_html = f'''<script type="application/json" id="cl-fichas-dados">{dados_fichas_json}</script>
       <div id="cl-ficha-fundo" class="cl-ficha-fundo" onclick="if (event.target === this) clFecharFicha()">
@@ -4107,7 +4179,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 <head>
 <meta charset="utf-8">
 <title>Apresentação CGAPE</title>
-<style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}</style>
+<style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}{CSS_CARDS_OBJETO}</style>
 </head>
 <body>
 <button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()">Gerar PDF</button>
@@ -4122,6 +4194,16 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
 {corpo}
 <div id="slides-comuns">{slides_comuns}</div>
 {janela_ficha_html}
+<script type="application/json" id="oc-dados">{cards_acoes_json}</script>
+<div id="oc-fundo" onclick="if (event.target === this) ocFechar()">
+  <div class="cl-ficha-janela" role="dialog" aria-modal="true">
+    <div class="cl-ficha-topo">
+      <div><div id="oc-titulo" class="cl-ficha-titulo"></div><div id="oc-sub" class="cl-ficha-sub"></div></div>
+      <button type="button" class="cl-ficha-fechar" onclick="ocFechar()" title="Fechar (Esc)">&times;</button>
+    </div>
+    <div id="oc-corpo" class="grade-entrega"></div>
+  </div>
+</div>
 <script>
 function alternarDetalhamento(botao, idAlvo) {{
   var alvo = document.getElementById(idAlvo);
@@ -4272,6 +4354,7 @@ function gerarPdfCompleto() {{
 }})();
 </script>
 <script>{JS_CLAUSULAS}</script>
+<script>{JS_CARDS_OBJETO.replace("__ICONE__", json.dumps(_SVG_ICONE_LOCALIZACAO))}</script>
 </body>
 </html>''')
 
@@ -4291,6 +4374,89 @@ CSS_SELETOR_GESTAO = """
     .selo-gestao { display:inline-block; background:#4FA3E0; color:#0B1F3F; font-weight:700; font-size:11px;
       padding:1px 8px; border-radius:9px; margin-right:6px; letter-spacing:.3px; }
     @media print { #seletor-gestao { display:none !important; } }
+"""
+
+
+# Janela de cards ao clicar num objeto/executor das tabelas de detalhamento
+# (pedido do usuário em 13/11/2026): mesmo card das possibilidades de
+# entrega; clicar num card abre a ficha completa (janela acima desta).
+CSS_CARDS_OBJETO = """
+    .obj-clic { cursor:pointer; color:#0B5CAD; text-decoration:underline dotted; text-underline-offset:3px; }
+    .obj-clic:hover { color:#0B1F3F; text-decoration-style:solid; }
+    #oc-fundo { display:none; position:fixed; inset:0; z-index:1050; background:rgba(11,31,63,.55);
+      align-items:center; justify-content:center; padding:24px; }
+    #oc-fundo.aberta { display:flex; }
+    #oc-fundo .cl-ficha-janela { width:min(1240px, 100%); }
+    #oc-corpo { padding:4px 22px 22px; overflow-y:auto; margin-top:0; }
+    .entrega-destaque-investimento { white-space:nowrap; }
+    @media print { #oc-fundo { display:none !important; } .obj-clic { color:inherit; text-decoration:none; } }
+"""
+
+JS_CARDS_OBJETO = r"""
+(function () {
+  var el = document.getElementById('oc-dados');
+  if (!el) return;
+  var D = JSON.parse(el.textContent), C = {};
+  D.campos.forEach(function (k, i) { C[k] = i; });
+  var fundo = document.getElementById('oc-fundo');
+  var ICONE = __ICONE__;
+  function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+  function gauge(v) {
+    if (v == null) return '<div class="entrega-sem-gauge">Avanço<br>não<br>informado</div>';
+    v = Math.max(0, Math.min(100, v));
+    return '<svg width="76" height="76" viewBox="0 0 76 76" class="entrega-gauge-svg">'
+      + '<use href="#pac-gauge" stroke="#E9ECF2"></use>'
+      + (v > 0.5 ? '<use href="#pac-gauge" stroke="#2E7D32" stroke-dasharray="' + v.toFixed(1) + ' 200"></use>' : '')
+      + '<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="#0B1F3F">'
+      + Math.round(v) + '%</text></svg>';
+  }
+  function card(a) {
+    var local = a[C.lk] ? '<a href="' + esc(a[C.lk]) + '" target="_blank" rel="noopener" class="entrega-icone-local" '
+      + 'title="Ver localização" onclick="event.stopPropagation()">' + ICONE + '</a>' : '';
+    return '<div class="entrega-card" role="button" tabindex="0" data-oc-ficha="' + a[C.fi] + '" '
+      + 'title="Clique para ver todas as informações da ação">'
+      + '<div class="entrega-topo"><div class="entrega-identificacao">'
+      + '<div class="entrega-objeto">' + esc(a[C.o]) + '</div>'
+      + '<div class="entrega-municipio-linha"><span class="entrega-municipio">'
+      + esc(a[C.mu] || 'Município não informado') + '</span>' + local + '</div>'
+      + (a[C.ex] ? '<div class="entrega-executor">' + esc(a[C.ex]) + '</div>' : '')
+      + '</div><div class="entrega-gauge">' + gauge(a[C.av]) + '</div></div>'
+      + (a[C.ds] ? '<div class="entrega-descricao">' + esc(a[C.ds]) + '</div>' : '')
+      + '<div class="entrega-rodape"><div><div class="entrega-destaque-rotulo">Conclusão prevista ('
+      + (a[C.fase] ? 'fase' : 'atual') + ')</div><div class="entrega-destaque-valor">' + esc(a[C.dt]) + '</div></div>'
+      + '<div><div class="entrega-destaque-rotulo">Investimento</div>'
+      + '<div class="entrega-destaque-valor entrega-destaque-investimento">' + esc(a[C.inv]) + '</div></div></div></div>';
+  }
+  window.ocFechar = function () { fundo.classList.remove('aberta'); };
+  document.addEventListener('click', function (ev) {
+    var alvo = ev.target.closest('.obj-clic');
+    if (alvo) {
+      var f = JSON.parse(alvo.dataset.cards);
+      var lista = D.acoes.filter(function (a) {
+        return Object.keys(f).every(function (k) { return a[C[k]] === f[k]; });
+      }).sort(function (x, y) { return y[C.v] - x[C.v]; });
+      var total = lista.reduce(function (s, a) { return s + a[C.v]; }, 0);
+      document.getElementById('oc-titulo').textContent = f.o || f.x;
+      var tabela = alvo.closest('table'), cab = tabela ? tabela.querySelector('th') : null;
+      document.getElementById('oc-sub').textContent = [cab ? cab.textContent.replace(/^(OBJETO|EXECUTOR) /, '') : '',
+        f.f, f.e, f.o ? f.x : null, lista.length + (lista.length === 1 ? ' ação' : ' ações')]
+        .filter(Boolean).join(' · ');
+      document.getElementById('oc-corpo').innerHTML = lista.map(card).join('')
+        || '<div class="texto-secundario">Nenhuma ação encontrada.</div>';
+      fundo.classList.add('aberta');
+      return;
+    }
+    var c = ev.target.closest('[data-oc-ficha]');
+    if (c && window.clAbrirFicha) window.clAbrirFicha(+c.dataset.ocFicha);
+  });
+  // com a janela aberta, o teclado não vira o slide por trás; Esc fecha
+  // (a ficha, se aberta por cima, trata o Esc antes)
+  document.addEventListener('keydown', function (e) {
+    if (!fundo.classList.contains('aberta')) return;
+    if (e.key === 'Escape') ocFechar();
+    e.stopImmediatePropagation();
+  }, true);
+})();
 """
 
 
@@ -4375,7 +4541,8 @@ JS_CLAUSULAS = r"""
   }
 
   function abrirFicha(indice) {
-    var f = DADOS_CL.fichas[indice] || {};
+    var linha = DADOS_CL.fichas[indice] || [], f = {};
+    (DADOS_CL.campos || []).forEach(function (k, i) { f[k] = linha[i]; });
     document.getElementById('cl-ficha-titulo').textContent = f.objeto || 'Ação';
     document.getElementById('cl-ficha-sub').textContent =
       [f.item ? 'Item ' + f.item : '', f.municipio, f.executor].filter(Boolean).join(' · ');
@@ -4399,6 +4566,7 @@ JS_CLAUSULAS = r"""
   }
 
   window.clFecharFicha = function () { if (fundo) fundo.classList.remove('aberta'); };
+  window.clAbrirFicha = abrirFicha;
 
   // Qualquer card com data-ficha abre a mesma janela — além dos cards de
   // Cláusulas Suspensivas (.cl-card), os de Execução do Objeto
