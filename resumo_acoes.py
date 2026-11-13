@@ -245,14 +245,39 @@ def _ra_base(caminho):
     return df
 
 
+# Seletor "ENTREGUE" (pedido do usuário em 13/11/2026): Obras Concluídas e
+# Obras Inauguradas viram um só status, somando ações e valores. Não é
+# filtro: não restringe o recorte e não é zerado pelo LIMPAR FILTROS.
+RA_STATUS_ENTREGUE = "01 - Entregue"
+
+
+def _ra_juntar_entregues(base):
+    """Cópia da base com os status de concluída/inaugurada trocados por
+    RA_STATUS_ENTREGUE, e a lista dos status que foram juntados."""
+    st = base["_f_status"]
+    chave = st.map(lambda v: _normalizar(v).casefold())
+    juntar = chave.str.contains("conclu") | chave.str.contains("inaugur")
+    juntados = sorted(st[juntar].unique(), key=_ra_ordem)
+    if not juntados:
+        return base, []
+    return base.assign(_f_status=st.where(~juntar, RA_STATUS_ENTREGUE)), juntados
+
+
 # ---- dados ------------------------------------------------------------------
 def resumo_acoes_dados(caminho, filtros=None):
     """Quadro por eixo e status, já formatado para a página e para o slide.
     filtros: {chave de RA_FILTROS: [valores], "d_<chave>": {de, ate}}."""
     base = _ra_base(caminho)
     filtros = filtros or {}
+    entregue = bool(filtros.get("entregue"))
+    juntados = []
+    if entregue:
+        base, juntados = _ra_juntar_entregues(base)
     campos = [f for f in RA_FILTROS if "_f_" + f[0] in base.columns]
     sel = {c: filtros.get(c) for c, _, _ in campos if filtros.get(c)}
+    if juntados and sel.get("status"):
+        sel["status"] = list(dict.fromkeys(
+            RA_STATUS_ENTREGUE if v in juntados else v for v in sel["status"]))
 
     campos_data = [f for f in RA_DATAS if "_d_" + f[0] in base.columns]
     sel_datas = {}
@@ -387,6 +412,9 @@ def resumo_acoes_dados(caminho, filtros=None):
         if len(escolhidos) > 220:
             escolhidos = resumo_filtros(0)
         nota = f"Filtros: {escolhidos}. {nota}"
+    if juntados:
+        nota += (" Status Entregue = "
+                 + " + ".join(re.sub(r"^\d+\s*-\s*", "", s) for s in juntados) + ".")
     com_orcamento = df[df["_orc"]]
     if len(com_orcamento):
         nota += (f" * Inclui {RA_COL_ORCAMENTO} em "
@@ -401,6 +429,7 @@ def resumo_acoes_dados(caminho, filtros=None):
             "quadro_objeto": quadro_objeto,
             "filtros": painel, "datas": painel_datas,
             "filtrado": filtrado, "vazio": df.empty, "top30": top30,
+            "entregue": bool(juntados),
             "top30_fonte": RA_TOP30_FONTE,
             "ids": [int(i) for i in df.index],
             "versao": str(os.path.getmtime(caminho))}
@@ -782,6 +811,8 @@ def _investimento_por_municipio(caminho_base, dados):
     recorte atual, e a lista dos que não casaram com o geojson."""
     import relatorio_monitoramento as mon
     base = _ra_base(caminho_base)
+    if dados.get("entregue"):
+        base, _ = _ra_juntar_entregues(base)
     df = base.iloc[dados["ids"]]
     if "Município" not in df.columns:
         return {}, []
@@ -795,8 +826,28 @@ def _investimento_por_municipio(caminho_base, dados):
         saida[k] = {"valor": float(parte["_valor"].sum()), "qtd": int(len(parte)),
                     "orc": bool(parte["_orc"].any()),
                     "nome": parte["Município"].astype(str).str.strip().mode().iloc[0],
-                    "eixos": [(e, float(v)) for e, v in por_eixo.items() if v > 0][:4]}
+                    "eixos": [(e, float(v)) for e, v in por_eixo.items() if v > 0][:4],
+                    "acoes": _acoes_do_municipio(parte)}
     return saida, []
+
+
+def _acoes_do_municipio(parte):
+    """Detalhamento do município no ranking (pedido do usuário em 13/11/2026,
+    revisto no mesmo dia: sem data e sem nome da ação): uma linha por objeto
+    e status, com o investimento somado e a quantidade de ações, do maior
+    investimento para o menor."""
+    objeto = (parte["_f_objeto"] if "_f_objeto" in parte.columns
+              else pd.Series(RA_SEM_INFO, index=parte.index))
+    status = parte["_f_status"].map(lambda s: re.sub(r"^\d+\s*-\s*", "", s))
+    grupos = (pd.DataFrame({"o": objeto, "s": status, "v": parte["_valor"],
+                            "orc": parte["_orc"]})
+              .groupby(["o", "s"])
+              .agg(v=("v", "sum"), n=("v", "size"), orc=("orc", "any"))
+              .reset_index()
+              .sort_values(["v", "n"], ascending=False))
+    return [[g.o, _ra_qtd(int(g.n)) if g.n > 1 else "",
+             _ra_rs(float(g.v)) + ("*" if g.orc else ""), g.s]
+            for g in grupos.itertuples()]
 
 
 def _svg_mapa(por_mun, largura=640):
@@ -874,12 +925,25 @@ def gerar_html_resumo_acoes(caminho_base, dados):
     # marca de quebra
     quebra = len(ranking) > 1 and vmax > 3 * ranking[1]["valor"]
     escala = ranking[1]["valor"] * 1.15 if quebra else vmax
+    # detalhamento de cada município abre na própria lista pelo "+" (mesmo
+    # botão das seções do HTML do PAC), sem caixa de diálogo
+    def detalhe_rank(m):
+        return ('<table><thead><tr><th>Objeto</th><th class="r">Investimento</th>'
+                '<th>Status</th></tr></thead><tbody>'
+                + "".join(f'<tr><td>{_esc(o)}{f"<small>{_esc(q)}</small>" if q else ""}</td>'
+                          f'<td class="r">{_esc(v)}</td><td class="s">{_esc(s)}</td></tr>'
+                          for o, q, v, s in m["acoes"])
+                + "</tbody></table>")
+
     linhas_rank = "".join(
-        f'<li><span class="pos">{i + 1}</span><span class="nm">{_esc(m["nome"])}'
+        f'<li><div class="rk-linha"><span class="pos">{i + 1}</span><span class="nm">{_esc(m["nome"])}'
         f'<small>{_ra_qtd(m["qtd"])}</small></span><span class="barra'
         f'{" quebra" if quebra and i == 0 else ""}"><span style="width:'
         f'{min(100, max(2, 100 * m["valor"] / escala)):.1f}%;background:{_cor_faixa(m["valor"])}"></span>'
-        f'</span><b>{_ra_rs(m["valor"])}{"*" if m["orc"] else ""}</b></li>'
+        f'</span><b>{_ra_rs(m["valor"])}{"*" if m["orc"] else ""}</b>'
+        f'<button type="button" class="det" aria-expanded="false" aria-controls="rk-det-{i}"'
+        f' title="Ver detalhamento de {_esc(m["nome"])}">+</button></div>'
+        f'<div class="rk-det oculto" id="rk-det-{i}">{detalhe_rank(m)}</div></li>'
         for i, m in enumerate(ranking))
     nota_rank = ('<div class="nota-mapa">Barra do 1º lugar interrompida (≈) para não '
                  'achatar as demais.</div>' if quebra else "")
@@ -966,7 +1030,8 @@ h2{{margin:0 0 14px;font-size:15px;letter-spacing:.6px;color:var(--navy)}}
 .legenda b{{margin-left:auto;color:var(--cinza);font-weight:600}}
 h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .ranking{{list-style:none;padding:0;margin:0;font-size:12.5px}}
-.ranking li{{display:grid;grid-template-columns:22px minmax(0,1.3fr) minmax(0,1fr) 92px;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #EEF1F5}}
+.ranking li{{border-bottom:1px solid #EEF1F5}}
+.ranking .rk-linha{{display:grid;grid-template-columns:22px minmax(0,1.3fr) minmax(0,1fr) 92px 28px;align-items:center;gap:8px;padding:4px 0}}
 .ranking .pos{{color:var(--cinza);text-align:right}}
 .ranking .nm{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 .ranking .nm small{{color:var(--cinza);margin-left:6px}}
@@ -976,6 +1041,17 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .ranking .barra.quebra::after{{content:"";position:absolute;top:-2px;bottom:-2px;right:14%;width:6px;background:#fff;transform:skewX(-20deg)}}
 .ranking b{{text-align:right;color:var(--navy)}}
 .nota-mapa{{font-size:12px;color:var(--cinza);margin-top:10px}}
+.ranking .det{{width:26px;height:26px;border-radius:50%;border:1px solid #D8DCE3;background:#F2F4F7;color:var(--navy);font-size:16px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;font-family:inherit}}
+.ranking .det:hover{{background:#E6E9EE}}
+.ranking .det:focus-visible{{outline:2px solid var(--azul);outline-offset:1px}}
+.oculto{{display:none}}
+.rk-det{{margin:2px 0 10px 30px;background:#F8FAFC;border-left:3px solid var(--azul);border-radius:0 6px 6px 0;padding:2px 10px 6px;max-height:360px;overflow:auto}}
+.rk-det table{{width:100%;border-collapse:collapse;font-size:12px}}
+.rk-det th{{position:sticky;top:0;background:#F8FAFC;text-align:left;color:var(--navy);padding:8px 6px 5px;border-bottom:2px solid var(--navy)}}
+.rk-det td{{padding:5px 6px;border-bottom:1px solid #E8ECF2;vertical-align:top}}
+.rk-det td small{{display:block;color:var(--cinza);font-size:10.5px}}
+.rk-det .r{{text-align:right;white-space:nowrap}}
+.rk-det .s{{padding-left:12px;color:var(--cinza)}}
 .quadro{{width:100%;border-collapse:collapse;font-size:12px}}
 .quadro th,.quadro td{{border:1px solid var(--linha);padding:8px 4px;text-align:center}}
 .quadro th{{color:var(--navy);font-weight:600}}
@@ -1025,6 +1101,17 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 <div id="dica"></div>
 <script>
 (function(){{
+  // "+" / "–" de cada município: abre/fecha o detalhamento na própria lista
+  document.querySelectorAll(".ranking .det").forEach(function(b){{
+    b.addEventListener("click",function(){{
+      var alvo=document.getElementById(b.getAttribute("aria-controls"));
+      var abrir=alvo.classList.contains("oculto");
+      alvo.classList.toggle("oculto",!abrir);
+      b.textContent=abrir?"–":"+";
+      b.setAttribute("aria-expanded",abrir?"true":"false");
+      b.title=abrir?b.title.replace("Ver","Ocultar"):b.title.replace("Ocultar","Ver");
+    }});
+  }});
   var dica=document.getElementById("dica");
   document.querySelectorAll(".mapa path").forEach(function(p){{
     p.addEventListener("mousemove",function(ev){{
@@ -1391,8 +1478,12 @@ HTML_JANELA = r"""
     if (nova.length) raFiltros[chave] = nova; else delete raFiltros[chave];
     raConsultar();
   }
+  // "entregue" é configuração do quadro, não filtro: o LIMPAR não mexe nele
+  function raChavesFiltro() {
+    return Object.keys(raFiltros).filter(function (c) { return c !== "entregue"; });
+  }
   function raLimparFiltros() {
-    Object.keys(raFiltros).forEach(function (c) { delete raFiltros[c]; });
+    raChavesFiltro().forEach(function (c) { delete raFiltros[c]; });
     raConsultar();
   }
   function raBuscar(bloco) {
@@ -1499,6 +1590,10 @@ HTML_JANELA = r"""
         '<label class="ra-top30" id="raTop30Rotulo"><input type="checkbox" id="raTop30">' +
         '<span class="ra-top30-trilho"><span></span></span>30 MAIORES MUNICÍPIOS ' +
         '<small>(população IBGE 2026)</small></label>' +
+        '<label class="ra-top30" id="raEntregueRotulo" title="Obras Concluídas e Obras ' +
+        'Inauguradas somadas num só status"><input type="checkbox" id="raEntregue">' +
+        '<span class="ra-top30-trilho"><span></span></span>STATUS ENTREGUE ' +
+        '<small>(concluídas + inauguradas)</small></label>' +
         '<button type="button" id="raLimpar">LIMPAR FILTROS</button></div>' +
         '<div class="ra-filtros-grade"></div>' +
         '<div class="ra-datas-topo">DATAS E PRAZOS <small>(com um intervalo ' +
@@ -1508,6 +1603,11 @@ HTML_JANELA = r"""
       caixa.querySelector("#raTop30").onchange = function (e) {
         e.stopPropagation();
         if (e.target.checked) raFiltros.top30 = true; else delete raFiltros.top30;
+        raConsultar();
+      };
+      caixa.querySelector("#raEntregue").onchange = function (e) {
+        e.stopPropagation();
+        if (e.target.checked) raFiltros.entregue = true; else delete raFiltros.entregue;
         raConsultar();
       };
       var grade = caixa.querySelector(".ra-filtros-grade");
@@ -1525,8 +1625,10 @@ HTML_JANELA = r"""
     });
     document.getElementById("raTop30").checked = !!raFiltros.top30;
     document.getElementById("raTop30Rotulo").classList.toggle("ativo", !!raFiltros.top30);
+    document.getElementById("raEntregue").checked = !!raFiltros.entregue;
+    document.getElementById("raEntregueRotulo").classList.toggle("ativo", !!raFiltros.entregue);
     document.getElementById("raLimpar").style.visibility =
-      Object.keys(raFiltros).length ? "visible" : "hidden";
+      raChavesFiltro().length ? "visible" : "hidden";
   }
 
   // ---- tabela das ações do recorte ----------------------------------------
