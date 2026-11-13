@@ -180,16 +180,25 @@ def cor(hexstr):
 # ---------------------------------------------------------------------------
 # Formatação de valores (regras do pedido: Mil/Mi/Bi, 1 casa, vírgula)
 # ---------------------------------------------------------------------------
+def _unidades_moeda():
+    """(bilhão, milhão, mil). No HTML da apresentação: BI / MI / mil
+    (pedido do usuário em 13/11/2026); no PPTX continua Bi / Mi / Mil."""
+    if getattr(_CTX_HTML, "registro", None) is not None:
+        return "BI", "MI", "mil"
+    return "Bi", "Mi", "Mil"
+
+
 def abreviar_moeda(valor):
     valor = float(valor)
     sinal = "-" if valor < 0 else ""
     valor = abs(valor)
+    u_bi, u_mi, u_mil = _unidades_moeda()
     if valor >= 1e9:
-        texto = f"{valor / 1e9:.1f}".replace(".", ",") + " Bi"
+        texto = f"{valor / 1e9:.1f}".replace(".", ",") + " " + u_bi
     elif valor >= 1e6:
-        texto = f"{valor / 1e6:.1f}".replace(".", ",") + " Mi"
+        texto = f"{valor / 1e6:.1f}".replace(".", ",") + " " + u_mi
     elif valor >= 1e3:
-        texto = f"{valor / 1e3:.1f}".replace(".", ",") + " Mil"
+        texto = f"{valor / 1e3:.1f}".replace(".", ",") + " " + u_mil
     else:
         texto = f"{valor:.0f}"
         if texto == "0":  # pedido do usuário em 04/11/2026: valor zerado aparece como "-"
@@ -1772,10 +1781,11 @@ def _mi_bi_2_casas(valor):
     # casas) e R$ x,xx Mi abaixo disso — slide Visão Geral. O que arredonda pra
     # zero vira "-", como no resto do deck.
     absoluto = abs(float(valor))
+    u_bi, u_mi, _ = _unidades_moeda()
     if absoluto >= 999_995_000:
-        numero, unidade = absoluto / 1e9, "Bi"
+        numero, unidade = absoluto / 1e9, u_bi
     else:
-        numero, unidade = absoluto / 1e6, "Mi"
+        numero, unidade = absoluto / 1e6, u_mi
     texto = f"{numero:,.2f}"
     if texto == "0.00":
         return "-"
@@ -4301,8 +4311,8 @@ JS_CLAUSULAS = r"""
   function porId(root, prefixo) { return root.querySelector('[id^="' + prefixo + '"]'); }
 
   function moedaCurta(v) {
-    if (v >= 1e9) return 'R$ ' + (v / 1e9).toFixed(2).replace('.', ',') + ' Bi';
-    if (v >= 1e6) return 'R$ ' + (v / 1e6).toFixed(2).replace('.', ',') + ' Mi';
+    if (v >= 1e9) return 'R$ ' + (v / 1e9).toFixed(2).replace('.', ',') + ' BI';
+    if (v >= 1e6) return 'R$ ' + (v / 1e6).toFixed(2).replace('.', ',') + ' MI';
     return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 

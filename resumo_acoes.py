@@ -143,12 +143,12 @@ def _ra_numero(v):
 
 def _ra_rs(v):
     if v >= 999.95e6:
-        return "R$ " + f"{v / 1e9:.2f}".replace(".", ",") + " bi"
+        # "BI", "MI" e "mil" (pedido do usuário em 13/11/2026)
+        return "R$ " + f"{v / 1e9:.2f}".replace(".", ",") + " BI"
     if v >= 1e6:
-        # "Mi" e "MIL" (pedido do usuário em 13/11/2026)
-        return "R$ " + f"{v / 1e6:.1f}".replace(".", ",") + " Mi"
+        return "R$ " + f"{v / 1e6:.1f}".replace(".", ",") + " MI"
     if v > 0:
-        return f"R$ {v / 1e3:.0f} MIL"
+        return f"R$ {v / 1e3:.0f} mil"
     return "R$ 0"
 
 
