@@ -634,14 +634,14 @@ def gerar_pptx_resumo_acoes(dados, caminho):
             texto(x + 24, y + 22, larg - 36, 36,
                   [(c["txt"], _pe_fs(c["txt"], larg - 36, 28, "k", 16),
                     RA_AZUL, "k")], vert=MSO_ANCHOR.MIDDLE)
-            texto(x + 24, y + 60, larg - 36, 16, [(c["qtd"], 12, cinza, "n")])
+            texto(x + 24, y + 59, larg - 36, 20, [(c["qtd"], 15, cinza, "b")])
         else:
             texto(x + 24, y + 12, larg - 36, 20,
                   [(c["rotulo"], 14, cinza, "b")])
             texto(x + 24, y + 32, larg - 36, 58,
                   [(c["txt"], _pe_fs(c["txt"], larg - 36, 40, "k", 20),
                     RA_AZUL, "k")], vert=MSO_ANCHOR.MIDDLE)
-            texto(x + 24, y + 93, larg - 36, 20, [(c["qtd"], 14, cinza, "n")])
+            texto(x + 24, y + 92, larg - 36, 24, [(c["qtd"], 17, cinza, "b")])
 
     eixos, linhas = dados["eixos"], dados["linhas"]
     n_lin, n_col = len(linhas) + 2, len(eixos) + 2
@@ -1076,7 +1076,7 @@ main{{max-width:1500px;margin:0 auto;padding:20px 36px 36px}}
 .card{{background:var(--claro);border-radius:10px;padding:14px 20px;border-left:6px solid var(--c)}}
 .card span{{display:block;font-size:13px;font-weight:700;color:var(--cinza)}}
 .card b{{display:block;font-size:34px;font-weight:900;color:var(--azul);margin:4px 0;white-space:nowrap}}
-.card small{{font-size:13px;color:var(--cinza)}}
+.card small{{font-size:17px;font-weight:600;color:var(--cinza)}}
 section{{background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(11,31,63,.08);padding:20px 24px;margin-bottom:22px}}
 h2{{margin:0 0 14px;font-size:15px;letter-spacing:.6px;color:var(--navy)}}
 .mapa-grade{{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,1.2fr);gap:28px;align-items:start}}
@@ -1397,6 +1397,7 @@ HTML_JANELA = r"""
     border-left:5px solid var(--ra-cor, var(--cor-acento-teal));
     box-shadow:var(--sombra-card); }
   .ra-card span { display:block; font-size:12px; color:var(--cor-texto-secundario); }
+  .ra-card span + b + span { font-size:15px; font-weight:600; }
   .ra-card b { display:block; font-size:28px; color:var(--cor-acento-mint-texto);
     margin:4px 0; white-space:nowrap; }
   .ra-rolagem { overflow-x:auto; }
