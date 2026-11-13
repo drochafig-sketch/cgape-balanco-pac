@@ -395,6 +395,15 @@ def resumo_acoes_dados(caminho, filtros=None):
              for i, e in enumerate(maiores)]
     cards.append({"rotulo": "VALOR TOTAL", "cor": RA_COR_TOTAL,
                   **(celula(df_cards) or {"txt": "R$ 0", "qtd": _ra_qtd(0)})})
+    # com a chave ligada, deixa explícito que os cards são do estado todo
+    # (pedido do usuário em 13/11/2026): rótulo "· ESTADO" em cada card e
+    # um aviso acima deles (janela e HTML)
+    aviso_cards = ""
+    if top30:
+        for c in cards:
+            c["rotulo"] += " · ESTADO"
+        aviso_cards = ("Cards: investimento em TODO O ESTADO (não seguem a chave dos 30 maiores "
+                       "municípios). Mapa, quadros e lista mostram só os 30 maiores.")
 
     data_base = datetime.fromtimestamp(os.path.getmtime(caminho))
     nota = (f"Fonte: Ações do Cronograma, coluna {RA_COL_VALOR} "
@@ -437,7 +446,7 @@ def resumo_acoes_dados(caminho, filtros=None):
             "quadro_objeto": quadro_objeto,
             "filtros": painel, "datas": painel_datas,
             "filtrado": filtrado, "vazio": df.empty, "top30": top30,
-            "entregue": bool(juntados),
+            "entregue": bool(juntados), "aviso_cards": aviso_cards,
             "top30_fonte": RA_TOP30_FONTE,
             "ids": [int(i) for i in df.index],
             "versao": str(os.path.getmtime(caminho))}
@@ -1051,6 +1060,7 @@ header .gov{{text-align:right;color:#4FA3E0;font-weight:700;font-size:13px;line-
 main{{max-width:1500px;margin:0 auto;padding:20px 36px 36px}}
 .filtros{{font-size:13px;color:var(--cinza);margin-bottom:14px}}
 .filtros b{{color:var(--navy)}}
+.aviso-cards{{display:inline-block;background:#FFF4D6;border:1px solid #F2B632;color:#6B4E00;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;margin-bottom:10px}}
 .cards{{display:grid;grid-template-columns:repeat({len(dados["cards"])},minmax(0,1fr));gap:16px;margin-bottom:22px}}
 .card{{background:var(--claro);border-radius:10px;padding:14px 20px;border-left:6px solid var(--c)}}
 .card span{{display:block;font-size:13px;font-weight:700;color:var(--cinza)}}
@@ -1140,6 +1150,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 <div class="gov">GOVERNO DO ESTADO DA BAHIA<br>CASA CIVIL</div></header>
 <main>
 <div class="filtros">{"<b>Recorte filtrado.</b> " if dados["filtrado"] else "<b>Base completa.</b> "}Gerado em {agora:%d/%m/%Y às %Hh%M}.</div>
+{f'<div class="aviso-cards">{_esc(dados.get("aviso_cards"))}</div>' if dados.get("aviso_cards") else ""}
 <div class="cards">{cards}</div>
 <section class="sec-mapa"><h2>MAPA DE INVESTIMENTO POR MUNICÍPIO</h2>
 <div class="mapa-grade"><div>{svg}<div class="nota-mapa">{_esc(nota_mapa)} Passe o mouse sobre um município para ver o detalhe.</div></div>
@@ -1368,6 +1379,9 @@ HTML_JANELA = r"""
   .ra-msg { font-size:13px; color:var(--cor-texto-secundario); min-height:18px;
     margin-bottom:10px; }
   .ra-cards { display:grid; gap:12px; margin-bottom:14px; }
+  .ra-aviso-cards { display:inline-block; margin-bottom:8px; padding:5px 10px; border-radius:6px;
+    font-size:12px; font-weight:600; color:#F2B632; background:rgba(242,182,50,.12);
+    border:1px solid rgba(242,182,50,.5); }
   .ra-card { background:var(--cor-card); border-radius:8px; padding:12px 16px;
     border-left:5px solid var(--ra-cor, var(--cor-acento-teal));
     box-shadow:var(--sombra-card); }
@@ -1839,6 +1853,7 @@ HTML_JANELA = r"""
         raCelula(l.total, "tot");
     };
     document.getElementById("raQuadro").innerHTML =
+      (d.aviso_cards ? '<div class="ra-aviso-cards">' + esc(d.aviso_cards) + "</div>" : "") +
       '<div class="ra-cards" style="grid-template-columns:repeat(' + d.cards.length + ', minmax(0, 1fr))">' +
       d.cards.map(function (c) {
         return '<div class="ra-card" style="--ra-cor:#' + esc(c.cor) + '"><span>' + esc(c.rotulo) +
