@@ -390,18 +390,28 @@ def resumo_acoes_dados(caminho, filtros=None):
     # direito entra o total dos 30 maiores municípios (= quadros, mapa, lista).
     vazio_card = {"txt": "R$ 0", "qtd": _ra_qtd(0)}
     df_estado = recorte(com_top30=False) if top30 else df
+
+    def nota_asterisco(parte):
+        # explicação do "*" logo abaixo do card (pedido do usuário em 13/11/2026)
+        orc = parte[parte["_orc"]]
+        if not len(orc):
+            return ""
+        return (f"* Inclui {RA_COL_ORCAMENTO} em {_ra_qtd(len(orc))} sem {RA_COL_VALOR} "
+                f"({_ra_rs(float(orc['_valor'].sum()))}).")
+
     cards = [{"rotulo": "VALOR TOTAL · ESTADO" if top30 else "VALOR TOTAL", "cor": RA_COR_TOTAL,
-              **(celula(df_estado) or vazio_card)}]
+              **(celula(df_estado) or vazio_card), "nota": nota_asterisco(df_estado)}]
     aviso_cards = ""
     if top30:
         cards.append({"rotulo": "VALOR TOTAL · 30 MAIORES MUNICÍPIOS", "cor": RA_CORES_TOP3[2],
-                      **(celula(df) or vazio_card)})
+                      **(celula(df) or vazio_card), "nota": nota_asterisco(df)})
         aviso_cards = ("O total do estado não segue a chave dos 30 maiores municípios; o total "
                        "dos 30 maiores, o mapa, os quadros e a lista seguem.")
 
     data_base = datetime.fromtimestamp(os.path.getmtime(caminho))
     nota = (f"Fonte: Ações do Cronograma, coluna {RA_COL_VALOR} "
             f"(base de {data_base:%d/%m/%Y}).")
+    filtros_txt = ""
     if filtrado:
         def faixa_txt(de, ate):
             if pd.notna(de) and pd.notna(ate):
@@ -420,6 +430,8 @@ def resumo_acoes_dados(caminho, filtros=None):
         escolhidos = resumo_filtros(3)
         if len(escolhidos) > 220:
             escolhidos = resumo_filtros(0)
+        # lista completa (todos os valores escolhidos) para o topo do HTML
+        filtros_txt = resumo_filtros(10 ** 6)
         nota = f"Filtros: {escolhidos}. {nota}"
         if top30:
             nota += " Valor total · estado: todos os municípios (sem a chave dos 30 maiores)."
@@ -440,7 +452,7 @@ def resumo_acoes_dados(caminho, filtros=None):
             "quadro_objeto": quadro_objeto,
             "filtros": painel, "datas": painel_datas,
             "filtrado": filtrado, "vazio": df.empty, "top30": top30,
-            "entregue": bool(juntados), "aviso_cards": aviso_cards,
+            "entregue": bool(juntados), "aviso_cards": aviso_cards, "filtros_txt": filtros_txt,
             "top30_fonte": RA_TOP30_FONTE,
             "ids": [int(i) for i in df.index],
             "versao": str(os.path.getmtime(caminho))}
@@ -990,9 +1002,13 @@ def gerar_html_resumo_acoes(caminho_base, dados):
                     if quebra else "") + "</div>")
 
     cards = "".join(
-        f'<div class="card" style="--c:#{c["cor"]}"><span>{_esc(c["rotulo"])}</span>'
+        f'<div><div class="card" style="--c:#{c["cor"]}"><span>{_esc(c["rotulo"])}</span>'
         f'<b>{_esc(c["txt"])}</b><small>{_esc(c["qtd"])}</small></div>'
+        + (f'<div class="card-nota">{_esc(c["nota"])}</div>' if c.get("nota") else "")
+        + "</div>"
         for c in dados["cards"])
+    filtros_html = (f'<b>Recorte filtrado.</b> Filtros: {_esc(dados.get("filtros_txt") or "")}. '
+                    if dados["filtrado"] else "<b>Base completa.</b> ")
 
     def cel(c, cls=""):
         cl = f' class="{cls}"' if cls else ""
@@ -1054,6 +1070,7 @@ header .gov{{text-align:right;color:#4FA3E0;font-weight:700;font-size:13px;line-
 main{{max-width:1500px;margin:0 auto;padding:20px 36px 36px}}
 .filtros{{font-size:13px;color:var(--cinza);margin-bottom:14px}}
 .filtros b{{color:var(--navy)}}
+.card-nota{{font-size:12px;font-style:italic;color:var(--cinza);margin-top:6px;padding-left:4px}}
 .aviso-cards{{display:inline-block;background:#FFF4D6;border:1px solid #F2B632;color:#6B4E00;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;margin-bottom:10px}}
 .cards{{display:grid;grid-template-columns:repeat({len(dados["cards"])},minmax(0,440px));gap:16px;margin-bottom:22px}}
 .card{{background:var(--claro);border-radius:10px;padding:14px 20px;border-left:6px solid var(--c)}}
@@ -1143,7 +1160,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 <header><div><h1>{titulo}</h1><p>COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</p></div>
 <div class="gov">GOVERNO DO ESTADO DA BAHIA<br>CASA CIVIL</div></header>
 <main>
-<div class="filtros">{"<b>Recorte filtrado.</b> " if dados["filtrado"] else "<b>Base completa.</b> "}Gerado em {agora:%d/%m/%Y às %Hh%M}.</div>
+<div class="filtros">{filtros_html}Gerado em {agora:%d/%m/%Y às %Hh%M}.</div>
 {f'<div class="aviso-cards">{_esc(dados.get("aviso_cards"))}</div>' if dados.get("aviso_cards") else ""}
 <div class="cards">{cards}</div>
 <section class="sec-mapa"><h2>MAPA DE INVESTIMENTO POR MUNICÍPIO</h2>
