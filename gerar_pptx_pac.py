@@ -3607,9 +3607,10 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .gf-ordem-tc .grafico-fase-linha > div:nth-child(2) { order:3; }
     .gf-ordem-tc .grafico-fase-linha > div:nth-child(5) { order:4; text-align:left; }
     .gf-ordem-tc .grafico-fase-linha > div:nth-child(3) { order:5; text-align:right; }
-    .composicao-fase table.pac-tabela { font-size:15px; margin-top:14px; table-layout:fixed; }
-    .composicao-fase table.pac-tabela th { padding:3px 14px; font-size:14px; }
-    .composicao-fase table.pac-tabela td { padding:2px 14px; }
+    /* fonte maior nas tabelas de detalhamento — pedido do usuário em 13/11/2026 (era 15/14px) */
+    .composicao-fase table.pac-tabela { font-size:18px; margin-top:14px; table-layout:fixed; }
+    .composicao-fase table.pac-tabela th { padding:5px 14px; font-size:16px; }
+    .composicao-fase table.pac-tabela td { padding:4px 14px; }
     .composicao-fase table.pac-tabela th:first-child { width:26%; }
     .visao-geral .rotulo-secao { margin:0 0 8px !important; font-size:16px; }
     .visao-geral .nota-rodape { margin:8px 0 14px; font-size:12px; }
@@ -4004,7 +4005,7 @@ CHAVES_HTML_SEM_DADOS = {"ORGANOGRAMA", "FLUXO_TRABALHO"}
 
 # Seletor de gestão do HTML (pedido do usuário em 13/11/2026): a Gestão
 # Federal separada das demais ações, com a visão consolidada mantida.
-VARIANTES_GESTAO = [("todas", "TODAS AS AÇÕES"), ("demais", "DEMAIS AÇÕES"), ("federal", "GESTÃO FEDERAL")]
+VARIANTES_GESTAO = [("todas", "TODAS AS AÇÕES"), ("estadual", "GESTÃO ESTADUAL"), ("federal", "GESTÃO FEDERAL")]
 
 
 def _recortes_gestao(df):
@@ -4015,7 +4016,7 @@ def _recortes_gestao(df):
         return variantes
     federal = df["GESTAO"].astype(str).str.upper().str.contains("FEDERAL", na=False)
     if federal.any() and (~federal).any():
-        variantes += [("demais", VARIANTES_GESTAO[1][1], df[~federal]),
+        variantes += [("estadual", VARIANTES_GESTAO[1][1], df[~federal]),
                       ("federal", VARIANTES_GESTAO[2][1], df[federal])]
     return variantes
 

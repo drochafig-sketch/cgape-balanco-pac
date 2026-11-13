@@ -290,9 +290,9 @@ def resumo_acoes_dados(caminho, filtros=None):
 
     top30 = bool(filtros.get("top30"))
 
-    def marca_datas():
+    def marca_datas(com_top30=True):
         marca = pd.Series(True, index=base.index)
-        if top30:
+        if top30 and com_top30:
             marca &= base["_top30"]
         for c, (de, ate) in sel_datas.items():
             d = base["_d_" + c]
@@ -303,8 +303,8 @@ def resumo_acoes_dados(caminho, filtros=None):
                 marca &= d <= ate
         return marca
 
-    def recorte(exceto=None):
-        marca = marca_datas()
+    def recorte(exceto=None, com_top30=True):
+        marca = marca_datas(com_top30)
         for c, valores in sel.items():
             if c != exceto:
                 marca &= base["_f_" + c].isin(valores)
@@ -383,12 +383,18 @@ def resumo_acoes_dados(caminho, filtros=None):
                  "total": total["total"]}
     quadro_objeto = {"grupos": grupos_obj, "linhas": linhas_obj, "total": total_obj}
 
-    maiores = [e for e in eixos if por_eixo.get(e, 0) > 0][:3]
+    # Cards de valores macro: o estado todo — seguem os demais filtros, mas
+    # NÃO a chave dos 30 maiores municípios (decisão do usuário em
+    # 13/11/2026). Quadros, mapa e lista continuam restritos aos 30.
+    df_cards = recorte(com_top30=False) if top30 else df
+    por_eixo_cards = df_cards.groupby("_eixo")["_valor"].sum()
+    maiores = sorted((e for e in set(df_cards["_eixo"]) if por_eixo_cards.get(e, 0) > 0),
+                     key=lambda e: (-por_eixo_cards.get(e, 0), e))[:3]
     cards = [{"rotulo": e.upper(), "cor": RA_CORES_TOP3[i],
-              **celula(df[df["_eixo"] == e])}
+              **celula(df_cards[df_cards["_eixo"] == e])}
              for i, e in enumerate(maiores)]
     cards.append({"rotulo": "VALOR TOTAL", "cor": RA_COR_TOTAL,
-                  **(celula(df) or {"txt": "R$ 0", "qtd": _ra_qtd(0)})})
+                  **(celula(df_cards) or {"txt": "R$ 0", "qtd": _ra_qtd(0)})})
 
     data_base = datetime.fromtimestamp(os.path.getmtime(caminho))
     nota = (f"Fonte: Ações do Cronograma, coluna {RA_COL_VALOR} "
@@ -412,6 +418,8 @@ def resumo_acoes_dados(caminho, filtros=None):
         if len(escolhidos) > 220:
             escolhidos = resumo_filtros(0)
         nota = f"Filtros: {escolhidos}. {nota}"
+        if top30:
+            nota += " Cards de valores: todos os municípios (sem a chave dos 30 maiores)."
     if juntados:
         nota += (" Status Entregue = "
                  + " + ".join(re.sub(r"^\d+\s*-\s*", "", s) for s in juntados) + ".")
@@ -587,7 +595,7 @@ def gerar_pptx_resumo_acoes(dados, caminho):
     tf = titulo.text_frame
     tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-    escrever(tf.paragraphs[0], "RESUMO DAS AÇÕES PRIORITÁRIAS E PAC", 26,
+    escrever(tf.paragraphs[0], "AÇÕES EM MONITORAMENTO", 26,
              branco, "k")
     arvore = slide.shapes._spTree
     arvore.remove(titulo._element)
@@ -708,7 +716,7 @@ def gerar_pptx_resumo_acoes(dados, caminho):
         for n_parte, parte in enumerate(partes, 1):
             slide = prs.slides.add_slide(prs.slide_layouts[6])   # em branco
             retangulo(0, 0, 1280, 92, navy, "Cabeçalho")
-            texto(36, 16, 960, 38, [("RESUMO DAS AÇÕES PRIORITÁRIAS E PAC", 26,
+            texto(36, 16, 960, 38, [("AÇÕES EM MONITORAMENTO", 26,
                                      branco, "k")], vert=MSO_ANCHOR.MIDDLE)
             texto(36, 56, 960, 18,
                   [("COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS "
@@ -785,6 +793,8 @@ def gerar_pptx_resumo_acoes(dados, caminho):
 # ---- HTML autônomo: mapa de investimento + quadro Status × Eixo ------------
 # Pedido do usuário em 12/11/2026 (botão GERAR HTML da janela). Mesmas faixas
 # do mapa do MONITORAMENTO (mesma base): até R$ 30 Mi, R$ 30–60 Mi e acima.
+# "Gerar PDF" do HTML abre o detalhamento destes primeiros do ranking
+RA_PDF_DETALHADOS = 4
 RA_FAIXAS_MAPA = [(60e6, None, "#D32F45"), (30e6, 60e6, "#F0834E"),
                   (0, 30e6, "#2E75B6")]
 RA_COR_SEM_ACAO = "#DCE1E8"
@@ -832,22 +842,27 @@ def _investimento_por_municipio(caminho_base, dados):
 
 
 def _acoes_do_municipio(parte):
-    """Detalhamento do município no ranking (pedido do usuário em 13/11/2026,
-    revisto no mesmo dia: sem data e sem nome da ação): uma linha por objeto
-    e status, com o investimento somado e a quantidade de ações, do maior
-    investimento para o menor."""
+    """Detalhamento do município no ranking, em 2 níveis (pedido do usuário
+    em 13/11/2026): Município > Status > Objeto. Um grupo por status (na
+    ordem dos status, 01, 02...), com investimento e quantidade somados;
+    dentro dele, uma linha por objeto, do maior investimento para o menor."""
     objeto = (parte["_f_objeto"] if "_f_objeto" in parte.columns
               else pd.Series(RA_SEM_INFO, index=parte.index))
-    status = parte["_f_status"].map(lambda s: re.sub(r"^\d+\s*-\s*", "", s))
-    grupos = (pd.DataFrame({"o": objeto, "s": status, "v": parte["_valor"],
-                            "orc": parte["_orc"]})
-              .groupby(["o", "s"])
-              .agg(v=("v", "sum"), n=("v", "size"), orc=("orc", "any"))
-              .reset_index()
-              .sort_values(["v", "n"], ascending=False))
-    return [[g.o, _ra_qtd(int(g.n)) if g.n > 1 else "",
-             _ra_rs(float(g.v)) + ("*" if g.orc else ""), g.s]
-            for g in grupos.itertuples()]
+    tab = pd.DataFrame({"o": objeto, "s": parte["_f_status"], "v": parte["_valor"],
+                        "orc": parte["_orc"]})
+    saida = []
+    for st in sorted(tab["s"].unique(), key=_ra_ordem):
+        p = tab[tab["s"] == st]
+        objetos = (p.groupby("o").agg(v=("v", "sum"), n=("v", "size"), orc=("orc", "any"))
+                   .reset_index().sort_values(["v", "n"], ascending=False))
+        saida.append({
+            "status": re.sub(r"^\d+\s*-\s*", "", st),
+            "valor": _ra_rs(float(p["v"].sum())) + ("*" if p["orc"].any() else ""),
+            "qtd": _ra_qtd(len(p)),
+            "objetos": [[g.o, _ra_qtd(int(g.n)) if g.n > 1 else "",
+                         _ra_rs(float(g.v)) + ("*" if g.orc else "")]
+                        for g in objetos.itertuples()]})
+    return saida
 
 
 def _svg_mapa(por_mun, largura=640):
@@ -917,36 +932,59 @@ def gerar_html_resumo_acoes(caminho_base, dados):
                    + (f" ou sem valor ({sem_valor} com ação e R$ 0)" if sem_valor else "")
                    + "</li>")
 
-    ranking = [m for m in sorted(por_mun.values(), key=lambda i: -i["valor"])[:15]
-               if m["valor"] > 0]
-    vmax = ranking[0]["valor"] if ranking else 1
+    # Lista = os 30 maiores municípios por POPULAÇÃO (RA_TOP30, já em ordem
+    # de população), não mais os 15 maiores investimentos — pedido do usuário
+    # em 13/11/2026. Município sem ação no recorte aparece zerado, sem "+".
+    por_chave = {_chave_municipio(i["nome"]): i for i in por_mun.values()}
+    ranking = [por_chave.get(_chave_municipio(nome))
+               or {"nome": nome, "valor": 0.0, "qtd": 0, "orc": False, "acoes": []}
+               for nome in RA_TOP30]
+    valores_rank = sorted((m["valor"] for m in ranking), reverse=True)
+    vmax = valores_rank[0] if valores_rank and valores_rank[0] > 0 else 1
     # um município muito acima dos demais (Salvador) achataria todas as
-    # outras barras: a escala passa a ser a do 2º e a barra do 1º leva uma
-    # marca de quebra
-    quebra = len(ranking) > 1 and vmax > 3 * ranking[1]["valor"]
-    escala = ranking[1]["valor"] * 1.15 if quebra else vmax
+    # outras barras: a escala passa a ser a do 2º maior e a barra do maior
+    # leva uma marca de quebra
+    quebra = len(valores_rank) > 1 and valores_rank[1] > 0 and vmax > 3 * valores_rank[1]
+    escala = valores_rank[1] * 1.15 if quebra else vmax
     # detalhamento de cada município abre na própria lista pelo "+" (mesmo
     # botão das seções do HTML do PAC), sem caixa de diálogo
-    def detalhe_rank(m):
-        return ('<table><thead><tr><th>Objeto</th><th class="r">Investimento</th>'
-                '<th>Status</th></tr></thead><tbody>'
-                + "".join(f'<tr><td>{_esc(o)}{f"<small>{_esc(q)}</small>" if q else ""}</td>'
-                          f'<td class="r">{_esc(v)}</td><td class="s">{_esc(s)}</td></tr>'
-                          for o, q, v, s in m["acoes"])
-                + "</tbody></table>")
+    # Município > Status > Objeto: cada status é um subtítulo com o seu
+    # próprio "+"; tudo fica oculto enquanto o município estiver recolhido
+    def detalhe_rank(i, m):
+        blocos = []
+        for j, g in enumerate(m["acoes"]):
+            tabela = ('<table><thead><tr><th>Objeto</th><th class="r">Investimento</th>'
+                      '</tr></thead><tbody>'
+                      + "".join(f'<tr><td>{_esc(o)}{f"<small>{_esc(q)}</small>" if q else ""}</td>'
+                                f'<td class="r">{_esc(v)}</td></tr>' for o, q, v in g["objetos"])
+                      + "</tbody></table>")
+            blocos.append(
+                f'<div class="rk-st"><div class="rk-st-linha"><button type="button" class="det det-st" '
+                f'aria-expanded="false" aria-controls="rk-det-{i}-{j}" '
+                f'title="Ver objetos — {_esc(g["status"])}">+</button>'
+                f'<span class="rk-st-nome">{_esc(g["status"])}<small>{_esc(g["qtd"])}</small></span>'
+                f'<b>{_esc(g["valor"])}</b></div>'
+                f'<div class="rk-st-obj oculto" id="rk-det-{i}-{j}">{tabela}</div></div>')
+        return "".join(blocos)
 
-    linhas_rank = "".join(
-        f'<li><div class="rk-linha"><span class="pos">{i + 1}</span><span class="nm">{_esc(m["nome"])}'
-        f'<small>{_ra_qtd(m["qtd"])}</small></span><span class="barra'
-        f'{" quebra" if quebra and i == 0 else ""}"><span style="width:'
-        f'{min(100, max(2, 100 * m["valor"] / escala)):.1f}%;background:{_cor_faixa(m["valor"])}"></span>'
-        f'</span><b>{_ra_rs(m["valor"])}{"*" if m["orc"] else ""}</b>'
-        f'<button type="button" class="det" aria-expanded="false" aria-controls="rk-det-{i}"'
-        f' title="Ver detalhamento de {_esc(m["nome"])}">+</button></div>'
-        f'<div class="rk-det oculto" id="rk-det-{i}">{detalhe_rank(m)}</div></li>'
-        for i, m in enumerate(ranking))
-    nota_rank = ('<div class="nota-mapa">Barra do 1º lugar interrompida (≈) para não '
-                 'achatar as demais.</div>' if quebra else "")
+    def linha_rank(i, m):
+        largura = (min(100, max(2, 100 * m["valor"] / escala)) if m["valor"] > 0 else 0)
+        botao = (f'<button type="button" class="det" aria-expanded="false" aria-controls="rk-det-{i}"'
+                 f' title="Ver detalhamento de {_esc(m["nome"])}">+</button>' if m["acoes"]
+                 else '<span></span>')
+        return (f'<li><div class="rk-linha{"" if m["qtd"] else " vazio"}"><span class="pos">{i + 1}</span>'
+                f'<span class="nm">{_esc(m["nome"])}'
+                f'<small>{_ra_qtd(m["qtd"]) if m["qtd"] else "sem ação no recorte"}</small></span>'
+                f'<span class="barra{" quebra" if quebra and m["valor"] == vmax else ""}"><span style="width:'
+                f'{largura:.1f}%;background:{_cor_faixa(m["valor"])}"></span></span>'
+                f'<b>{_ra_rs(m["valor"]) if m["qtd"] else "–"}{"*" if m["orc"] else ""}</b>{botao}</div>'
+                + (f'<div class="rk-det oculto" id="rk-det-{i}">{detalhe_rank(i, m)}</div>' if m["acoes"] else "")
+                + "</li>")
+
+    linhas_rank = "".join(linha_rank(i, m) for i, m in enumerate(ranking))
+    nota_rank = ('<div class="nota-mapa">Em ordem de população (IBGE, estimativa 2026).'
+                 + (" Barra do maior investimento interrompida (≈) para não achatar as demais."
+                    if quebra else "") + "</div>")
 
     cards = "".join(
         f'<div class="card" style="--c:#{c["cor"]}"><span>{_esc(c["rotulo"])}</span>'
@@ -997,11 +1035,11 @@ def gerar_html_resumo_acoes(caminho_base, dados):
     nota_mapa = (f"{total_mun} municípios com ação no recorte."
                  + (f" Fora do mapa (nome não casa com o IBGE): {', '.join(fora)}." if fora else ""))
     agora = datetime.now()
-    titulo = "RESUMO DAS AÇÕES PRIORITÁRIAS E PAC"
+    titulo = "AÇÕES EM MONITORAMENTO"
     return f"""<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Resumo das Ações Prioritárias e PAC</title>
+<title>Ações em Monitoramento</title>
 <style>
 :root{{--navy:#0B1F3F;--azul:#1F5C85;--cinza:#5B6576;--linha:#D9DFE8;--claro:#EEF3F8;--fundo:#F4F6F9}}
 *{{box-sizing:border-box}}
@@ -1020,8 +1058,9 @@ main{{max-width:1500px;margin:0 auto;padding:20px 36px 36px}}
 .card small{{font-size:13px;color:var(--cinza)}}
 section{{background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(11,31,63,.08);padding:20px 24px;margin-bottom:22px}}
 h2{{margin:0 0 14px;font-size:15px;letter-spacing:.6px;color:var(--navy)}}
-.mapa-grade{{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,1fr);gap:28px;align-items:start}}
-.mapa{{width:100%;height:auto;display:block}}
+.mapa-grade{{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,1.2fr);gap:28px;align-items:start}}
+.mapa{{width:100%;max-width:560px;height:auto;display:block;margin:0 auto}}
+.rk-linha.vazio{{opacity:.55}}
 .mapa path{{stroke:#fff;stroke-width:.6;transition:opacity .1s}}
 .mapa path:hover{{stroke:var(--navy);stroke-width:1.6;opacity:.85}}
 .legenda{{list-style:none;padding:0;margin:0 0 18px;font-size:13px}}
@@ -1045,13 +1084,20 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .ranking .det:hover{{background:#E6E9EE}}
 .ranking .det:focus-visible{{outline:2px solid var(--azul);outline-offset:1px}}
 .oculto{{display:none}}
-.rk-det{{margin:2px 0 10px 30px;background:#F8FAFC;border-left:3px solid var(--azul);border-radius:0 6px 6px 0;padding:2px 10px 6px;max-height:360px;overflow:auto}}
-.rk-det table{{width:100%;border-collapse:collapse;font-size:12px}}
-.rk-det th{{position:sticky;top:0;background:#F8FAFC;text-align:left;color:var(--navy);padding:8px 6px 5px;border-bottom:2px solid var(--navy)}}
+.rk-det{{margin:2px 0 10px 30px;background:#F8FAFC;border-left:3px solid var(--azul);border-radius:0 6px 6px 0;padding:4px 10px 6px;max-height:420px;overflow:auto;font-size:13.5px}}
+.rk-st{{border-bottom:1px solid #E8ECF2}}
+.rk-st:last-child{{border-bottom:none}}
+.rk-st-linha{{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:8px;padding:5px 0}}
+.rk-st-nome{{font-weight:700;color:var(--navy)}}
+.rk-st-nome small{{font-weight:400;color:var(--cinza);margin-left:8px;font-size:12px}}
+.rk-st-linha b{{color:var(--navy);white-space:nowrap}}
+.ranking .det.det-st{{width:22px;height:22px;font-size:14px}}
+.rk-st-obj{{margin:0 0 8px 32px}}
+.rk-det table{{width:100%;border-collapse:collapse;font-size:13.5px}}
+.rk-det th{{text-align:left;color:var(--navy);padding:6px 6px 4px;border-bottom:2px solid var(--navy);font-size:13px}}
 .rk-det td{{padding:5px 6px;border-bottom:1px solid #E8ECF2;vertical-align:top}}
-.rk-det td small{{display:block;color:var(--cinza);font-size:10.5px}}
+.rk-det td small{{display:block;color:var(--cinza);font-size:11.5px}}
 .rk-det .r{{text-align:right;white-space:nowrap}}
-.rk-det .s{{padding-left:12px;color:var(--cinza)}}
 .quadro{{width:100%;border-collapse:collapse;font-size:12px}}
 .quadro th,.quadro td{{border:1px solid var(--linha);padding:8px 4px;text-align:center}}
 .quadro th{{color:var(--navy);font-weight:600}}
@@ -1083,16 +1129,22 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 #dica li{{display:flex;justify-content:space-between;gap:12px;color:#C9D6EA}}
 @media (max-width:900px){{.mapa-grade{{grid-template-columns:1fr}}.cards{{grid-template-columns:1fr 1fr}}main,header{{padding-left:16px;padding-right:16px}}}}
 @media print{{body{{background:#fff}}section{{box-shadow:none;break-inside:avoid}}#dica{{display:none!important}}}}
+.btn-pdf{{position:fixed;top:18px;right:24px;z-index:20;padding:11px 22px;font:700 14px "Segoe UI",Roboto,system-ui,sans-serif;color:#fff;background:#0B5CAD;border:none;border-radius:8px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.3)}}
+.btn-pdf:hover{{background:#0A4E92}}
+@media print{{.btn-pdf,.ranking .det{{display:none!important}}.rk-det{{max-height:none;overflow:visible}}section.sec-mapa{{break-inside:auto}}.rk-det tr{{break-inside:avoid}}
+.mapa-grade{{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px}}.mapa{{max-width:330px;margin:0}}.mapa-grade>div:first-child{{break-inside:avoid}}
+.ranking .rk-linha{{grid-template-columns:18px minmax(0,1.9fr) minmax(0,.7fr) 84px;gap:6px}}.ranking .nm small{{margin-left:4px}}}}
 </style></head><body>
+<button type="button" class="btn-pdf" onclick="gerarPdf()" title="Imprime/salva em PDF com o detalhamento dos {RA_PDF_DETALHADOS} maiores municípios aberto">Gerar PDF</button>
 <header><div><h1>{titulo}</h1><p>COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</p></div>
 <div class="gov">GOVERNO DO ESTADO DA BAHIA<br>CASA CIVIL</div></header>
 <main>
 <div class="filtros">{"<b>Recorte filtrado.</b> " if dados["filtrado"] else "<b>Base completa.</b> "}Gerado em {agora:%d/%m/%Y às %Hh%M}.</div>
 <div class="cards">{cards}</div>
-<section><h2>MAPA DE INVESTIMENTO POR MUNICÍPIO</h2>
+<section class="sec-mapa"><h2>MAPA DE INVESTIMENTO POR MUNICÍPIO</h2>
 <div class="mapa-grade"><div>{svg}<div class="nota-mapa">{_esc(nota_mapa)} Passe o mouse sobre um município para ver o detalhe.</div></div>
 <div><h3>FAIXAS DE INVESTIMENTO</h3><ul class="legenda">{"".join(legenda)}</ul>
-<h3>MAIORES INVESTIMENTOS</h3><ol class="ranking">{linhas_rank}</ol>{nota_rank}</div></div></section>
+<h3>30 MAIORES MUNICÍPIOS (POPULAÇÃO)</h3><ol class="ranking">{linhas_rank}</ol>{nota_rank}</div></div></section>
 <section><h2>QUADRO RESUMO — STATUS × EIXO</h2><div class="rolagem">{quadro}</div>
 <div class="nota">{_esc(dados["nota"])}</div></section>
 {f'<section><h2>QUADRO RESUMO — STATUS × OBJETO <small>objetos agrupados pelo eixo, na mesma ordem do quadro acima</small></h2><div class="rolagem rolagem-obj">{quadro_obj}</div><div class="nota">{_esc(dados["nota"])}</div></section>' if quadro_obj else ""}
@@ -1102,16 +1154,35 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 <script>
 (function(){{
   // "+" / "–" de cada município: abre/fecha o detalhamento na própria lista
-  document.querySelectorAll(".ranking .det").forEach(function(b){{
-    b.addEventListener("click",function(){{
-      var alvo=document.getElementById(b.getAttribute("aria-controls"));
-      var abrir=alvo.classList.contains("oculto");
-      alvo.classList.toggle("oculto",!abrir);
-      b.textContent=abrir?"–":"+";
-      b.setAttribute("aria-expanded",abrir?"true":"false");
-      b.title=abrir?b.title.replace("Ver","Ocultar"):b.title.replace("Ocultar","Ver");
+  function alternar(b,abrir){{
+    var alvo=document.getElementById(b.getAttribute("aria-controls"));
+    if(abrir===undefined)abrir=alvo.classList.contains("oculto");
+    alvo.classList.toggle("oculto",!abrir);
+    b.textContent=abrir?"–":"+";
+    b.setAttribute("aria-expanded",abrir?"true":"false");
+    b.title=abrir?b.title.replace("Ver","Ocultar"):b.title.replace("Ocultar","Ver");
+  }}
+  var botoes=Array.prototype.slice.call(document.querySelectorAll(".ranking .det"));
+  botoes.forEach(function(b){{b.addEventListener("click",function(){{alternar(b);}});}});
+  var botoesMun=Array.prototype.slice.call(document.querySelectorAll(".ranking .rk-linha .det"));
+  // Gerar PDF (pedido do usuário em 13/11/2026): abre o detalhamento dos
+  // {RA_PDF_DETALHADOS} primeiros municípios (com os status e objetos deles)
+  // para a impressão e devolve a lista ao estado anterior quando a janela de
+  // impressão fecha.
+  window.gerarPdf=function(){{
+    var antes=botoes.map(function(b){{return b.getAttribute("aria-expanded")==="true";}});
+    var abrir=new Set(botoesMun.slice(0,{RA_PDF_DETALHADOS}));
+    botoes.forEach(function(b){{
+      var mun=b.classList.contains("det-st")?b.closest("li").querySelector(".rk-linha .det"):b;
+      alternar(b,abrir.has(mun));
     }});
-  }});
+    function restaurar(){{
+      botoes.forEach(function(b,i){{alternar(b,antes[i]);}});
+      window.removeEventListener("afterprint",restaurar);
+    }}
+    window.addEventListener("afterprint",restaurar);
+    window.print();
+  }};
   var dica=document.getElementById("dica");
   document.querySelectorAll(".mapa path").forEach(function(p){{
     p.addEventListener("mousemove",function(ev){{
@@ -1186,7 +1257,7 @@ def api_pptx(filtros=None):
             return {"mensagem": "Nenhuma ação com os filtros escolhidos: "
                                 "apresentação não gerada.", "dados": dados}
         sufixo = "_Filtrado" if dados["filtrado"] else ""
-        nome = ("Resumo_Acoes_Prioritarias_PAC_"
+        nome = ("Acoes_em_Monitoramento_"
                 f"{datetime.now():%d-%m-%Y}{sufixo}.pptx")
         caminho = _caminho_livre(os.path.join(pasta_downloads(), nome))
         gerar_pptx_resumo_acoes(dados, caminho)
@@ -1208,7 +1279,7 @@ def api_xlsx(filtros=None):
             return {"mensagem": "Nenhuma ação com os filtros escolhidos: "
                                 "planilha não gerada."}
         sufixo = "_Filtrado" if dados["filtrado"] else ""
-        nome = (f"Acoes_Resumo_{datetime.now():%d-%m-%Y_%Hh%Mmin}"
+        nome = (f"Acoes_em_Monitoramento_{datetime.now():%d-%m-%Y_%Hh%Mmin}"
                 f"{sufixo}.xlsx")
         caminho = _caminho_livre(os.path.join(pasta_downloads(), nome))
         gerar_xlsx_resumo_acoes(caminho_base, dados, caminho)
@@ -1236,7 +1307,7 @@ def api_html(filtros=None, devolver_conteudo=False):
             return {"ok": True, "html": html,
                     "mensagem": "HTML aberto em uma nova aba."}
         sufixo = "_Filtrado" if dados["filtrado"] else ""
-        nome = ("Resumo_Acoes_Prioritarias_PAC_"
+        nome = ("Acoes_em_Monitoramento_"
                 f"{datetime.now():%d-%m-%Y_%Hh%Mmin}{sufixo}.html")
         caminho = _caminho_livre(os.path.join(pasta_downloads(), nome))
         with open(caminho, "w", encoding="utf-8") as f:
@@ -1251,9 +1322,9 @@ def api_html(filtros=None, devolver_conteudo=False):
 # ---- HTML / CSS / JS da janela (injetado no painel antes do </body>) --------
 HTML_JANELA = r"""
 <div id="ra-overlay" aria-hidden="true">
-  <div id="ra-janela" role="dialog" aria-label="Resumo das ações prioritárias e PAC">
+  <div id="ra-janela" role="dialog" aria-label="Ações em monitoramento">
     <div class="ra-cabecalho">
-      <h2>RESUMO DAS AÇÕES PRIORITÁRIAS E PAC
+      <h2>AÇÕES EM MONITORAMENTO
         <small>base Ações do Cronograma</small></h2>
       <div class="ra-botoes">
         <button type="button" id="raHtml" title="Gera uma página HTML com o mapa de investimento por município e o quadro Status × Eixo do recorte atual">GERAR HTML</button>
@@ -1414,6 +1485,13 @@ HTML_JANELA = r"""
   .ra-data-x { background:none; border:none; color:var(--cor-texto-secundario);
     cursor:pointer; font-size:14px; line-height:1; padding:0 2px; visibility:hidden; }
   .ra-data.ativo .ra-data-x { visibility:visible; }
+  .ra-mandatos { display:flex; gap:6px; margin-bottom:6px; }
+  .ra-mandatos button { flex:1; background:var(--cor-fundo); color:var(--cor-texto-secundario);
+    border:1px solid var(--cor-card-elevado); border-radius:6px; padding:4px 6px; font-size:11px;
+    font-weight:700; letter-spacing:.3px; font-family:inherit; cursor:pointer; }
+  .ra-mandatos button:hover { color:var(--cor-texto-primario); border-color:var(--cor-acento-teal); }
+  .ra-mandatos button.ativo { background:var(--cor-acento-teal); border-color:var(--cor-acento-teal);
+    color:#10251F; }
   .ra-data-campos { display:flex; flex-direction:column; gap:4px; }
   .ra-data-campos label { display:flex; align-items:center; gap:6px; font-size:11px;
     color:var(--cor-texto-secundario); }
@@ -1556,14 +1634,34 @@ HTML_JANELA = r"""
     else delete raFiltros["d_" + chave];
     raConsultar();
   }
+  // Atalhos de período por mandato na Entrega da Obra (pedido do usuário em
+  // 13/11/2026): um clique preenche de/até; clicar no ativo limpa.
+  var RA_MANDATOS = [
+    {rotulo: "JERÔNIMO 01", de: "2023-01-01", ate: "2026-12-31"},
+    {rotulo: "JERÔNIMO 02", de: "2027-01-01", ate: "2030-12-31"}];
+  var RA_DATAS_COM_MANDATO = ["entrega"];
   function raMontarData(f) {
     var bloco = document.createElement("div");
     bloco.className = "ra-data";
     bloco.dataset.ra = f.chave;
+    var mandatos = RA_DATAS_COM_MANDATO.indexOf(f.chave) !== -1;
     bloco.innerHTML = "<h3><span>" + esc(f.rotulo) + '</span><small></small>' +
       '<button type="button" class="ra-data-x" title="Limpar este filtro">×</button></h3>' +
+      (mandatos ? '<div class="ra-mandatos">' + RA_MANDATOS.map(function (m, i) {
+        return '<button type="button" data-i="' + i + '" title="' + m.de.split("-").reverse().join("/") +
+          " a " + m.ate.split("-").reverse().join("/") + '">' + m.rotulo + "</button>";
+      }).join("") + "</div>" : "") +
       '<div class="ra-data-campos"><label>de <input type="date" class="de"></label>' +
       '<label>até <input type="date" class="ate"></label></div>';
+    bloco.querySelectorAll(".ra-mandatos button").forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var m = RA_MANDATOS[+b.dataset.i], faixa = raFiltros["d_" + f.chave] || {};
+        if (faixa.de === m.de && faixa.ate === m.ate) delete raFiltros["d_" + f.chave];
+        else raFiltros["d_" + f.chave] = {de: m.de, ate: m.ate};
+        raConsultar();
+      };
+    });
     bloco.querySelectorAll("input").forEach(function (i) {
       i.onchange = function (e) { e.stopPropagation(); raData(f.chave); };
     });
@@ -1581,6 +1679,10 @@ HTML_JANELA = r"""
     if (faixa.de) ate.min = faixa.de;
     bloco.classList.toggle("ativo", !!(faixa.de || faixa.ate));
     bloco.querySelector("small").textContent = f.n + " com data";
+    bloco.querySelectorAll(".ra-mandatos button").forEach(function (b) {
+      var m = RA_MANDATOS[+b.dataset.i];
+      b.classList.toggle("ativo", faixa.de === m.de && faixa.ate === m.ate);
+    });
   }
   function raDesenharFiltros(lista, datas) {
     var caixa = document.getElementById("raFiltros");

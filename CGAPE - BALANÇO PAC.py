@@ -12383,7 +12383,7 @@ def montar_html_painel(df_base):
         <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
         <button class="btn" id="dash-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
         <button class="btn" id="dash-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
-        <button class="btn" id="dash-resumo-acoes" data-abrir-resumo-acoes title="Resumo das ações prioritárias e PAC (base Ações do Cronograma)">RESUMO AÇÕES</button>
+        <button class="btn" id="dash-resumo-acoes" data-abrir-resumo-acoes title="Ações em monitoramento (base Ações do Cronograma)">AÇÕES EM MONITORAMENTO</button>
         <button type="button" class="tema-switch" id="tema-switch-dash" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
           <span class="tema-switch-trilho">
             <span class="tema-switch-icone tema-switch-sol">
