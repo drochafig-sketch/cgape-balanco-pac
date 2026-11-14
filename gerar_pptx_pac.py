@@ -42,6 +42,7 @@ import math
 import os
 import re
 import sys
+import threading
 from datetime import date
 
 import pandas as pd
@@ -50,6 +51,8 @@ from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
+
+import identidade_visual as iv
 
 # ---------------------------------------------------------------------------
 # Referência ao módulo "CGAPE - BALANÇO PAC.py" já carregado (col_valor_
@@ -79,14 +82,17 @@ def configurar(pac_ja_carregado):
     pac = pac_ja_carregado
 
 # ---------------------------------------------------------------------------
-# Identidade visual (paleta fixa — mesma do pedido original)
+# Identidade visual — fonte única em identidade_visual.py (este arquivo É a
+# referência que o resto do projeto segue; pedido do usuário em 14/11/2026
+# foi só parar de repetir os hex aqui também e apontar pro mesmo lugar).
+# Nomes antigos mantidos como aliases pra não mexer no resto do arquivo.
 # ---------------------------------------------------------------------------
-NAVY = "0B1F3F"
-AZUL = "0B5CAD"
-VERDE = "2E7D32"
-LARANJA = "E68A00"
-VERMELHO = "C62828"
-TEAL = "2F7F92"
+NAVY = iv.NAVY
+AZUL = iv.AZUL
+VERDE = iv.VERDE
+LARANJA = iv.LARANJA
+VERMELHO = iv.VERMELHO
+TEAL = iv.TEAL
 
 # Link do design/mockup no Canva — mostrado no rodapé de cada slide do HTML,
 # à esquerda da numeração de página (pedido do usuário em 08/11/2026).
@@ -142,18 +148,18 @@ def _data_uri_imagem(caminho):
     except Exception:
         pass
     return f"data:{mime};base64,{base64.b64encode(dados).decode('ascii')}"
-CINZA_TEXTO = "5B6576"
-CINZA_CLARO = "F2F4F7"
-CINZA_BORDA = "D8DCE3"
-BRANCO = "FFFFFF"
-AZUL_CLARO_TEXTO = "C9D6EA"
-AZUL_CLARO_MARCA = "4FA3E0"
-PENDENCIA_FUNDO = "FDECEC"
+CINZA_TEXTO = iv.CINZA_TEXTO
+CINZA_CLARO = iv.CINZA_CLARO
+CINZA_BORDA = iv.CINZA_BORDA
+BRANCO = iv.BRANCO
+AZUL_CLARO_TEXTO = iv.AZUL_CLARO_TEXTO
+AZUL_CLARO_MARCA = iv.AZUL_CLARO_MARCA
+PENDENCIA_FUNDO = iv.PENDENCIA_FUNDO
 
 COR_OGU = AZUL
 COR_FINANCIAMENTO = TEAL
 COR_ESTADUAL = LARANJA
-COR_NAO_DISCRIMINADO = "8C8C8C"
+COR_NAO_DISCRIMINADO = iv.COR_NAO_DISCRIMINADO
 # Variações "A CONTRATAR" (mesma família, mais claras) — ficam com o mesmo
 # valor do "cheio" até _sincronizar_cores_com_painel() rodar (ver abaixo).
 COR_OGU_CLARO = AZUL
@@ -179,16 +185,25 @@ def cor(hexstr):
 # ---------------------------------------------------------------------------
 # Formatação de valores (regras do pedido: Mil/Mi/Bi, 1 casa, vírgula)
 # ---------------------------------------------------------------------------
+def _unidades_moeda():
+    """(bilhão, milhão, mil). No HTML da apresentação: BI / MI / mil
+    (pedido do usuário em 13/11/2026); no PPTX continua Bi / Mi / Mil."""
+    if getattr(_CTX_HTML, "registro", None) is not None:
+        return "BI", "MI", "mil"
+    return "Bi", "Mi", "Mil"
+
+
 def abreviar_moeda(valor):
     valor = float(valor)
     sinal = "-" if valor < 0 else ""
     valor = abs(valor)
+    u_bi, u_mi, u_mil = _unidades_moeda()
     if valor >= 1e9:
-        texto = f"{valor / 1e9:.1f}".replace(".", ",") + " Bi"
+        texto = f"{valor / 1e9:.1f}".replace(".", ",") + " " + u_bi
     elif valor >= 1e6:
-        texto = f"{valor / 1e6:.1f}".replace(".", ",") + " Mi"
+        texto = f"{valor / 1e6:.1f}".replace(".", ",") + " " + u_mi
     elif valor >= 1e3:
-        texto = f"{valor / 1e3:.1f}".replace(".", ",") + " Mil"
+        texto = f"{valor / 1e3:.1f}".replace(".", ",") + " " + u_mil
     else:
         texto = f"{valor:.0f}"
         if texto == "0":  # pedido do usuário em 04/11/2026: valor zerado aparece como "-"
@@ -849,6 +864,15 @@ def calcular_metricas(df):
     m["entregas_execucao"] = {"ordem": ordem_entrega, "rotulos": rotulos_entrega, "grupos": grupos_entrega}
     m["entregas_mapa"] = _mapa_entregas_municipios(sub_exec, ordem_entrega, rotulos_entrega)
 
+    # Base dos cards abertos ao clicar num objeto/executor das tabelas de
+    # detalhamento do HTML (pedido do usuário em 13/11/2026) — mesmas séries
+    # usadas para somar as tabelas, então o filtro do clique bate com a linha.
+    m["_df"] = df
+    m["_acoes_base"] = pd.DataFrame({
+        "o": objeto, "f": fase, "e": eixo, "x": executor,
+        "c": contratado, "a": a_contratar_linha, "inv": investimento_linha,
+        "na_exec": exec_obj_mask})
+
     return m
 
 
@@ -960,6 +984,22 @@ def _linhas_recursos_a_contratar(m):
     linhas = []
     for valor, rotulo in ((m["a_contratar_financiamento"], "Financiamento"), (m["a_contratar_ogu"], "OGU"),
                           (m["a_contratar_estadual"], "Recurso Estadual")):
+        if abreviar_moeda(valor) != "-":
+            linhas.append(f"{abreviar_moeda(valor)} · {rotulo}")
+    return linhas
+
+
+ROTULO_RECURSOS_CONTRATADOS = "TERMO DE COMPROMISSO FIRMADO"
+
+
+def _linhas_recursos_contratados(m):
+    """Mesmo detalhamento por fonte do T.C. não firmado, para o firmado
+    (pedido do usuário em 13/11/2026). Sem detalhe por fonte na base, o
+    resto entra como Não discriminado, para as linhas somarem o total."""
+    linhas = []
+    for valor, rotulo in ((m["contratado_financiamento"], "Financiamento"), (m["contratado_ogu"], "OGU"),
+                          (m["contratado_estadual"], "Recurso Estadual"),
+                          (m["contratado_nao_discriminado"], "Não discriminado")):
         if abreviar_moeda(valor) != "-":
             linhas.append(f"{abreviar_moeda(valor)} · {rotulo}")
     return linhas
@@ -1755,10 +1795,11 @@ def _mi_bi_2_casas(valor):
     # casas) e R$ x,xx Mi abaixo disso — slide Visão Geral. O que arredonda pra
     # zero vira "-", como no resto do deck.
     absoluto = abs(float(valor))
+    u_bi, u_mi, _ = _unidades_moeda()
     if absoluto >= 999_995_000:
-        numero, unidade = absoluto / 1e9, "Bi"
+        numero, unidade = absoluto / 1e9, u_bi
     else:
-        numero, unidade = absoluto / 1e6, "Mi"
+        numero, unidade = absoluto / 1e6, u_mi
     texto = f"{numero:,.2f}"
     if texto == "0.00":
         return "-"
@@ -2066,13 +2107,22 @@ def _html_cabecalho_tabela():
             '<div class="barra-col-valor">T.C. NÃO FIRMADO</div><div class="barra-col-valor">TOTAL</div></div>')
 
 
-def _html_tabela(cabecalho, linhas, linhas_bold=(), cor_cabecalho=None):
+def _html_tabela(cabecalho, linhas, linhas_bold=(), cor_cabecalho=None, clique=None):
+    # clique=(filtro base, chave da linha, índice T.C.): o nome na 1ª coluna
+    # vira link que abre a janela com os cards das ações daquela linha
+    # (pedido do usuário em 13/11/2026). A linha de TOTAL não é clicável.
     estilo = f' style="background:#{cor_cabecalho}"' if cor_cabecalho else ""
     ths = "".join(f"<th{estilo}>{_html_esc(c)}</th>" for c in cabecalho)
     trs = []
     for i, linha in enumerate(linhas):
         classe = " class=\"linha-bold\"" if i in linhas_bold else ""
-        tds = "".join(f"<td>{_html_esc(v)}</td>" for v in linha)
+        celulas = [f"<td>{_html_esc(v)}</td>" for v in linha]
+        if clique and i not in linhas_bold and linha:
+            base, chave, indice = clique
+            filtro = dict(base, **{chave: str(linha[0]), "t": indice})
+            celulas[0] = (f'<td class="obj-clic" data-cards="{_html_esc(json.dumps(filtro, ensure_ascii=False))}" '
+                          f'title="Ver os cards das ações">{_html_esc(linha[0])}</td>')
+        tds = "".join(celulas)
         trs.append(f"<tr{classe}>{tds}</tr>")
     return f'<table class="pac-tabela"><thead><tr>{ths}</tr></thead><tbody>{"".join(trs)}</tbody></table>'
 
@@ -2663,7 +2713,87 @@ def _arco_gauge(cx, cy, r, angulo_ini, angulo_fim, espessura, cor):
             f'fill="none" stroke="#{cor}" stroke-width="{espessura}" stroke-linecap="round"></path>')
 
 
+# Desenhos repetidos do HTML gravados UMA vez (pedido do usuário em
+# 13/11/2026: HTML otimizado, com o seletor de gestão): o arco do
+# velocímetro e os polígonos do mapa de entregas ficam num <svg> oculto
+# (_html_defs_compartilhadas) e cada card/mapa só os referencia com <use>.
+# Ativo só enquanto montar_html_apresentacao roda; fora dele, o desenho
+# volta a ser completo (comportamento antigo).
+_CTX_HTML = threading.local()
+_TAM_GAUGE_BASE = 76
+
+
+def _registro_html():
+    return getattr(_CTX_HTML, "registro", None)
+
+
+def _svg_gauge_compartilhado(percentual, tamanho, cor, trilho):
+    registro = _registro_html()
+    registro["gauge"] = True
+    valor = max(0.0, min(100.0, percentual))
+    t = _TAM_GAUGE_BASE
+    fonte = t * 0.26
+    arco = (f'<use href="#pac-gauge" stroke="#{cor}" stroke-dasharray="{valor:.1f} 200"></use>'
+            if valor > 0.5 else "")
+    return (f'<svg width="{tamanho}" height="{tamanho}" viewBox="0 0 {t} {t}" class="entrega-gauge-svg">'
+            f'<use href="#pac-gauge" stroke="#{trilho}"></use>{arco}'
+            f'<text x="{t / 2}" y="{t / 2 + fonte * 0.35:.2f}" text-anchor="middle" font-size="{fonte:.1f}" '
+            f'font-weight="900" fill="#0B1F3F">{valor:.0f}%</text></svg>')
+
+
+def _html_defs_compartilhadas(registro):
+    partes = []
+    if registro.get("gauge"):
+        t = _TAM_GAUGE_BASE
+        espessura = t * 0.13
+        raio = t / 2 - espessura / 2 - 1
+        arco = _arco_gauge(t / 2, t / 2, raio, _ANGULO_INICIAL_GAUGE,
+                           _ANGULO_INICIAL_GAUGE - _VARREDURA_GAUGE, espessura, "000")
+        d = re.search(r'd="([^"]+)"', arco).group(1)
+        partes.append(f'<path id="pac-gauge" d="{d}" fill="none" stroke-width="{espessura:.2f}" '
+                      f'stroke-linecap="round" pathLength="100"></path>')
+    # 1 casa decimal basta: o mapa (viewBox ~560) é desenhado com 360px, então
+    # 0,1 unidade < 0,07px; pontos repetidos após o arredondamento saem
+    def _pontos_curtos(pontos):
+        saida = []
+        for par in pontos.split():
+            x, _, y = par.partition(",")
+            curto = f"{float(x):.1f},{float(y):.1f}".replace(".0,", ",")
+            curto = curto[:-2] if curto.endswith(".0") else curto
+            if not saida or saida[-1] != curto:
+                saida.append(curto)
+        return " ".join(saida)
+
+    partes += [f'<polygon id="{pid}" points="{_pontos_curtos(pontos)}"></polygon>'
+               for pontos, pid in registro.get("poligonos", {}).items()]
+    if not partes:
+        return ""
+    return ('<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>'
+            + "".join(partes) + "</defs></svg>")
+
+
+def _indice_ficha(fichas_cartoes, ficha):
+    """Índice da ficha na lista compartilhada (data-ficha dos cards). A mesma
+    ação vista em mais de uma gestão/seção reaproveita o índice."""
+    chave = json.dumps(ficha, ensure_ascii=False, sort_keys=True, default=str)
+    vistos = getattr(fichas_cartoes, "_vistos", None)
+    if vistos is None:
+        return len(fichas_cartoes.append(ficha) or fichas_cartoes) - 1
+    if chave not in vistos:
+        fichas_cartoes.append(ficha)
+        vistos[chave] = len(fichas_cartoes) - 1
+    return vistos[chave]
+
+
+class _FichasCompartilhadas(list):
+    def __init__(self):
+        super().__init__()
+        self._vistos = {}
+
+
 def _svg_gauge_avanco(percentual, tamanho=76, cor=VERDE, trilho="E9ECF2"):
+    if _registro_html() is not None:
+        return _svg_gauge_compartilhado(percentual, tamanho, cor, trilho)
     espessura = tamanho * 0.13
     raio = tamanho / 2 - espessura / 2 - 1
     cx = cy = tamanho / 2
@@ -2754,8 +2884,7 @@ def _html_card_entrega(item, fichas_cartoes):
     # Mesma janela de ficha completa dos cards de Cláusulas Suspensivas
     # (lista compartilhada `fichas_cartoes`, índice = data-ficha) — pedido
     # do usuário em 11/11/2026.
-    fichas_cartoes.append(item["ficha"])
-    indice_ficha = len(fichas_cartoes) - 1
+    indice_ficha = _indice_ficha(fichas_cartoes, item["ficha"])
     return f'''<div class="entrega-card" role="button" tabindex="0" data-ficha="{indice_ficha}"
          title="Clique para ver todas as informações da ação">
       <div class="entrega-topo">
@@ -2786,10 +2915,19 @@ def _html_mapa_entregas(dados_mapa):
     # entregas em cada semestre — pedido do usuário em 12/11/2026.
     if not dados_mapa:
         return ""
+    registro = _registro_html()
+
+    def _forma(p):
+        # geometria gravada uma vez (defs) e só referenciada por mapa
+        if registro is None:
+            return f'polygon points="{p["pontos"]}"', "polygon"
+        pid = registro["poligonos"].setdefault(p["pontos"], f'pm{len(registro["poligonos"])}')
+        return f'use href="#{pid}"', "use"
+
     poligonos_svg = "".join(
-        f'<polygon points="{p["pontos"]}" fill="#{p["cor"]}" '
+        f'<{_forma(p)[0]} fill="#{p["cor"]}" '
         f'class="entrega-mapa-poligono{" entrega-mapa-poligono-com-dado" if p["com_dado"] else ""}">'
-        f'<title>{_html_esc(p["titulo"])}</title></polygon>'
+        f'<title>{_html_esc(p["titulo"])}</title></{_forma(p)[1]}>'
         for p in dados_mapa["poligonos"]
     )
     legenda_html = "".join(
@@ -2897,8 +3035,17 @@ def _html_entregas_execucao(m, fichas_cartoes):
       {"".join(blocos)}'''
 
 
-def montar_html_apresentacao(df, filtros=None, secoes=None):
+def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_gestao="",
+                          chave_gestao="todas", metricas_saida=None):
+    """Slides de UMA gestão (ou de todas), já numerados. Slides que não
+    dependem dos dados (institucionais, páginas do Canva) entram uma vez só
+    em `comuns` e aqui viram só um marcador (.slide-ref). Devolve
+    (html dos slides, css)."""
     m = calcular_metricas(df)
+    if metricas_saida is not None:
+        metricas_saida[chave_gestao] = m
+    # o clique num objeto/executor das tabelas só procura ações desta gestão
+    filtro_gestao = {} if chave_gestao == "todas" else {"g": chave_gestao}
     # manter_ordem=True: o painel de seleção do HTML permite reordenar os
     # cartões (inclusive intercalando as páginas do Canva), então a ordem
     # final é a que vier em `secoes`, não a ordem fixa do catálogo do PPTX
@@ -2908,6 +3055,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     escolhidas = _preparar_plano(m, secoes, contagem_paginas=_paginas_por_chave_html(m),
                                  manter_ordem=True, chaves_validas=chaves_validas_html)
     recorte = descrever_filtros(filtros)
+    if rotulo_gestao:
+        recorte = (recorte + " · " if recorte else "") + rotulo_gestao.title()
 
     # todo slide abaixo leva o mesmo recorte no rodapé; o número da página é
     # preenchido no fim, quando já se sabe quais slides entram
@@ -2979,7 +3128,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         detalhamento_html = ""
         if blocos:
             tabelas_html = "".join(
-                _html_tabela(cabecalho, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor)
+                _html_tabela(cabecalho, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
+                             clique=(dict(filtro_gestao, f=fase), "o", 1 if cor == LARANJA else 0))
                 for cabecalho, linhas, cor in blocos
             )
             detalhamento_html = f'''
@@ -3029,7 +3179,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         <button type="button" class="btn-detalhamento"
                 onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por executor ▾</button>
         <div class="detalhamento-fase oculto" id="{id_detalhe}">
-          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor)
+          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
+                                clique=(dict(filtro_gestao, e=e), "x", 1 if cor == LARANJA else 0))
                    for cab, linhas, cor in blocos)}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
         </div>'''
@@ -3073,7 +3224,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         <button type="button" class="btn-detalhamento"
                 onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por objeto ▾</button>
         <div class="detalhamento-fase oculto" id="{id_detalhe}">
-          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor)
+          {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
+                                clique=(dict(filtro_gestao, x=x), "o", 1 if cor == LARANJA else 0))
                    for cab, linhas, cor in blocos)}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
         </div>'''
@@ -3209,8 +3361,6 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     # compartilhada com os cards de Execução do Objeto (ver
     # _html_entregas_execucao) — uma única janela de ficha serve as duas
     # seções — pedido do usuário em 11/11/2026.
-    fichas_cartoes = []
-
     def _card_clausula(acao):
         cor_p = cores_prazo[acao["prazo"]]
         chips = "".join(f'<span class="cl-chip">{_html_esc(t)}</span>'
@@ -3218,9 +3368,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         motivo = (f'<div class="cl-motivo-rotulo">Motivo / pendência</div>'
                   f'<div class="cl-motivo" title="{_html_esc(acao["motivo"])}">{_html_esc(acao["motivo"])}</div>'
                   if acao["motivo"] else '<div class="cl-motivo cl-sem-motivo">Motivo não informado na planilha</div>')
-        fichas_cartoes.append(acao["ficha"])
+        indice_ficha = _indice_ficha(fichas_cartoes, acao["ficha"])
         return f'''<div class="cl-card" role="button" tabindex="0" title="Clique para ver todas as informações da ação"
-             data-ficha="{len(fichas_cartoes) - 1}" data-fase="{_html_esc(acao["fase"] or "NÃO INFORMADA")}"
+             data-ficha="{indice_ficha}" data-fase="{_html_esc(acao["fase"] or "NÃO INFORMADA")}"
              data-prazo="{acao["prazo"]}" data-valor="{acao["valor"]:.2f}">
           <div class="cl-faixa" style="background:#{cor_p}"></div>
           <div class="cl-corpo">
@@ -3292,7 +3442,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     filtro_fase_html = ('<div class="cl-filtro"><span class="cl-filtro-rotulo">Fase:</span>'
                         + "".join(f'<button type="button" class="cl-filtro-btn" data-fase="{_html_esc(f)}" '
                                   f'onclick="clAlternarFase(this)">{_html_esc(f)}</button>' for f in fases_clausula)
-                        + '<button type="button" class="cl-filtro-limpar" onclick="clLimparFases()">Todas</button>'
+                        + '<button type="button" class="cl-filtro-limpar" onclick="clLimparFases(this)">Todas</button>'
                         + '</div>') if len(fases_clausula) > 1 else ""
     legenda_prazo = "".join(f'<span><i style="background:#{cores_prazo[k]}"></i>{rot}</span>' for k, rot in (
         ("vencida", "Vigência vencida"), ("proxima", f"Vence em até {DIAS_ALERTA_VIGENCIA} dias"),
@@ -3328,6 +3478,18 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
             {"".join(f'<div class="vg-recurso-linha">{_html_esc(linha)}</div>' for linha in _linhas_recursos_a_contratar(m))}
           </div>
         </div>'''
+    recursos_contratados = "" if abreviar_moeda(m["total_contratado"]) == "-" else f'''<div class="vg-recursos vg-firmado">
+          <div class="rotulo-secao">{_html_esc(ROTULO_RECURSOS_CONTRATADOS)}</div>
+          <div class="valor-principal" style="color:#2E7D32">{_html_esc(abreviar_moeda(m["total_contratado"]))}</div>
+          <div class="linha-icone-detalhamento">
+            <span class="label-detalhamento">Detalhamento por fonte</span>
+            <button type="button" class="btn-icone-detalhamento" title="Ver detalhamento por fonte"
+                    onclick="alternarDetalhamento(this, 'detalhe-fontes-firmado')">+</button>
+          </div>
+          <div class="detalhamento-fontes oculto" id="detalhe-fontes-firmado">
+            {"".join(f'<div class="vg-recurso-linha">{_html_esc(linha)}</div>' for linha in _linhas_recursos_contratados(m))}
+          </div>
+        </div>'''
     panorama_html = f'''<div class="visao-geral">
       <div class="vg-topo">
         <div>
@@ -3335,7 +3497,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
           <div class="valor-principal" style="color:#0B1F3F">{_html_esc(abreviar_moeda(total_investimento))}</div>
           <div class="texto-secundario">{m["qtd_acoes"]} ações do PAC acompanhadas pelo Estado da Bahia</div>
         </div>
-        {recursos_a_contratar}
+        <div class="vg-termos">{recursos_contratados}{recursos_a_contratar}</div>
       </div>
       <div class="barra-empilhada">
         <div class="barra-empilhada-seg" style="width:{frac_contratado:.2f}%;background:#2E7D32">
@@ -3486,9 +3648,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .gf-ordem-tc .grafico-fase-linha > div:nth-child(2) { order:3; }
     .gf-ordem-tc .grafico-fase-linha > div:nth-child(5) { order:4; text-align:left; }
     .gf-ordem-tc .grafico-fase-linha > div:nth-child(3) { order:5; text-align:right; }
-    .composicao-fase table.pac-tabela { font-size:15px; margin-top:14px; table-layout:fixed; }
-    .composicao-fase table.pac-tabela th { padding:3px 14px; font-size:14px; }
-    .composicao-fase table.pac-tabela td { padding:2px 14px; }
+    /* fonte maior nas tabelas de detalhamento — pedido do usuário em 13/11/2026 (era 15/14px) */
+    .composicao-fase table.pac-tabela { font-size:18px; margin-top:14px; table-layout:fixed; }
+    .composicao-fase table.pac-tabela th { padding:5px 14px; font-size:16px; }
+    .composicao-fase table.pac-tabela td { padding:4px 14px; }
     .composicao-fase table.pac-tabela th:first-child { width:26%; }
     .visao-geral .rotulo-secao { margin:0 0 8px !important; font-size:16px; }
     .visao-geral .nota-rodape { margin:8px 0 14px; font-size:12px; }
@@ -3504,6 +3667,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
        — pedido do usuário em 12/11/2026. */
     .vg-recursos .valor-principal { font-size:48px; }
     .vg-recurso-linha { font-size:22px; font-weight:700; color:#E68A00; line-height:1.3; text-align:right; }
+    /* T.C. firmado (verde) ao lado do não firmado, na ordem da barra —
+       pedido do usuário em 13/11/2026 */
+    .vg-termos { display:flex; gap:56px; align-items:flex-start; }
+    .vg-firmado .vg-recurso-linha { color:#2E7D32; }
     .visao-geral .barra-empilhada-seg { white-space:nowrap; overflow:hidden; }
     .visao-geral .barra-empilhada-seg { padding:8px 16px; }
     .visao-geral .be-titulo { font-size:16px; }
@@ -3600,7 +3767,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     .cl-filtro-btn.ativo { background:#0B1F3F; border-color:#0B1F3F; color:#fff; }
     .cl-filtro-limpar { border-style:dashed; }
     /* janela com a ficha completa da ação */
-    .cl-ficha-fundo { display:none; position:fixed; inset:0; z-index:1000; background:rgba(11,31,63,.55);
+    .cl-ficha-fundo { display:none; position:fixed; inset:0; z-index:1100; background:rgba(11,31,63,.55);
       align-items:center; justify-content:center; padding:24px; }
     .cl-ficha-fundo.aberta { display:flex; }
     .cl-ficha-janela { background:#fff; border-radius:12px; width:min(1100px, 100%); max-height:100%;
@@ -3844,15 +4011,146 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     # do usuário em 08/11/2026.
     for numero, nome_arquivo in paginas_canva:
         chave = _chave_canva(numero)
-        if chave not in escolhidas:
+        if chave not in escolhidas or chave in comuns:
             continue
         uri = _data_uri_imagem(os.path.join(PASTA_SLIDES_CANVA, nome_arquivo))
         por_chave[chave] = [f'''<div class="slide slide-canva">
       <img class="img-canva" src="{uri}" alt="Apresentação Canva — página {numero}">
     </div>''']
 
-    corpo = "".join(html_slide.replace("§PAG§", str(numero)) for numero, html_slide in enumerate(
-        (h for chave in escolhidas for h in por_chave[chave]), 1))
+    # Slides iguais em toda gestão (institucionais e Canva) são gravados uma
+    # vez só (em `comuns`); aqui fica só o marcador da posição deles.
+    saida, numero = [], 0
+    for chave in escolhidas:
+        compartilhado = chave in CHAVES_HTML_SEM_DADOS or chave.startswith("CANVA")
+        paginas = por_chave.get(chave, [])
+        if compartilhado and chave in comuns:
+            numero += len(comuns[chave])
+            saida.append(f'<div class="slide-ref" data-ref="{chave}"></div>')
+            continue
+        numeradas = []
+        for html_slide in paginas:
+            numero += 1
+            numeradas.append(html_slide.replace("§PAG§", str(numero)))
+        if compartilhado:
+            comuns[chave] = [re.sub(r"^(\s*<(?:section|div))", rf'\1 data-ref-comum="{chave}"', h, count=1)
+                             for h in numeradas]
+            saida.append(f'<div class="slide-ref" data-ref="{chave}"></div>')
+        else:
+            saida += numeradas
+    return "".join(saida), css
+
+
+# Slides que não dependem do recorte nem da gestão (ver _montar_html_variante)
+CHAVES_HTML_SEM_DADOS = {"ORGANOGRAMA", "FLUXO_TRABALHO"}
+
+# Seletor de gestão do HTML (pedido do usuário em 13/11/2026): a Gestão
+# Federal separada das demais ações, com a visão consolidada mantida.
+VARIANTES_GESTAO = [("todas", "TODAS AS AÇÕES"), ("estadual", "GESTÃO ESTADUAL"), ("federal", "GESTÃO FEDERAL")]
+
+
+def _recortes_gestao(df):
+    """[(chave, rótulo, df)] das variantes com ação no recorte. Sem as duas
+    partes (ex.: painel já filtrado numa gestão), só a visão consolidada."""
+    variantes = [("todas", VARIANTES_GESTAO[0][1], df)]
+    if "GESTAO" not in df.columns:
+        return variantes
+    federal = df["GESTAO"].astype(str).str.upper().str.contains("FEDERAL", na=False)
+    if federal.any() and (~federal).any():
+        variantes += [("estadual", VARIANTES_GESTAO[1][1], df[~federal]),
+                      ("federal", VARIANTES_GESTAO[2][1], df[federal])]
+    return variantes
+
+
+CAMPOS_CARD_ACAO = ["o", "f", "e", "x", "t", "g", "mu", "ex", "ds", "lk", "av", "dt", "fase", "inv", "fi", "v"]
+
+
+def _dados_cards_acoes(m, fichas_cartoes):
+    """Uma linha (lista, na ordem de CAMPOS_CARD_ACAO) por ação, para a janela
+    de cards aberta ao clicar num objeto/executor das tabelas de
+    detalhamento (pedido do usuário em 13/11/2026). t = 0 (T.C. firmado) /
+    1 (não firmado), mesmo critério da contagem das tabelas; g = gestão."""
+    df, base = m["_df"], m["_acoes_base"]
+    federal = (df["GESTAO"].astype(str).str.upper().str.contains("FEDERAL", na=False)
+               if "GESTAO" in df.columns else pd.Series(False, index=df.index))
+    linhas = []
+    for idx, b in base.iterrows():
+        t = 0 if b["c"] >= 0.5 else (1 if b["a"] >= 0.5 else None)
+        if t is None:
+            continue
+        r = df.loc[idx]
+        try:
+            ficha = pac._montar_dados_ficha_acao(r)
+        except Exception:
+            ficha = {}
+        na_exec = bool(b["na_exec"])
+        data = pd.to_datetime(r[pac.col_prazo] if na_exec else r[pac.col_prazo_atual], errors="coerce")
+        avanco = r[pac.col_avanco]
+        linhas.append([
+            b["o"], b["f"], b["e"], b["x"], t, "federal" if federal.loc[idx] else "estadual",
+            str(r["MUNICIPIO"]) if "MUNICIPIO" in df.columns and pd.notna(r["MUNICIPIO"]) else "",
+            ficha.get("executor") or "", ficha.get("descricao") or "", ficha.get("link_localizacao") or "",
+            round(float(avanco), 1) if pd.notna(avanco) else None,
+            data.strftime("%d/%m/%Y") if pd.notna(data) else "A definir",
+            1 if na_exec else 0,
+            abreviar_moeda(b["inv"]), _indice_ficha(fichas_cartoes, ficha), round(float(b["inv"]), 2)])
+    return {"campos": CAMPOS_CARD_ACAO, "acoes": linhas}
+
+
+def _sufixar_ids(html, sufixo):
+    """Ids únicos por variante: id="x" vira id="x--sufixo", e as chamadas
+    que apontam para ele ('x' em onclick) acompanham."""
+    for id_html in set(re.findall(r'\sid="([^"]+)"', html)):
+        html = (html.replace(f'id="{id_html}"', f'id="{id_html}--{sufixo}"')
+                .replace(f"'{id_html}'", f"'{id_html}--{sufixo}'"))
+    return html
+
+
+def _compactar_html(html):
+    """Tira a indentação e os comentários de CSS/JS do HTML gerado (pedido
+    do usuário em 13/11/2026). Só remove espaço no início/fim de linha —
+    as quebras de linha ficam (o white-space:pre-line dos motivos depende
+    delas)."""
+    html = re.sub(r"<style>(.*?)</style>",
+                  lambda mt: "<style>" + re.sub(r"/\*.*?\*/", "", mt.group(1), flags=re.S) + "</style>",
+                  html, flags=re.S)
+    html = re.sub(r"(?m)^[ \t]*//[^\n]*\n", "", html)    # linhas só de comentário JS
+    html = re.sub(r"[ \t]*\n[ \t]*", "\n", html)
+    return re.sub(r"\n{2,}", "\n", html)
+
+
+def montar_html_apresentacao(df, filtros=None, secoes=None):
+    registro = {"gauge": False, "poligonos": {}}
+    _CTX_HTML.registro = registro
+    try:
+        fichas_cartoes = _FichasCompartilhadas()
+        comuns, blocos, botoes, css = {}, [], [], ""
+        variantes = _recortes_gestao(df)
+        metricas = {}
+        for i, (chave_v, rotulo_v, df_v) in enumerate(variantes):
+            slides_v, css = _montar_html_variante(df_v, filtros, secoes, fichas_cartoes, comuns,
+                                                  rotulo_v if chave_v != "todas" else "",
+                                                  chave_gestao=chave_v, metricas_saida=metricas)
+            slides_v = _sufixar_ids(slides_v, chave_v)
+            if chave_v != "todas":
+                slides_v = slides_v.replace('<div class="base-atualizada">',
+                                            f'<div class="base-atualizada"><span class="selo-gestao">'
+                                            f'{_html_esc(rotulo_v)}</span> ')
+            blocos.append(f'<div class="variante-gestao{" ativa" if i == 0 else ""}" data-gestao="{chave_v}">'
+                          f'{slides_v}</div>')
+            classe_botao = ' class="ativo"' if i == 0 else ""
+            botoes.append(f'<button type="button" data-gestao="{chave_v}"{classe_botao} '
+                          f'''onclick="trocarGestao('{chave_v}')">{_html_esc(rotulo_v)}</button>''')
+        cards_acoes_json = json.dumps(_dados_cards_acoes(metricas["todas"], fichas_cartoes),
+                                      ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+        registro["gauge"] = True    # os cards da janela usam o mesmo velocímetro
+    finally:
+        _CTX_HTML.registro = None
+    corpo = "".join(blocos)
+    seletor_html = (f'<div id="seletor-gestao" role="group" aria-label="Gestão">{"".join(botoes)}</div>'
+                    if len(botoes) > 1 else "")
+    slides_comuns = "".join(h for lista in comuns.values() for h in lista)
+    defs_html = _html_defs_compartilhadas(registro)
 
     # Janela de ficha completa (clique num card de Cláusulas Suspensivas ou
     # de Execução do Objeto) — fora de qualquer slide específico, pra
@@ -3861,7 +4159,13 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
     # protege sozinho quando a lista de fichas está vazia.
     secoes_ficha = [{"titulo": s["titulo"], "largo": bool(s.get("largo")), "campos": [list(c) for c in s["campos"]]}
                     for s in (pac._definicao_secoes_ficha() if hasattr(pac, "_definicao_secoes_ficha") else [])]
-    dados_fichas_json = (json.dumps({"fichas": fichas_cartoes, "secoes": secoes_ficha}, ensure_ascii=False, default=str)
+    # fichas em formato de tabela (nomes dos campos uma vez só, cada ficha
+    # vira uma lista na mesma ordem) — o JS remonta o objeto ao abrir
+    campos_ficha = list(dict.fromkeys(k for f in fichas_cartoes for k in (f or {})))
+    dados_fichas_json = (json.dumps({"campos": campos_ficha,
+                                     "fichas": [[(f or {}).get(k) for k in campos_ficha] for f in fichas_cartoes],
+                                     "secoes": secoes_ficha},
+                                    ensure_ascii=False, default=str, separators=(",", ":"))
                          .replace("</", "<\\/"))
     janela_ficha_html = f'''<script type="application/json" id="cl-fichas-dados">{dados_fichas_json}</script>
       <div id="cl-ficha-fundo" class="cl-ficha-fundo" onclick="if (event.target === this) clFecharFicha()">
@@ -3875,12 +4179,12 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         </div>
       </div>''' if fichas_cartoes else ""
 
-    return f'''<!DOCTYPE html>
+    return _compactar_html(f'''<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <title>Apresentação CGAPE</title>
-<style>{css}{CSS_SLIDES_INSTITUCIONAIS}</style>
+<style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}{CSS_CARDS_OBJETO}</style>
 </head>
 <body>
 <button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()">Gerar PDF</button>
@@ -3890,8 +4194,21 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
   <button type="button" id="btn-slide-prox" title="Próximo slide (→)">›</button>
   <span>F: tela cheia</span>
 </div>
+{seletor_html}
+{defs_html}
 {corpo}
+<div id="slides-comuns">{slides_comuns}</div>
 {janela_ficha_html}
+<script type="application/json" id="oc-dados">{cards_acoes_json}</script>
+<div id="oc-fundo" onclick="if (event.target === this) ocFechar()">
+  <div class="cl-ficha-janela" role="dialog" aria-modal="true">
+    <div class="cl-ficha-topo">
+      <div><div id="oc-titulo" class="cl-ficha-titulo"></div><div id="oc-sub" class="cl-ficha-sub"></div></div>
+      <button type="button" class="cl-ficha-fechar" onclick="ocFechar()" title="Fechar (Esc)">&times;</button>
+    </div>
+    <div id="oc-corpo" class="grade-entrega"></div>
+  </div>
+</div>
 <script>
 function alternarDetalhamento(botao, idAlvo) {{
   var alvo = document.getElementById(idAlvo);
@@ -3944,24 +4261,63 @@ function gerarPdfCompleto() {{
 // Carrossel (1 slide por vez, ‹/›, teclado, tela cheia) — mesmo recurso do
 // projeto Relatório SSP, pedido do usuário em 08/11/2026.
 (function () {{
-  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
-  if (!slides.length) return;
-  var atual = Math.max(0, Math.min(slides.length - 1, (parseInt(location.hash.slice(1), 10) || 1) - 1));
+  // Seletor de gestão (pedido do usuário em 13/11/2026): cada gestão tem os
+  // seus slides num .variante-gestao; os slides comuns (institucionais,
+  // Canva) existem uma vez só e são movidos para os marcadores
+  // (.slide-ref) da gestão ativa. O carrossel e a impressão só enxergam a
+  // gestão ativa.
+  var comuns = document.getElementById('slides-comuns');
+  var porRef = {{}};
+  if (comuns) Array.prototype.forEach.call(comuns.children, function (s) {{
+    var ref = s.getAttribute('data-ref-comum');
+    (porRef[ref] = porRef[ref] || []).push(s);
+  }});
+  var slides = [];
+  var atual = 0;
   var contador = document.getElementById('contador-slide');
 
+  function variante() {{ return document.querySelector('.variante-gestao.ativa'); }}
+  function montarSlides() {{
+    var v = variante();
+    if (!v) {{ slides = []; return; }}
+    v.querySelectorAll('.slide-ref').forEach(function (ref) {{
+      var depois = ref.nextSibling;
+      (porRef[ref.dataset.ref] || []).forEach(function (s) {{ ref.parentNode.insertBefore(s, depois); }});
+    }});
+    slides = Array.prototype.slice.call(v.querySelectorAll('.slide'));
+  }}
+
   function mostrar(indice) {{
+    if (!slides.length) return;
     atual = Math.max(0, Math.min(slides.length - 1, indice));
-    slides.forEach(function (s, k) {{ s.classList.toggle('ativo', k === atual); }});
+    document.querySelectorAll('.slide.ativo').forEach(function (s) {{ s.classList.remove('ativo'); }});
+    slides[atual].classList.add('ativo');
     if (contador) contador.textContent = (atual + 1) + '/' + slides.length;
     history.replaceState(null, '', '#' + (atual + 1));
   }}
 
+  window.trocarGestao = function (chave) {{
+    document.querySelectorAll('.variante-gestao').forEach(function (v) {{
+      v.classList.toggle('ativa', v.dataset.gestao === chave);
+    }});
+    document.querySelectorAll('#seletor-gestao button').forEach(function (b) {{
+      b.classList.toggle('ativo', b.dataset.gestao === chave);
+    }});
+    montarSlides();
+    mostrar(atual);
+  }};
+
+  montarSlides();
+  if (!slides.length) return;
+  atual = Math.max(0, Math.min(slides.length - 1, (parseInt(location.hash.slice(1), 10) || 1) - 1));
+
   // Atalho por id (ex.: card "EM OBRAS / ANDAMENTO" pulando pra Execução do
   // Objeto) — se o slide não estiver nesta apresentação (não foi
   // selecionado no painel), não faz nada — pedido do usuário em
-  // 11/11/2026.
+  // 11/11/2026. Os ids levam o sufixo da gestão (--todas, --federal...).
   window.mostrarPorId = function (id) {{
-    var indice = slides.findIndex(function (s) {{ return s.id === id; }});
+    var base = id.split('--')[0];
+    var indice = slides.findIndex(function (s) {{ return s.id === id || s.id.split('--')[0] === base; }});
     if (indice !== -1) mostrar(indice);
   }};
 
@@ -4003,8 +4359,110 @@ function gerarPdfCompleto() {{
 }})();
 </script>
 <script>{JS_CLAUSULAS}</script>
+<script>{JS_CARDS_OBJETO.replace("__ICONE__", json.dumps(_SVG_ICONE_LOCALIZACAO))}</script>
 </body>
-</html>'''
+</html>''')
+
+
+# Seletor de gestão (pedido do usuário em 13/11/2026): fixo embaixo, no
+# centro (os cantos têm a navegação e o número da página), some em tela cheia e na impressão; só a gestão ativa
+# aparece e é impressa. O selo no cabeçalho diz qual gestão está na tela.
+CSS_SELETOR_GESTAO = """
+    .variante-gestao:not(.ativa), #slides-comuns { display:none; }
+    #seletor-gestao { position:fixed; left:50%; transform:translateX(-50%); bottom:10px; z-index:1000; display:flex; gap:4px;
+      background:rgba(11,31,63,.92); padding:5px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.3); }
+    #seletor-gestao button { background:transparent; color:#C9D6EA; border:none; border-radius:7px;
+      padding:8px 14px; font:700 13px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px; cursor:pointer; }
+    #seletor-gestao button:hover { background:rgba(255,255,255,.12); color:#fff; }
+    #seletor-gestao button.ativo { background:#4FA3E0; color:#0B1F3F; }
+    body.tela-cheia #seletor-gestao { display:none; }
+    .selo-gestao { display:inline-block; background:#4FA3E0; color:#0B1F3F; font-weight:700; font-size:11px;
+      padding:1px 8px; border-radius:9px; margin-right:6px; letter-spacing:.3px; }
+    @media print { #seletor-gestao { display:none !important; } }
+"""
+
+
+# Janela de cards ao clicar num objeto/executor das tabelas de detalhamento
+# (pedido do usuário em 13/11/2026): mesmo card das possibilidades de
+# entrega; clicar num card abre a ficha completa (janela acima desta).
+CSS_CARDS_OBJETO = """
+    .obj-clic { cursor:pointer; color:#0B5CAD; text-decoration:underline dotted; text-underline-offset:3px; }
+    .obj-clic:hover { color:#0B1F3F; text-decoration-style:solid; }
+    #oc-fundo { display:none; position:fixed; inset:0; z-index:1050; background:rgba(11,31,63,.55);
+      align-items:center; justify-content:center; padding:24px; }
+    #oc-fundo.aberta { display:flex; }
+    #oc-fundo .cl-ficha-janela { width:min(1240px, 100%); }
+    #oc-corpo { padding:4px 22px 22px; overflow-y:auto; margin-top:0; }
+    .entrega-destaque-investimento { white-space:nowrap; }
+    @media print { #oc-fundo { display:none !important; } .obj-clic { color:inherit; text-decoration:none; } }
+"""
+
+JS_CARDS_OBJETO = r"""
+(function () {
+  var el = document.getElementById('oc-dados');
+  if (!el) return;
+  var D = JSON.parse(el.textContent), C = {};
+  D.campos.forEach(function (k, i) { C[k] = i; });
+  var fundo = document.getElementById('oc-fundo');
+  var ICONE = __ICONE__;
+  function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+  function gauge(v) {
+    if (v == null) return '<div class="entrega-sem-gauge">Avanço<br>não<br>informado</div>';
+    v = Math.max(0, Math.min(100, v));
+    return '<svg width="76" height="76" viewBox="0 0 76 76" class="entrega-gauge-svg">'
+      + '<use href="#pac-gauge" stroke="#E9ECF2"></use>'
+      + (v > 0.5 ? '<use href="#pac-gauge" stroke="#2E7D32" stroke-dasharray="' + v.toFixed(1) + ' 200"></use>' : '')
+      + '<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="#0B1F3F">'
+      + Math.round(v) + '%</text></svg>';
+  }
+  function card(a) {
+    var local = a[C.lk] ? '<a href="' + esc(a[C.lk]) + '" target="_blank" rel="noopener" class="entrega-icone-local" '
+      + 'title="Ver localização" onclick="event.stopPropagation()">' + ICONE + '</a>' : '';
+    return '<div class="entrega-card" role="button" tabindex="0" data-oc-ficha="' + a[C.fi] + '" '
+      + 'title="Clique para ver todas as informações da ação">'
+      + '<div class="entrega-topo"><div class="entrega-identificacao">'
+      + '<div class="entrega-objeto">' + esc(a[C.o]) + '</div>'
+      + '<div class="entrega-municipio-linha"><span class="entrega-municipio">'
+      + esc(a[C.mu] || 'Município não informado') + '</span>' + local + '</div>'
+      + (a[C.ex] ? '<div class="entrega-executor">' + esc(a[C.ex]) + '</div>' : '')
+      + '</div><div class="entrega-gauge">' + gauge(a[C.av]) + '</div></div>'
+      + (a[C.ds] ? '<div class="entrega-descricao">' + esc(a[C.ds]) + '</div>' : '')
+      + '<div class="entrega-rodape"><div><div class="entrega-destaque-rotulo">Conclusão prevista ('
+      + (a[C.fase] ? 'fase' : 'atual') + ')</div><div class="entrega-destaque-valor">' + esc(a[C.dt]) + '</div></div>'
+      + '<div><div class="entrega-destaque-rotulo">Investimento</div>'
+      + '<div class="entrega-destaque-valor entrega-destaque-investimento">' + esc(a[C.inv]) + '</div></div></div></div>';
+  }
+  window.ocFechar = function () { fundo.classList.remove('aberta'); };
+  document.addEventListener('click', function (ev) {
+    var alvo = ev.target.closest('.obj-clic');
+    if (alvo) {
+      var f = JSON.parse(alvo.dataset.cards);
+      var lista = D.acoes.filter(function (a) {
+        return Object.keys(f).every(function (k) { return a[C[k]] === f[k]; });
+      }).sort(function (x, y) { return y[C.v] - x[C.v]; });
+      var total = lista.reduce(function (s, a) { return s + a[C.v]; }, 0);
+      document.getElementById('oc-titulo').textContent = f.o || f.x;
+      var tabela = alvo.closest('table'), cab = tabela ? tabela.querySelector('th') : null;
+      document.getElementById('oc-sub').textContent = [cab ? cab.textContent.replace(/^(OBJETO|EXECUTOR) /, '') : '',
+        f.f, f.e, f.o ? f.x : null, lista.length + (lista.length === 1 ? ' ação' : ' ações')]
+        .filter(Boolean).join(' · ');
+      document.getElementById('oc-corpo').innerHTML = lista.map(card).join('')
+        || '<div class="texto-secundario">Nenhuma ação encontrada.</div>';
+      fundo.classList.add('aberta');
+      return;
+    }
+    var c = ev.target.closest('[data-oc-ficha]');
+    if (c && window.clAbrirFicha) window.clAbrirFicha(+c.dataset.ocFicha);
+  });
+  // com a janela aberta, o teclado não vira o slide por trás; Esc fecha
+  // (a ficha, se aberta por cima, trata o Esc antes)
+  document.addEventListener('keydown', function (e) {
+    if (!fundo.classList.contains('aberta')) return;
+    if (e.key === 'Escape') ocFechar();
+    e.stopImmediatePropagation();
+  }, true);
+})();
+"""
 
 
 # Seção Cláusulas Suspensivas do HTML: filtro de fase (seleção múltipla) e
@@ -4018,17 +4476,21 @@ JS_CLAUSULAS = r"""
   var dadosEl = document.getElementById('cl-fichas-dados');
   if (!dadosEl) return;
   var DADOS_CL = JSON.parse(dadosEl.textContent);
-  var fasesMarcadas = new Set();
+  // Cada gestão tem a sua página de cláusulas: filtro e contagens ficam
+  // presos ao slide do botão clicado (ids com sufixo da gestão).
+  function fasesDe(root) { return root._fases || (root._fases = new Set()); }
+  function porId(root, prefixo) { return root.querySelector('[id^="' + prefixo + '"]'); }
 
   function moedaCurta(v) {
-    if (v >= 1e9) return 'R$ ' + (v / 1e9).toFixed(2).replace('.', ',') + ' Bi';
-    if (v >= 1e6) return 'R$ ' + (v / 1e6).toFixed(2).replace('.', ',') + ' Mi';
+    if (v >= 1e9) return 'R$ ' + (v / 1e9).toFixed(2).replace('.', ',') + ' BI';
+    if (v >= 1e6) return 'R$ ' + (v / 1e6).toFixed(2).replace('.', ',') + ' MI';
     return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function aplicarFiltro() {
+  function aplicarFiltro(root) {
+    var fasesMarcadas = fasesDe(root);
     var totalQtd = 0, totalValor = 0, cont = { vencida: 0, proxima: 0, no_prazo: 0, sem_data: 0 };
-    document.querySelectorAll('.cl-eixo').forEach(function (grupo) {
+    root.querySelectorAll('.cl-eixo').forEach(function (grupo) {
       var qtd = 0, valor = 0, pz = { vencida: 0, proxima: 0, no_prazo: 0, sem_data: 0 };
       grupo.querySelectorAll('.cl-card').forEach(function (card) {
         var passa = fasesMarcadas.size === 0 || fasesMarcadas.has(card.dataset.fase);
@@ -4049,24 +4511,27 @@ JS_CLAUSULAS = r"""
       Object.keys(cont).forEach(function (k) { cont[k] += pz[k]; });
     });
     var el;
-    if ((el = document.getElementById('cl-kpi-qtd'))) el.textContent = totalQtd;
-    if ((el = document.getElementById('cl-kpi-valor'))) el.textContent = moedaCurta(totalValor) + ' em investimento';
-    if ((el = document.getElementById('cl-kpi-vencida'))) el.textContent = cont.vencida;
-    if ((el = document.getElementById('cl-kpi-proxima'))) el.textContent = cont.proxima;
-    var vazio = document.getElementById('cl-sem-resultado');
+    if ((el = porId(root, 'cl-kpi-qtd'))) el.textContent = totalQtd;
+    if ((el = porId(root, 'cl-kpi-valor'))) el.textContent = moedaCurta(totalValor) + ' em investimento';
+    if ((el = porId(root, 'cl-kpi-vencida'))) el.textContent = cont.vencida;
+    if ((el = porId(root, 'cl-kpi-proxima'))) el.textContent = cont.proxima;
+    var vazio = porId(root, 'cl-sem-resultado');
     if (vazio) vazio.style.display = totalQtd === 0 ? '' : 'none';
   }
 
   window.clAlternarFase = function (botao) {
+    var root = botao.closest('.slide') || document;
+    var fasesMarcadas = fasesDe(root);
     var fase = botao.dataset.fase;
     if (fasesMarcadas.has(fase)) fasesMarcadas.delete(fase); else fasesMarcadas.add(fase);
     botao.classList.toggle('ativo', fasesMarcadas.has(fase));
-    aplicarFiltro();
+    aplicarFiltro(root);
   };
-  window.clLimparFases = function () {
-    fasesMarcadas.clear();
-    document.querySelectorAll('.cl-filtro-btn').forEach(function (b) { b.classList.remove('ativo'); });
-    aplicarFiltro();
+  window.clLimparFases = function (botao) {
+    var root = (botao && botao.closest('.slide')) || document;
+    fasesDe(root).clear();
+    root.querySelectorAll('.cl-filtro-btn').forEach(function (b) { b.classList.remove('ativo'); });
+    aplicarFiltro(root);
   };
 
   // ---- janela da ficha ----
@@ -4081,7 +4546,8 @@ JS_CLAUSULAS = r"""
   }
 
   function abrirFicha(indice) {
-    var f = DADOS_CL.fichas[indice] || {};
+    var linha = DADOS_CL.fichas[indice] || [], f = {};
+    (DADOS_CL.campos || []).forEach(function (k, i) { f[k] = linha[i]; });
     document.getElementById('cl-ficha-titulo').textContent = f.objeto || 'Ação';
     document.getElementById('cl-ficha-sub').textContent =
       [f.item ? 'Item ' + f.item : '', f.municipio, f.executor].filter(Boolean).join(' · ');
@@ -4105,6 +4571,7 @@ JS_CLAUSULAS = r"""
   }
 
   window.clFecharFicha = function () { if (fundo) fundo.classList.remove('aberta'); };
+  window.clAbrirFicha = abrirFicha;
 
   // Qualquer card com data-ficha abre a mesma janela — além dos cards de
   // Cláusulas Suspensivas (.cl-card), os de Execução do Objeto

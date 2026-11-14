@@ -46,12 +46,29 @@ app = Flask(__name__)
 
 
 @app.route("/")
+def home():
+    # Tela inicial (pedido do usuário em 14/11/2026) — os dois cartões
+    # levam pra /pac e /monitoramento (ver montar_html_home: no navegador
+    # comum, sem window.pywebview, o clique navega direto pra essas
+    # rotas).
+    return pac.montar_html_home()
+
+
+@app.route("/pac")
 def painel():
     # Mesmo HTML/CSS/JS do painel desktop — o helper JS embutido nele
     # (chamarAPI/baixarPDF, ver montar_html_painel) detecta sozinho que não
     # existe "window.pywebview" aqui e passa a falar com as rotas /api/*
-    # abaixo em vez da ponte nativa.
+    # abaixo em vez da ponte nativa. "← Início" (no cabeçalho) volta pra "/".
     return pac.montar_html_painel(pac.df_original)
+
+
+@app.route("/monitoramento")
+def monitoramento():
+    # Mesmo HTML do painel, só que com o overlay de Ações em Monitoramento
+    # (resumo_acoes.py) já aberto direto — ver abrir_monitoramento em
+    # montar_html_painel. Pedido do usuário em 14/11/2026 (tela HOME).
+    return pac.montar_html_painel(pac.df_original, abrir_monitoramento=True)
 
 
 def _argumentos_da_requisicao():
@@ -118,9 +135,12 @@ def _rota_pdf(funcao):
 app.add_url_rule(
     "/api/pre_visualizar", view_func=_rota_json(pac._api_pre_visualizar), methods=["POST"]
 )
-app.add_url_rule(
-    "/api/mapa_mental", view_func=_rota_json(pac._api_mapa_mental), methods=["POST"]
-)
+# Janela "Resumo das ações prioritárias e PAC" do dash (resumo_acoes.py).
+for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
+                 "resumo_acoes_xlsx", "resumo_acoes_html"):
+    app.add_url_rule("/api/" + _nome_ra, endpoint="api_" + _nome_ra,
+                     view_func=_rota_json(getattr(pac, "_api_" + _nome_ra)),
+                     methods=["POST"])
 app.add_url_rule(
     "/api/iniciar_geracao", view_func=_rota_json(pac._api_iniciar_geracao), methods=["POST"]
 )

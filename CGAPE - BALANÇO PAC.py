@@ -20,7 +20,6 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.units import mm
 from reportlab.lib import colors, pagesizes
-from mapa_mental_html import montar_html_mapa_mental
 import os
 import tempfile
 import sys
@@ -38,6 +37,8 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 import openpyxl
+
+import identidade_visual as iv
 
 # Garante que print() nunca derrube o programa por causa de um caractere
 # fora da tabela de código do console (acentos, "→" etc.). Testado e
@@ -94,12 +95,6 @@ try:
     import webview  # painel de filtros (HTML/CSS/JS) — pip install pywebview
 except Exception:
     webview = None
-
-# Página do mapa mental (botão "MAPA MENTAL", ao lado de GERENCIAL/DASHBOARD
-# no topo do painel) — mesmo componente HTML/CSS/JS já usado no projeto
-# "Controle de Prazos", adaptado para a árvore Secretaria/Órgão > Eixo >
-# Objeto > Ação e para a paleta de FASE já usada no resto deste painel (ver
-# mapa_mental_html.py, montar_html_mapa_mental).
 
 # Ligada pela variável de ambiente PAC_WEB_MODE=1, definida pelo servidor
 # web (servidor_web.py). Controla os pontos do código que só fazem sentido
@@ -427,20 +422,23 @@ def clarear_hex(hex_base, fator=0.55):
 # (mesma cor, clareada). Única fonte: o PDF usa este dict (convertido pra
 # colors.HexColor mais abaixo) e o painel web recebe o mesmo dict em
 # paletaGraficos["financeiro"] — os dois NUNCA saem com tons diferentes.
-# Reaproveita as MESMAS cores-base já usadas no projeto (#4E92BA/#BB6060/
-# #BC9E2C) — não são cores novas.
+# Cores-base alinhadas à identidade visual única do projeto (ver
+# identidade_visual.py / gerar_pptx_pac.py): OGU=azul, Financiamento=teal,
+# Recurso Estadual=laranja — antes eram #4E92BA/#BB6060/#BC9E2C (azul,
+# VERMELHO e amarelo), divergentes da referência; corrigido a pedido do
+# usuário em 14/11/2026 (unificação de identidade visual).
 TONS_FINANCEIRO = {
     "apoiado": {
-        "contratado": dessaturar_hex("#4E92BA"),
-        "aContratar": clarear_hex(dessaturar_hex("#4E92BA")),
+        "contratado": dessaturar_hex("#0B5CAD"),
+        "aContratar": clarear_hex(dessaturar_hex("#0B5CAD")),
     },
     "financiamento": {
-        "contratado": dessaturar_hex("#BB6060"),
-        "aContratar": clarear_hex(dessaturar_hex("#BB6060")),
+        "contratado": dessaturar_hex("#2F7F92"),
+        "aContratar": clarear_hex(dessaturar_hex("#2F7F92")),
     },
     "estadual": {
-        "contratado": dessaturar_hex("#BC9E2C"),
-        "aContratar": clarear_hex(dessaturar_hex("#BC9E2C")),
+        "contratado": dessaturar_hex("#E68A00"),
+        "aContratar": clarear_hex(dessaturar_hex("#E68A00")),
     },
     # Mesmo cinza já usado em COR_CONTRATADO_NAO_DISCRIMINADO (gráfico
     # "Detalhar contratado" do Resumo Financeiro) — contratado sem fonte
@@ -449,13 +447,18 @@ TONS_FINANCEIRO = {
     "naoDiscriminado": "#8C8C8C",
 }
 
-COR_MARCA_TEAL = colors.HexColor("#72B4AE")        # teal puro do dashboard
+# Identidade visual única do projeto (ver identidade_visual.py): o PDF
+# usava a paleta AGF do dashboard (teal/gold) — mantidos os NOMES das
+# constantes (usadas em ~150 lugares deste arquivo) e os PAPÉIS de cada
+# tom (puro/escuro/claro), só trocando os HEX pelos da referência — teal
+# vira azul, gold vira laranja — pedido do usuário em 14/11/2026.
+COR_MARCA_TEAL = colors.HexColor("#0B5CAD")         # azul puro da referência
 COR_MARCA_TEAL_ESCURO = colors.HexColor(
-    "#2E6F68")  # versão escura, p/ texto e fundos
+    "#0B1F3F")  # navy — versão escura, p/ texto e fundos
 # tom clarinho, p/ fundos com texto escuro
-COR_MARCA_TEAL_CLARA = colors.HexColor("#E3EFED")
-COR_MARCA_GOLD = colors.HexColor("#E0AB45")         # gold puro do dashboard
-COR_MARCA_GOLD_ESCURO = colors.HexColor("#B8863A")  # versão escura, p/ texto
+COR_MARCA_TEAL_CLARA = colors.HexColor("#F2F4F7")
+COR_MARCA_GOLD = colors.HexColor("#E68A00")         # laranja puro da referência
+COR_MARCA_GOLD_ESCURO = colors.HexColor("#8A5300")  # versão escura, p/ texto
 
 # =====================================================
 # 2. CONFIGURAÇÃO DE ESTILOS (REPORTLAB)
@@ -4617,11 +4620,19 @@ def financeiro_contratado_por_fonte(df_base):
 
 
 def gerar_grafico_financeiro(df_base, detalhar_contratado=False):
+    # OGU/Financiamento/Recurso Estadual usam TONS_FINANCEIRO (fonte única,
+    # compartilhada com o painel web) em vez de COR_AZUL/VERMELHO/AMARELO
+    # soltos — antes Financiamento saía vermelho e Recurso Estadual saía
+    # amarelo, divergente da cor dessas mesmas fontes em todo o resto do
+    # projeto; corrigido a pedido do usuário em 14/11/2026.
+    cor_ogu = colors.HexColor(TONS_FINANCEIRO["apoiado"]["contratado"])
+    cor_financiamento = colors.HexColor(TONS_FINANCEIRO["financiamento"]["contratado"])
+    cor_estadual = colors.HexColor(TONS_FINANCEIRO["estadual"]["contratado"])
     if detalhar_contratado:
         cores_contratado = {
-            "OGU": COR_AZUL,
-            "FINANCIAMENTO": COR_VERMELHO,
-            "RECURSO ESTADUAL": COR_AMARELO,
+            "OGU": cor_ogu,
+            "FINANCIAMENTO": cor_financiamento,
+            "RECURSO ESTADUAL": cor_estadual,
             ROTULO_CONTRATADO_NAO_DISCRIMINADO: colors.HexColor(COR_CONTRATADO_NAO_DISCRIMINADO),
         }
         categorias_valores = [
@@ -4632,14 +4643,14 @@ def gerar_grafico_financeiro(df_base, detalhar_contratado=False):
         categorias_valores = [
             ("VALOR CONTRATADO",
              df_base[col_valor_contratado].sum(), COR_VERDE),
-            ("OGU", df_base[col_apoiado_ajustado].sum(), COR_AZUL),
+            ("OGU", df_base[col_apoiado_ajustado].sum(), cor_ogu),
             ("FINANCIAMENTO",
-             df_base[col_financiamento_ajustado].sum(), COR_VERMELHO),
+             df_base[col_financiamento_ajustado].sum(), cor_financiamento),
             (
                 "RECURSO ESTADUAL",
                 df_base[col_contrapartida_ajustado].sum()
                 + df_base[col_complementar_ajustado].sum(),
-                COR_AMARELO,
+                cor_estadual,
             ),
         ]
     categorias_valores = [
@@ -4794,7 +4805,10 @@ def gerar_grafico_panorama(df_base):
 
 
 def gerar_grafico_termo_compromisso(df_base):
-    cores_situacao = {"SIM": COR_VERDE, "NÃO": COR_VERMELHO}
+    # "NÃO" (T.C. não firmado) em laranja, igual à apresentação/painel —
+    # vermelho fica reservado pra estados mais graves (paralisado,
+    # vencido) — corrigido a pedido do usuário em 14/11/2026.
+    cores_situacao = {"SIM": COR_VERDE, "NÃO": COR_MARCA_GOLD}
     df_base = df_base.assign(_INV_AJ=_serie_investimento_ajustado(df_base))
     resumo = (
         df_base.groupby("SINALIZACAO_TC")
@@ -9541,7 +9555,96 @@ def _relancar_processo():
         traceback.print_exc()
 
 
-def montar_html_painel(df_base):
+def montar_html_home():
+    # Tela inicial do app (desktop e web) — pedido do usuário em 14/11/2026
+    # ("Prompt — Identidade visual única + tela HOME"): primeira coisa que
+    # aparece, com dois cartões grandes pra escolher entre o painel PAC
+    # (montar_html_painel) e as Ações em Monitoramento (o mesmo overlay de
+    # resumo_acoes.py, só que já aberto direto — ver ir_para_monitoramento/
+    # rota "/monitoramento"). Tokens e logos vêm de identidade_visual.py,
+    # a mesma referência usada no resto do projeto.
+    logo_pac = iv.data_uri_logo("PAC.png")
+    logo_governo = iv.data_uri_logo("GOVERNO.png")
+    atualizacao = f"Base atualizada em {ultima_atualizacao.strftime('%d/%m/%Y às %Hh%Mmin')}"
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CGAPE - BALANÇO PAC</title>
+<style>
+{iv.CSS_TOKENS}
+* {{ box-sizing:border-box; }}
+body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE_CSS};
+  color:{iv.hex_css(iv.NAVY)}; }}
+.ivp-governo-logo {{ position:absolute; top:14px; right:40px; height:46px; width:auto; }}
+.home-corpo {{ min-height:calc(100vh - 96px); display:flex; align-items:center; justify-content:center;
+  padding:40px 20px; }}
+.home-cartoes {{ display:flex; gap:32px; flex-wrap:wrap; justify-content:center; max-width:900px; }}
+.home-cartao {{
+  background:#fff; border:1px solid {iv.hex_css(iv.CINZA_BORDA)}; border-radius:14px;
+  width:320px; padding:40px 28px; display:flex; flex-direction:column; align-items:center;
+  gap:18px; cursor:pointer; text-align:center; transition:box-shadow .15s, border-color .15s, transform .15s;
+  font-family:inherit;
+}}
+.home-cartao:hover, .home-cartao:focus-visible {{
+  border-color:{iv.hex_css(iv.AZUL)}; box-shadow:{iv.SOMBRA_HOVER}; transform:translateY(-3px); outline:none;
+}}
+.home-cartao img.home-cartao-logo {{ height:64px; width:auto; }}
+.home-cartao-icone {{ color:{iv.hex_css(iv.AZUL)}; }}
+.home-cartao-rotulo {{ font-size:16px; font-weight:800; letter-spacing:.4px; color:{iv.hex_css(iv.NAVY)};
+  text-transform:uppercase; }}
+.home-cartao-sub {{ font-size:12.5px; color:{iv.hex_css(iv.CINZA_TEXTO)}; }}
+@media (max-width:720px) {{
+  .home-cartoes {{ flex-direction:column; align-items:center; }}
+  .home-cartao {{ width:100%; max-width:320px; }}
+}}
+</style>
+</head>
+<body>
+<div class="ivp-cabecalho">
+  <div class="ivp-titulo">CGAPE</div>
+  <div class="ivp-subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
+  <div class="ivp-subtitulo" style="font-weight:400;margin-top:2px">{atualizacao}</div>
+  <img class="ivp-governo-logo" src="{logo_governo}" alt="Governo do Estado da Bahia">
+</div>
+<div class="home-corpo">
+  <div class="home-cartoes">
+    <div class="home-cartao" id="home-pac" role="button" tabindex="0" aria-label="Abrir Balanço PAC - Bahia">
+      <img class="home-cartao-logo" src="{logo_pac}" alt="PAC">
+      <div class="home-cartao-rotulo">Balanço PAC - Bahia</div>
+      <div class="home-cartao-sub">Painel de filtros, relatório e apresentação</div>
+    </div>
+    <div class="home-cartao" id="home-monitoramento" role="button" tabindex="0"
+         aria-label="Abrir Ações em Monitoramento">
+      <svg class="home-cartao-icone" viewBox="0 0 24 24" width="64" height="64" fill="none"
+           stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"></circle>
+        <circle cx="12" cy="12" r="5"></circle>
+        <circle cx="12" cy="12" r="1.2" fill="currentColor"></circle>
+      </svg>
+      <div class="home-cartao-rotulo">Ações em Monitoramento</div>
+      <div class="home-cartao-sub">Base "Ações do Cronograma"</div>
+    </div>
+  </div>
+</div>
+<script>
+  function pacApiDesktopDisponivel() {{ return !!(window.pywebview && window.pywebview.api); }}
+  async function irPara(destino) {{
+    if (pacApiDesktopDisponivel()) {{ await window.pywebview.api["ir_para_" + destino](); return; }}
+    window.location.href = "/" + destino;
+  }}
+  document.getElementById("home-pac").addEventListener("click", function () {{ irPara("pac"); }});
+  document.getElementById("home-monitoramento").addEventListener("click", function () {{ irPara("monitoramento"); }});
+  function teclaAtivarHome(ev) {{
+    if (ev.key === "Enter" || ev.key === " ") {{ ev.preventDefault(); ev.currentTarget.click(); }}
+  }}
+  document.getElementById("home-pac").addEventListener("keydown", teclaAtivarHome);
+  document.getElementById("home-monitoramento").addEventListener("keydown", teclaAtivarHome);
+</script>
+</body>
+</html>"""
+
+
+def montar_html_painel(df_base, abrir_monitoramento=False):
     # Monta a string HTML/CSS/JS completa do painel de filtros — só isso,
     # sem abrir janela nenhuma. Usada tanto pelo modo desktop
     # (abrir_interface_filtros, logo abaixo, que pega esse HTML e abre numa
@@ -9749,72 +9852,45 @@ def montar_html_painel(df_base):
      realmente entrarem em vigor no celular, em vez de nunca disparar. -->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CGAPE - BALANÇO PAC</title>
-<script>
-  // Aplica o tema salvo ANTES do <style> ser lido, pra não piscar o tema
-  // escuro (padrão do :root) por uma fração de segundo antes de trocar pro
-  // claro salvo da sessão anterior.
-  (function () {
-    try {
-      if (localStorage.getItem("cgape-tema") === "claro") {
-        document.documentElement.setAttribute("data-tema", "claro");
-      }
-    } catch (e) {}
-  })();
-</script>
 <style>
   :root {
-    --cor-fundo: #303030;
-    --cor-card: #353B47;
-    --cor-card-elevado: #41454F;
-    --cor-texto-primario: #FFFFFF;
-    --cor-texto-secundario: #B3BAC9;
-    --cor-texto-terciario: #858B97;
-    --cor-acento-mint: #B8EAE1;
-    --cor-acento-teal: #72B4AE;
-    --cor-acento-teal-hover: #8AC4BF;
-    --cor-acento-peach: #EEB489;
-    --cor-acento-gold: #E0AB45;
-    /* Gold claro: mesma função que o mint tem em relação ao teal — o tom
-       de texto/hover em cima do gold. Usado no bloco de colunas. */
-    --cor-acento-gold-claro: #F2CE83;
-    /* teal/mint usados como COR DE TEXTO (número de destaque, título de
-       card marcado, hover de botão/link etc.) -- separados de
-       --cor-acento-teal/mint (que continuam servindo fundo/borda/badge)
-       porque no tema claro o texto precisa de um tom bem mais escuro pra
-       ter contraste em cima de branco, enquanto fundo/borda ficam iguais
-       nos dois temas. No escuro são idênticos aos originais. */
+    /* Identidade visual única do projeto (ver identidade_visual.py) —
+       tema escuro removido e paleta AGF (teal/mint/peach/gold sobre fundo
+       #303030) substituída pelos tokens da apresentação HTML, que passa a
+       ser a referência única de todas as saídas — pedido do usuário em
+       14/11/2026. Mantidos os NOMES antigos das variáveis (--cor-fundo,
+       --cor-acento-mint etc.) para não precisar reescrever todo CSS que já
+       usa var(--cor-...) nas ~900 regras abaixo — só o VALOR de cada token
+       muda. Mapeamento: mint/teal (destaque genérico) -> azul da
+       referência; peach (alerta/pendência, ex. botão de Controle de
+       Qualidade) -> laranja; gold (destaque secundário/"marcado") -> azul
+       claro de marca.
+    */
+    --cor-fundo: #EDEFF3;
+    --cor-card: #FFFFFF;
+    --cor-card-elevado: #F2F4F7;
+    --cor-texto-primario: #0B1F3F;
+    --cor-texto-secundario: #5B6576;
+    --cor-texto-terciario: #8C97A6;
+    --cor-acento-mint: #0B5CAD;
+    --cor-acento-teal: #0B5CAD;
+    --cor-acento-teal-hover: #0A4E92;
+    --cor-acento-peach: #E68A00;
+    --cor-acento-gold: #4FA3E0;
+    --cor-acento-gold-claro: #C9D6EA;
+    /* Tema único (claro) — teal-texto/mint-texto não precisam mais de um
+       tom separado "só pra texto" (isso existia pra dar contraste no tema
+       escuro); ficam iguais aos tokens de fundo/borda acima. */
     --cor-acento-teal-texto: var(--cor-acento-teal);
     --cor-acento-mint-texto: var(--cor-acento-mint);
     --raio-sm: 4px;
-    --raio-md: 8px;
-    --raio-lg: 16px;
-    --raio-xl: 24px;
-    --sombra-card: 0px 5px 40px 0px rgba(9, 14, 21, 0.16);
+    --raio-md: 10px;
+    --raio-lg: 14px;
+    --raio-xl: 20px;
+    --sombra-card: 0 4px 14px rgba(11, 31, 63, 0.15);
     --transicao-rapida: 0.15s ease;
     --transicao-padrao: 0.25s ease-in-out;
-    --fonte: "Segoe UI", "Roboto", system-ui, -apple-system, sans-serif;
-  }
-
-  /* --- Tema claro: mesmo design system (AGF), só troca fundo/superfície/
-     texto -- acentos (teal, mint, peach, gold) e cores semânticas (fase,
-     atrasada, etc., definidas mais abaixo/no JS) continuam iguais nos dois
-     temas, é só a "casca" que muda. Ativado via data-tema="claro" na
-     <html>, alternado pela chave de tema no topo (ver .tema-switch) e
-     lembrado entre sessões (localStorage "cgape-tema"). Sem o atributo, o
-     :root de cima já é o tema escuro (o original/padrão do projeto). */
-  html[data-tema="claro"] {
-    --cor-fundo: #F4F6F8;
-    --cor-card: #FFFFFF;
-    --cor-card-elevado: #EBEFF2;
-    --cor-texto-primario: #1B2430;
-    --cor-texto-secundario: #56606E;
-    --cor-texto-terciario: #8A94A3;
-    --sombra-card: 0px 5px 30px 0px rgba(27, 36, 48, 0.10);
-    /* tons de teal/mint escurecidos SÓ pra uso como texto (ver comentário
-       em --cor-acento-teal-texto acima) -- o teal/mint "de fundo" (botões,
-       badges, bordas) continua igual ao escuro, só o texto muda. */
-    --cor-acento-teal-texto: #2E6B66;
-    --cor-acento-mint-texto: #1F7A73;
+    --fonte: 'Roboto', 'Segoe UI', Arial, sans-serif;
   }
 
   * { box-sizing: border-box; }
@@ -9907,12 +9983,38 @@ def montar_html_painel(df_base):
     padding: 8px 14px;
     border-radius: var(--raio-md);
   }
-  .btn:hover { background: var(--cor-acento-teal-hover); color: #1A1A1A; }
+  /* Texto branco no hover — var(--cor-acento-teal-hover) virou um azul
+     escuro saturado (identidade única), #1A1A1A ficava sem contraste
+     nenhum em cima dele (era pensado pro teal claro antigo) — corrigido a
+     pedido do usuário em 14/11/2026. */
+  .btn:hover { background: var(--cor-acento-teal-hover); color: #fff; }
   .btn:active { transform: scale(0.97); }
 
+  /* Botão discreto "← Início" (tela HOME) — fica antes dos demais botões
+     do cabeçalho, nas duas telas (filtros e dash) — pedido do usuário em
+     14/11/2026. */
+  .btn-inicio {
+    background: transparent;
+    color: var(--cor-texto-secundario);
+    border: 1px solid var(--cor-card-elevado);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 12px;
+    border-radius: var(--raio-md);
+    cursor: pointer;
+    font-family: var(--fonte);
+  }
+  .btn-inicio:hover { color: var(--cor-texto-primario); border-color: var(--cor-acento-teal); }
+
+  /* Texto branco em cima de var(--cor-acento-teal)/--cor-acento-peach: na
+     identidade única do projeto esses acentos viraram tons mais escuros e
+     saturados (azul/laranja) — os #16211F/#1A1A1A/#10251F usados aqui e
+     nos outros estados ativo/hover desta folha (eram pensados pro teal
+     claro/pêssego da paleta AGF antiga) ficavam sem contraste nenhum;
+     todos trocados por branco — pedido do usuário em 14/11/2026. */
   .btn-acento {
     background: var(--cor-acento-teal);
-    color: #16211F;
+    color: #fff;
     font-size: 13px;
     font-weight: 700;
     padding: 10px 20px;
@@ -9968,7 +10070,7 @@ def montar_html_painel(df_base):
   }
   .seletor-secao button.ativo {
     background: var(--cor-acento-teal);
-    color: #16211F;
+    color: #fff;
   }
   #grade-mon {
     flex: 1;
@@ -10034,7 +10136,7 @@ def montar_html_painel(df_base):
     background: var(--cor-card);
     border-radius: var(--raio-lg);
     box-shadow: var(--sombra-card);
-    border: 1px solid rgba(114, 180, 174, 0.25);
+    border: 1px solid rgba(11, 92, 173, 0.25);
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -10238,7 +10340,7 @@ def montar_html_painel(df_base):
     transition: background var(--transicao-rapida);
     position: relative;
   }
-  .arvore-dropdown-toggle:hover { background: rgba(114, 180, 174, 0.18); }
+  .arvore-dropdown-toggle:hover { background: rgba(11, 92, 173, 0.18); }
   .arvore-dropdown-toggle .contagem {
     display: none;
     position: absolute;
@@ -10251,7 +10353,7 @@ def montar_html_painel(df_base):
     padding: 0 3px;
     border-radius: 999px;
     background: var(--cor-acento-teal);
-    color: #16211F;
+    color: #fff;
     font-size: 8.5px;
     font-weight: 700;
     font-family: var(--fonte);
@@ -10328,7 +10430,10 @@ def montar_html_painel(df_base):
     top: -0.5px;
     width: 3px;
     height: 6.5px;
-    border: solid #16211F;
+    /* Check branco — ficava invisível em cima do azul escuro da
+       identidade única (pensado pro teal claro antigo) — corrigido a
+       pedido do usuário em 14/11/2026. */
+    border: solid #fff;
     border-width: 0 2px 2px 0;
     transform: rotate(40deg);
   }
@@ -10375,7 +10480,10 @@ def montar_html_painel(df_base):
     top: 1px;
     width: 4px;
     height: 8px;
-    border: solid #16211F;
+    /* Check branco — ficava invisível em cima do azul escuro da
+       identidade única (pensado pro teal claro antigo) — corrigido a
+       pedido do usuário em 14/11/2026. */
+    border: solid #fff;
     border-width: 0 2px 2px 0;
     transform: rotate(40deg);
   }
@@ -10590,7 +10698,7 @@ def montar_html_painel(df_base):
   }
   .ficha-botao-icone:hover {
     background: var(--cor-acento-teal);
-    color: #16211F;
+    color: #fff;
   }
   #ficha-btn-fechar {
     font-size: 20px;
@@ -10760,7 +10868,7 @@ def montar_html_painel(df_base):
   .pagina-card:hover { border-color: var(--cor-acento-teal); }
   .pagina-card.marcada {
     border-color: var(--cor-acento-teal);
-    background: rgba(114, 180, 174, 0.10);
+    background: rgba(11, 92, 173, 0.10);
   }
   .pagina-card.marcada .pagina-card-titulo { color: var(--cor-acento-mint-texto); }
   /* A miniatura fica opaca quando a página está fora da seleção — a
@@ -10833,14 +10941,14 @@ def montar_html_painel(df_base):
   }
   .ficha-multiplos-item:hover {
     background: var(--cor-acento-teal);
-    color: #16211F;
+    color: #fff;
   }
   /* .ficha-multiplos-item-objeto tem cor própria (--cor-texto-primario, ver
      abaixo) pra se destacar melhor da linha de baixo -- sem isto, essa cor
      própria venceria a herança e ficaria clara/escura demais em cima do
      fundo teal do hover. */
   .ficha-multiplos-item:hover .ficha-multiplos-item-objeto {
-    color: #16211F;
+    color: #fff;
   }
   .ficha-multiplos-item-info { min-width: 0; }
   .ficha-multiplos-item-objeto {
@@ -10861,31 +10969,6 @@ def montar_html_painel(df_base):
     display: flex;
     justify-content: flex-end;
     border-top: 1px solid var(--cor-card-elevado);
-  }
-
-  /* --- Página dedicada do Mapa Mental: mesmo padrão de overlay em tela
-     cheia do #app (filtros), só que por cima dele (z-index maior), já que
-     o botão que abre fica dentro do próprio painel de filtros. O conteúdo
-     é uma página HTML autônoma (gerada em Python, ver mapa_mental_html.py)
-     carregada num <iframe> — isolado do CSS/JS deste painel de propósito,
-     para os dois nunca conflitarem entre si (ids repetidos, temas etc.).
-     Sem barra externa aqui: o botão de fechar mora dentro do próprio
-     cabeçalho da página do iframe (mesma linha do título "... Mapa
-     Mental") e avisa esta página por postMessage quando é clicado — ver
-     o listener "message" logo abaixo, e o botão #fechar-mapa em
-     mapa_mental_html.py. */
-  #mapa-mental-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    z-index: 95;
-    background: var(--cor-fundo);
-  }
-  #mapa-mental-iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-    background: #eef1f6;
   }
 
   /* --- Modal de Pré-visualização (dashboard) --- */
@@ -10979,69 +11062,8 @@ def montar_html_painel(df_base):
     padding: 7px 14px;
     box-shadow: none;
   }
-  /* --- Chave de tema claro/escuro: mesmo padrão visual da chave de
-     alternância do Android (trilho em pílula, bolinha que desliza, sol de
-     um lado e lua do outro) — mesmo componente nas duas barras (painel de
-     filtros e dash), ao lado do Acesso Rápido. Estado atual = atributo
-     data-tema na <html> (ver aplicarTema() no JS); sem o atributo é
-     escuro, então a bolinha começa à direita (sobre a lua). */
-  .tema-switch {
-    display: inline-flex;
-    align-items: center;
-    padding: 0;
-    background: none;
-    border: none;
-    flex-shrink: 0;
-  }
-  .tema-switch-trilho {
-    position: relative;
-    width: 50px;
-    height: 26px;
-    border-radius: 999px;
-    background: var(--cor-card-elevado);
-    border: 1px solid rgba(114, 180, 174, 0.25);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 5px;
-    transition: background var(--transicao-padrao), border-color var(--transicao-padrao);
-  }
-  .tema-switch-icone {
-    display: flex;
-    /* sem z-index de propósito: a bolinha (definida depois no HTML) tem
-       que ficar por cima e encobrir por completo o ícone do lado em que
-       ela está parada -- só o ícone do lado "livre" (oposto) fica
-       visível na pista. */
-    opacity: 0.5;
-    transition: opacity var(--transicao-rapida);
-  }
-  .tema-switch-sol { color: var(--cor-acento-gold); }
-  .tema-switch-lua { color: var(--cor-texto-secundario); }
-  html:not([data-tema="claro"]) .tema-switch-lua { opacity: 1; }
-  html[data-tema="claro"] .tema-switch-sol { opacity: 1; }
-  .tema-switch-bolinha {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--cor-texto-secundario);
-    /* sombra própria, pequena e justa -- var(--sombra-card) é pensada pra
-       cards grandes (30px de blur) e numa bolinha de 20px vira um brilho
-       enorme que borra o trilho inteiro */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-    transform: translateX(24px);
-    transition: transform var(--transicao-padrao), background var(--transicao-padrao);
-  }
-  html[data-tema="claro"] .tema-switch-bolinha {
-    transform: translateX(0);
-    background: var(--cor-acento-gold);
-  }
-  .tema-switch:hover .tema-switch-trilho { border-color: var(--cor-acento-teal); }
-
   /* --- Acesso Rápido: botão de ícone (grade 2x2) que abre um menu com os
-     atalhos MAPA MENTAL, FILTROS e PUBLICAR — mesmo componente nas duas
+     atalhos FILTROS e PUBLICAR — mesmo componente nas duas
      barras (painel de filtros e dash), sempre no fim da fileira de
      botões. O menu (.acesso-rapido-menu) fica escondido (display:none)
      até ganhar a classe "aberto". */
@@ -11063,7 +11085,7 @@ def montar_html_painel(df_base):
   }
   .botao-icone-topo:hover, .botao-icone-topo[aria-expanded="true"] {
     background: var(--cor-acento-teal);
-    color: #1A1A1A;
+    color: #fff;
   }
   .acesso-rapido-menu {
     display: none;
@@ -11213,9 +11235,11 @@ def montar_html_painel(df_base):
     transition: background var(--transicao-rapida), color var(--transicao-rapida);
   }
   .dash-busca-btn-lupa:hover {
-    /* Sob o cursor, inverte: fundo teal e lupa escura. */
+    /* Sob o cursor, inverte: fundo azul e lupa branca (texto escuro era
+       pensado pro teal claro antigo; a identidade única usa um azul
+       escuro aqui — corrigido a pedido do usuário em 14/11/2026). */
     background: var(--cor-acento-teal-hover);
-    color: #1A1A1A;
+    color: #fff;
   }
 
   /* --- Botão do Controle de Qualidade (ao lado da lupa) ---
@@ -11241,7 +11265,7 @@ def montar_html_painel(df_base):
   }
   .dash-qc-btn:hover {
     background: var(--cor-acento-peach);
-    color: #1A1A1A;
+    color: #fff;
   }
   .dash-qc-badge {
     position: absolute;
@@ -11282,11 +11306,11 @@ def montar_html_painel(df_base):
   }
   .dash-secretaria-pill:hover {
     background: var(--cor-acento-teal-hover);
-    color: #1A1A1A;
+    color: #fff;
   }
   .dash-secretaria-pill.ativo {
     background: var(--cor-acento-teal);
-    color: #1A1A1A;
+    color: #fff;
     font-weight: 700;
   }
 
@@ -11418,7 +11442,7 @@ def montar_html_painel(df_base):
     height: 18px;
     border-radius: 999px;
     background: var(--cor-card-elevado);
-    border: 1px solid rgba(114, 180, 174, 0.25);
+    border: 1px solid rgba(11, 92, 173, 0.25);
     transition: background var(--transicao-padrao), border-color var(--transicao-padrao);
   }
   .chave-financeiro-bolinha {
@@ -11461,7 +11485,10 @@ def montar_html_painel(df_base):
     height: 165px;
     min-width: 165px;
     border-radius: 50%;
-    box-shadow: var(--sombra-card);
+    /* Donut (pedido do usuário em 12/11/2026): máscara radial abre o furo
+       central, transparente — mostra o fundo do card. */
+    -webkit-mask: radial-gradient(circle closest-side, transparent 66%, #000 67%);
+    mask: radial-gradient(circle closest-side, transparent 66%, #000 67%);
   }
   .grafico-legenda {
     display: flex;
@@ -11694,7 +11721,7 @@ def montar_html_painel(df_base):
   .cl-dash-filtro button { font-family: var(--fonte); font-size: 11px; font-weight: 700; text-transform: uppercase;
     background: transparent; color: var(--cor-texto-secundario); border: 1px solid var(--cor-card-elevado);
     border-radius: 12px; padding: 4px 11px; }
-  .cl-dash-filtro button.ativo { background: var(--cor-acento-teal); border-color: var(--cor-acento-teal); color: #16211F; }
+  .cl-dash-filtro button.ativo { background: var(--cor-acento-teal); border-color: var(--cor-acento-teal); color: #fff; }
   .cl-dash-filtro button.cl-dash-filtro-todas { border-style: dashed; }
   @media (max-width: 768px) { .cl-dash-kpis { grid-template-columns: repeat(2, 1fr); } }
 
@@ -11822,7 +11849,7 @@ def montar_html_painel(df_base):
   }
   .mini-card-icone-detalhe:hover {
     background: var(--cor-acento-teal);
-    color: #1A1A1A;
+    color: #fff;
   }
   .preview-mini-card .mini-card-corpo {
     flex: 1;
@@ -12003,7 +12030,7 @@ def montar_html_painel(df_base):
   }
   .preview-mapa-botao-zoom:hover {
     background: var(--cor-acento-teal);
-    color: #16211F;
+    color: #fff;
   }
   .preview-mapa-botao-zoom-reset {
     font-size: 14px;
@@ -12145,7 +12172,7 @@ def montar_html_painel(df_base):
     }
     .preview-nav-rapida button:active {
       background: var(--cor-acento-teal);
-      color: #16211F;
+      color: #fff;
     }
 
     #preview-grafico-prazo {
@@ -12220,6 +12247,7 @@ def montar_html_painel(df_base):
       </div>
     </div>
     <div id="botoes-topo">
+      <button type="button" class="btn-inicio" id="btn-inicio-filtros" title="Voltar à tela inicial">← Início</button>
       <button id="filtros-busca-btn-lupa" class="dash-busca-btn-lupa" title="Buscar ação e abrir a Ficha Cadastral">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="7"></circle>
@@ -12241,29 +12269,6 @@ def montar_html_painel(df_base):
       <button class="btn-acento" id="btn-gerar">GERAR RELATÓRIO</button>
       <button class="btn" id="btn-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
       <button class="btn" id="btn-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
-      <button type="button" class="tema-switch" id="tema-switch-filtros" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
-        <span class="tema-switch-trilho">
-          <span class="tema-switch-icone tema-switch-sol">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="4"></circle>
-              <line x1="12" y1="2" x2="12" y2="4"></line>
-              <line x1="12" y1="20" x2="12" y2="22"></line>
-              <line x1="4.2" y1="4.2" x2="5.6" y2="5.6"></line>
-              <line x1="18.4" y1="18.4" x2="19.8" y2="19.8"></line>
-              <line x1="2" y1="12" x2="4" y2="12"></line>
-              <line x1="20" y1="12" x2="22" y2="12"></line>
-              <line x1="4.2" y1="19.8" x2="5.6" y2="18.4"></line>
-              <line x1="18.4" y1="5.6" x2="19.8" y2="4.2"></line>
-            </svg>
-          </span>
-          <span class="tema-switch-icone tema-switch-lua">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-              <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"></path>
-            </svg>
-          </span>
-          <span class="tema-switch-bolinha"></span>
-        </span>
-      </button>
       <div class="acesso-rapido-wrap" id="acesso-rapido-filtros-wrap">
         <button class="botao-icone-topo" id="acesso-rapido-filtros-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -12274,16 +12279,6 @@ def montar_html_painel(df_base):
           </svg>
         </button>
         <div class="acesso-rapido-menu" id="acesso-rapido-filtros-menu">
-          <button class="acesso-rapido-item" id="acesso-rapido-filtros-mapa-mental" title="Mapa Mental">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="18" cy="5" r="3"></circle>
-              <circle cx="6" cy="12" r="3"></circle>
-              <circle cx="18" cy="19" r="3"></circle>
-              <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"></line>
-              <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line>
-            </svg>
-            <span>MAPA MENTAL</span>
-          </button>
           <button class="acesso-rapido-item" id="acesso-rapido-filtros-filtros" title="Filtros">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="4" y1="21" x2="4" y2="14"></line>
@@ -12401,10 +12396,6 @@ def montar_html_painel(df_base):
   </div>
 </div>
 
-<div id="mapa-mental-overlay">
-  <iframe id="mapa-mental-iframe" title="Mapa Mental do BALANÇO PAC"></iframe>
-</div>
-
 <div id="preview-overlay">
   <div id="preview-modal">
     <div class="modal-titulo">
@@ -12421,34 +12412,13 @@ def montar_html_painel(df_base):
         </span>
       </span>
       <div class="modal-titulo-botoes">
+        <button type="button" class="btn-inicio" id="btn-inicio-dash" title="Voltar à tela inicial">← Início</button>
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
         <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
         <button class="btn" id="dash-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
         <button class="btn" id="dash-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
-        <button type="button" class="tema-switch" id="tema-switch-dash" role="switch" aria-checked="false" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
-          <span class="tema-switch-trilho">
-            <span class="tema-switch-icone tema-switch-sol">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="4"></circle>
-                <line x1="12" y1="2" x2="12" y2="4"></line>
-                <line x1="12" y1="20" x2="12" y2="22"></line>
-                <line x1="4.2" y1="4.2" x2="5.6" y2="5.6"></line>
-                <line x1="18.4" y1="18.4" x2="19.8" y2="19.8"></line>
-                <line x1="2" y1="12" x2="4" y2="12"></line>
-                <line x1="20" y1="12" x2="22" y2="12"></line>
-                <line x1="4.2" y1="19.8" x2="5.6" y2="18.4"></line>
-                <line x1="18.4" y1="5.6" x2="19.8" y2="4.2"></line>
-              </svg>
-            </span>
-            <span class="tema-switch-icone tema-switch-lua">
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-                <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"></path>
-              </svg>
-            </span>
-            <span class="tema-switch-bolinha"></span>
-          </span>
-        </button>
+        <button class="btn" id="dash-resumo-acoes" data-abrir-resumo-acoes title="Ações em monitoramento (base Ações do Cronograma)">AÇÕES EM MONITORAMENTO</button>
         <div class="acesso-rapido-wrap" id="acesso-rapido-dash-wrap">
           <button class="botao-icone-topo" id="acesso-rapido-dash-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -12459,16 +12429,6 @@ def montar_html_painel(df_base):
             </svg>
           </button>
           <div class="acesso-rapido-menu" id="acesso-rapido-dash-menu">
-            <button class="acesso-rapido-item" id="acesso-rapido-dash-mapa-mental" title="Mapa Mental">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="18" cy="5" r="3"></circle>
-                <circle cx="6" cy="12" r="3"></circle>
-                <circle cx="18" cy="19" r="3"></circle>
-                <line x1="8.6" y1="10.5" x2="15.4" y2="6.5"></line>
-                <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line>
-              </svg>
-              <span>MAPA MENTAL</span>
-            </button>
             <button class="acesso-rapido-item" id="acesso-rapido-dash-filtros" title="Filtros">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="4" y1="21" x2="4" y2="14"></line>
@@ -12653,6 +12613,19 @@ def montar_html_painel(df_base):
     });
     return await resposta.json();
   }
+
+  // Navegação entre telas (HOME / PAC / MONITORAMENTO) — pedido do usuário
+  // em 14/11/2026. No desktop troca o conteúdo da MESMA janela (chamando a
+  // API, que faz janela.load_html — sem abrir uma segunda janela e sem
+  // recriar a ponte js_api); num navegador comum é só trocar de rota.
+  async function irPara(destino) {
+    if (pacApiDesktopDisponivel()) {
+      await window.pywebview.api["ir_para_" + destino]();
+      return;
+    }
+    window.location.href = destino === "home" ? "/" : "/" + destino;
+  }
+  window.irParaHome = function () { irPara("home"); };
 
   // Variante para os botões que geram um arquivo binário pra baixar/abrir
   // (PDF do relatório completo, PDF da Ficha Cadastral, PPTX da Análise
@@ -13471,7 +13444,7 @@ def montar_html_painel(df_base):
   }
 
   if (!DADOS || !DADOS.blocos || DADOS.blocos.length === 0) {
-    grade.innerHTML = '<p style="color:#fff;padding:20px;">Nenhum bloco de filtro foi carregado (DADOS vazio ou ausente).</p>';
+    grade.innerHTML = '<p style="color:var(--cor-texto-primario);padding:20px;">Nenhum bloco de filtro foi carregado (DADOS vazio ou ausente).</p>';
   } else {
     // GESTÃO não tem card na grade (é controlada pelas pills do topo do
     // dashboard, ligadas ao mesmo estadoSelecao.GESTAO). Todos os demais
@@ -13772,23 +13745,29 @@ def montar_html_painel(df_base):
     "EXECUÇÃO DO OBJETO": COR_VERDE,
     "CONCLUÍDA": COR_AZUL,
   };
-  const CORES_FINANCEIRO = {
-    "VALOR CONTRATADO": COR_VERDE,
-    "OGU": COR_AZUL,
-    "FINANCIAMENTO": COR_VERMELHO,
-    "RECURSO ESTADUAL": COR_AMARELO,
-    // Mesmo cinza de COR_CONTRATADO_NAO_DISCRIMINADO, no lado Python (PDF).
-    "NÃO DISCRIMINADO": "#8C8C8C",
-  };
   // Tokens CONTRATADO (cor cheia) / A CONTRATAR (clareada) por fonte —
   // mesmo dict do lado Python (TONS_FINANCEIRO), repassado pronto via
   // paletaGraficos.financeiro pra nunca sair com tons diferentes entre o
   // painel e o PDF. Fallback só pra arquivo de dados antigo sem a chave.
   const TONS_FINANCEIRO = PALETA_GRAFICOS.financeiro || {
-    apoiado: { contratado: COR_AZUL, aContratar: COR_AZUL },
-    financiamento: { contratado: COR_VERMELHO, aContratar: COR_VERMELHO },
-    estadual: { contratado: COR_AMARELO, aContratar: COR_AMARELO },
+    apoiado: { contratado: "#0B5CAD", aContratar: "#0B5CAD" },
+    financiamento: { contratado: "#2F7F92", aContratar: "#2F7F92" },
+    estadual: { contratado: "#E68A00", aContratar: "#E68A00" },
     naoDiscriminado: "#8C8C8C",
+  };
+  // CORES_FINANCEIRO (legenda do gráfico de pizza "Resumo Financeiro") usa
+  // a MESMA fonte única acima (TONS_FINANCEIRO) em vez de COR_AZUL/
+  // VERMELHO/AMARELO soltos — antes "Financiamento" saía vermelho e
+  // "Recurso Estadual" saía amarelo, divergente da cor usada em todo o
+  // resto do painel/PDF para essas mesmas fontes; corrigido a pedido do
+  // usuário em 14/11/2026.
+  const CORES_FINANCEIRO = {
+    "VALOR CONTRATADO": COR_VERDE,
+    "OGU": TONS_FINANCEIRO.apoiado.contratado,
+    "FINANCIAMENTO": TONS_FINANCEIRO.financiamento.contratado,
+    "RECURSO ESTADUAL": TONS_FINANCEIRO.estadual.contratado,
+    // Mesmo cinza de COR_CONTRATADO_NAO_DISCRIMINADO, no lado Python (PDF).
+    "NÃO DISCRIMINADO": "#8C8C8C",
   };
   const CORES_BARRA_SECRETARIA = {
     "Apoiado Contratado": TONS_FINANCEIRO.apoiado.contratado,
@@ -14485,9 +14464,13 @@ def montar_html_painel(df_base):
     _dadosFinanceiroAtuais = dados;
     desenharGraficoFinanceiro();
     criarGraficoPizza("preview-grafico-panorama", dados.panorama, CORES_FASE);
+    // "Não Assinado" em laranja (mesma cor de "T.C. NÃO FIRMADO" na
+    // apresentação/PDF — ver TONS_FINANCEIRO.estadual), não vermelho nem
+    // amarelo (que já tem outro significado — fase Licitação) —
+    // corrigido a pedido do usuário em 14/11/2026.
     criarGraficoPizza("preview-grafico-termo", dados.termo, {
       "Termo Assinado": COR_VERDE,
-      "Termo Não Assinado": COR_VERMELHO,
+      "Termo Não Assinado": "#E68A00",
     });
     montarPanoramaSecretaria(dados.secretaria);
     montarIndiceDesempenho(dados.desempenho);
@@ -14545,7 +14528,9 @@ def montar_html_painel(df_base):
       return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;")
         .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     };
-    var cores = { vencida: COR_VERMELHO, proxima: COR_AMARELO, no_prazo: COR_VERDE, sem_data: "var(--cor-texto-terciario)" };
+    // "proxima" em laranja (mesma cor de cores_prazo na apresentação/PDF),
+    // não amarelo — corrigido a pedido do usuário em 14/11/2026.
+    var cores = { vencida: COR_VERMELHO, proxima: "#E68A00", no_prazo: COR_VERDE, sem_data: "var(--cor-texto-terciario)" };
     var textoPrazo = function (a) {
       if (a.dias === null || a.dias === undefined) return "sem data";
       if (a.dias < 0) return "vencida há " + (-a.dias) + (a.dias === -1 ? " dia" : " dias");
@@ -14570,7 +14555,7 @@ def montar_html_painel(df_base):
     var html = '<div class="cl-dash-kpis">' +
       kpi("Cláusula não retirada", cl.qtd, formatarMiBi(cl.valor) + " em investimento", "var(--cor-acento-teal)") +
       kpi("Vigência vencida", cl.vencidas, "prazo já expirado", COR_VERMELHO) +
-      kpi("Vence em até " + cl.diasAlerta + " dias", cl.proximas, "pedem prioridade", COR_AMARELO) +
+      kpi("Vence em até " + cl.diasAlerta + " dias", cl.proximas, "pedem prioridade", "#E68A00") +
       kpi("Retirada total", cl.retiradaTotal, "ações já liberadas", COR_VERDE) + '</div>' +
       '<div class="cl-dash-legenda">' + [["vencida", "Vigência vencida"], ["proxima", "Vence em até " + cl.diasAlerta + " dias"],
         ["no_prazo", "No prazo"], ["sem_data", "Sem data"]].map(function (p) {
@@ -14679,9 +14664,9 @@ def montar_html_painel(df_base):
     }
     return [
       { nome: "Valor Contratado", valor: item.valorContratado, cor: COR_VERDE },
-      { nome: "Valor Apoiado OGU", valor: item.valorApoiadoOgu, cor: COR_AZUL },
-      { nome: "Recurso Estadual", valor: item.recursoEstadual, cor: COR_AMARELO },
-      { nome: "Financiamento", valor: item.financiamento, cor: COR_VERMELHO },
+      { nome: "Valor Apoiado OGU", valor: item.valorApoiadoOgu, cor: TONS_FINANCEIRO.apoiado.contratado },
+      { nome: "Recurso Estadual", valor: item.recursoEstadual, cor: TONS_FINANCEIRO.estadual.contratado },
+      { nome: "Financiamento", valor: item.financiamento, cor: TONS_FINANCEIRO.financiamento.contratado },
     ];
   }
 
@@ -14709,9 +14694,9 @@ def montar_html_painel(df_base):
     } else {
       legenda.innerHTML =
         '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_VERDE + ';"></span>Valor Contratado</span>' +
-        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_AZUL + ';"></span>Valor Apoiado OGU</span>' +
-        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_AMARELO + ';"></span>Recurso Estadual</span>' +
-        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + COR_VERMELHO + ';"></span>Financiamento</span>';
+        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + TONS_FINANCEIRO.apoiado.contratado + ';"></span>Valor Apoiado OGU</span>' +
+        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + TONS_FINANCEIRO.estadual.contratado + ';"></span>Recurso Estadual</span>' +
+        '<span class="grafico-secretaria-legenda-item"><span class="grafico-secretaria-legenda-swatch" style="background:' + TONS_FINANCEIRO.financiamento.contratado + ';"></span>Financiamento</span>';
     }
     container.appendChild(legenda);
 
@@ -14862,6 +14847,12 @@ def montar_html_painel(df_base):
   // refletir uma versão nova do arquivo (recém-sincronizada na pasta) é
   // fechar e reabrir o app. Só desktop — no modo web não há processo local
   // pra reiniciar.
+  // "← Início" (tela HOME) nas duas barras — funciona igual em desktop e
+  // web (ver irPara/irParaHome, definidos mais acima) — pedido do usuário
+  // em 14/11/2026.
+  [document.getElementById("btn-inicio-filtros"), document.getElementById("btn-inicio-dash")]
+    .filter(Boolean).forEach(function (btn) { btn.onclick = window.irParaHome; });
+
   var botoesAtualizarBase = [
     document.getElementById("btn-atualizar-base-filtros"),
     document.getElementById("btn-atualizar-base-dash"),
@@ -14950,78 +14941,6 @@ def montar_html_painel(df_base):
     await carregarDashboard();
   };
 
-  // Botão "MAPA MENTAL" (dentro do menu de Acesso Rápido, nas duas barras):
-  // pede ao backend a página autônoma do mapa mental (mesmo recorte dos
-  // filtros atuais) e mostra numa página dedicada, DENTRO do mesmo ambiente
-  // (um <iframe> em tela cheia por cima do painel — ver #mapa-mental-overlay),
-  // em vez de abrir aba/janela separada. Um window.open com Blob de HTML
-  // chegou a ser usado aqui, mas no modo desktop (WebView2/pywebview) isso
-  // faz o Windows tratar o link como um arquivo para "abrir com outro app"
-  // em vez de exibir a página — por isso o iframe embutido, que nunca sai
-  // da janela do programa.
-  var botoesMapaMental = [
-    document.getElementById("acesso-rapido-filtros-mapa-mental"),
-    document.getElementById("acesso-rapido-dash-mapa-mental"),
-  ];
-  var mapaMentalOverlay = document.getElementById("mapa-mental-overlay");
-  var mapaMentalIframe = document.getElementById("mapa-mental-iframe");
-
-  botoesMapaMental.forEach(function (btnMapaMental) {
-    btnMapaMental.onclick = async function () {
-      if (!window.PAC_MODO_WEB && !window.pywebview) {
-        await new Promise(function (resolve) {
-          var jaResolveu = false;
-          var finalizar = function () { if (!jaResolveu) { jaResolveu = true; resolve(); } };
-          window.addEventListener("pywebviewready", finalizar, { once: true });
-          setTimeout(finalizar, 5000);
-        });
-        if (!window.pywebview) {
-          alert("O painel ainda não terminou de carregar — tente novamente em instantes.");
-          return;
-        }
-      }
-
-      var filtros = montarFiltrosAtuais();
-      // o mapa mental é um documento à parte (iframe srcdoc) sem acesso ao
-      // localStorage desta página — manda o tema atual junto pra ele nascer
-      // já na cor certa (ver meta["tema"] em _api_mapa_mental)
-      filtros.tema = obterTemaAtual();
-      botoesMapaMental.forEach(function (b) { b.disabled = true; });
-      var resultado;
-      try {
-        resultado = await chamarAPI("mapa_mental", filtros);
-      } catch (erro) {
-        alert("Ocorreu um erro ao abrir o mapa mental:" + NL + NL + erro);
-        botoesMapaMental.forEach(function (b) { b.disabled = false; });
-        return;
-      }
-      botoesMapaMental.forEach(function (b) { b.disabled = false; });
-
-      if (!resultado || resultado.ok === false) {
-        if (resultado && resultado.vazio) {
-          alert("Nenhum registro encontrado para os filtros selecionados.");
-        } else {
-          alert("Ocorreu um erro ao abrir o mapa mental:" + NL + NL + (resultado ? resultado.erro : "erro desconhecido"));
-        }
-        return;
-      }
-
-      mapaMentalIframe.srcdoc = resultado.html;
-      mapaMentalOverlay.style.display = "flex";
-    };
-  });
-
-  // Botão de fechar mora dentro do próprio iframe (mesma linha do título
-  // "... Mapa Mental", ver #fechar-mapa em mapa_mental_html.py) — como
-  // ele não pode chamar direto o overlay da página pai (documentos
-  // isolados), avisa por postMessage.
-  window.addEventListener("message", function (ev) {
-    if (ev.data && ev.data.tipo === "mapa-mental-fechar") {
-      mapaMentalOverlay.style.display = "none";
-      mapaMentalIframe.srcdoc = "";
-    }
-  });
-
   // Botão "FILTROS" (dentro do menu de Acesso Rápido, nas duas barras):
   // abre o painel de filtros maximizado, por cima do dashboard. No próprio
   // painel de filtros não tem efeito visível (já está aberto) — existe ali
@@ -15036,7 +14955,7 @@ def montar_html_painel(df_base):
   });
 
   // Menu de Acesso Rápido: o botão de ícone (grade 2x2) alterna a exibição
-  // do menu com MAPA MENTAL/FILTROS/PUBLICAR; clicar num item do menu ou
+  // do menu com FILTROS/PUBLICAR; clicar num item do menu ou
   // fora dele fecha de volta. Mesmo componente nas duas barras.
   function configurarAcessoRapido(idWrap) {
     var wrap = document.getElementById(idWrap);
@@ -15074,34 +14993,6 @@ def montar_html_painel(df_base):
       }
     });
   });
-
-  // Chave de tema claro/escuro: alterna o atributo data-tema na <html>
-  // (é ele que troca as variáveis --cor-* do :root, ver <style> no topo
-  // deste HTML), lembra a escolha entre sessões (localStorage) e mantém as
-  // duas chaves (barra de filtros e barra do dash) sincronizadas entre si.
-  // O tema atual também vai junto quando o Mapa Mental é aberto (ver
-  // filtros.tema logo abaixo, no botão MAPA MENTAL), já que ele roda num
-  // <iframe> à parte e não teria como puxar isso do localStorage sozinho.
-  function obterTemaAtual() {
-    return document.documentElement.getAttribute("data-tema") === "claro" ? "claro" : "escuro";
-  }
-  function aplicarTema(tema) {
-    if (tema === "claro") {
-      document.documentElement.setAttribute("data-tema", "claro");
-    } else {
-      document.documentElement.removeAttribute("data-tema");
-    }
-    document.querySelectorAll(".tema-switch").forEach(function (chave) {
-      chave.setAttribute("aria-checked", tema === "claro" ? "true" : "false");
-    });
-    try { localStorage.setItem("cgape-tema", tema); } catch (e) {}
-  }
-  document.querySelectorAll(".tema-switch").forEach(function (chave) {
-    chave.onclick = function () {
-      aplicarTema(obterTemaAtual() === "claro" ? "escuro" : "claro");
-    };
-  });
-  aplicarTema(obterTemaAtual()); // sincroniza aria-checked das duas chaves com o que o <script> do <head> já aplicou
 
   // Botão "GERENCIAL" no topo do dashboard: mesma seleção rápida de STATUS
   // do botão "Gerencial" de dentro do painel de filtros, só que acionável
@@ -15234,59 +15125,59 @@ def montar_html_painel(df_base):
   // gráficos — que é o que permite reconhecê-la na lista.
   var MINIATURAS_PAGINA = {
     capa:
-      '<rect x="6" y="6" width="148" height="96" rx="3" fill="#2E6B66"/>' +
+      '<rect x="6" y="6" width="148" height="96" rx="3" fill="#0B1F3F"/>' +
       '<rect x="18" y="30" width="70" height="7" rx="2" fill="#FFFFFF"/>' +
       '<rect x="18" y="43" width="96" height="10" rx="2" fill="#FFFFFF"/>' +
-      '<rect x="18" y="60" width="52" height="5" rx="2" fill="#E0AB45"/>',
+      '<rect x="18" y="60" width="52" height="5" rx="2" fill="#4FA3E0"/>',
     texto:
-      '<rect x="18" y="16" width="60" height="7" rx="2" fill="#2E6B66"/>' +
+      '<rect x="18" y="16" width="60" height="7" rx="2" fill="#0B1F3F"/>' +
       linhasMini(18, 32, 124, 6, 7),
     graficos:
-      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#2E6B66"/>' +
+      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#0B1F3F"/>' +
       '<rect x="14" y="26" width="60" height="34" rx="3" fill="#9FCE9B"/>' +
-      '<circle cx="118" cy="43" r="17" fill="#4E92BA"/>' +
+      '<circle cx="118" cy="43" r="17" fill="#0B5CAD"/>' +
       colunasMini(14, 96, 5, 12, 26),
     tabela:
-      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#2E6B66"/>' +
+      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#0B1F3F"/>' +
       '<rect x="14" y="26" width="132" height="8" rx="2" fill="#D7EAE7"/>' +
       linhasMini(14, 40, 132, 6, 7),
     texto_tabelas:
-      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#2E6B66"/>' +
+      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#0B1F3F"/>' +
       linhasMini(14, 24, 132, 4, 5) +
       '<rect x="14" y="52" width="76" height="7" rx="2" fill="#D7EAE7"/>' +
       linhasMini(14, 62, 76, 4, 6) +
       medidoresMini(104, 56, 2),
     medidores:
-      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#2E6B66"/>' +
+      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#0B1F3F"/>' +
       medidoresMini(18, 34, 4) +
       medidoresMini(18, 68, 4),
     barras:
-      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#2E6B66"/>' +
+      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#0B1F3F"/>' +
       barrasMini(14, 28, 132, 6, 8),
     mapa:
-      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#2E6B66"/>' +
+      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#0B1F3F"/>' +
       '<path d="M40 30 L104 26 L128 48 L112 84 L56 88 L28 62 Z" fill="#9FCE9B" ' +
       'stroke="#49925C" stroke-width="1.5"/>' +
       '<path d="M72 28 L74 86 M32 56 L126 52" stroke="#FFFFFF" stroke-width="1"/>',
     cards_tabelas:
-      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#2E6B66"/>' +
-      '<rect x="14" y="24" width="40" height="16" rx="3" fill="#2E6B66"/>' +
-      '<rect x="58" y="24" width="40" height="16" rx="3" fill="#2E6B66"/>' +
+      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#0B1F3F"/>' +
+      '<rect x="14" y="24" width="40" height="16" rx="3" fill="#0B1F3F"/>' +
+      '<rect x="58" y="24" width="40" height="16" rx="3" fill="#0B1F3F"/>' +
       '<rect x="14" y="48" width="64" height="7" rx="2" fill="#D7EAE7"/>' +
       linhasMini(14, 58, 64, 4, 6) +
       '<rect x="86" y="48" width="60" height="7" rx="2" fill="#D7EAE7"/>' +
       linhasMini(86, 58, 60, 4, 6),
     cards_tabela:
-      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#2E6B66"/>' +
-      '<rect x="14" y="24" width="40" height="16" rx="3" fill="#2E6B66"/>' +
-      '<rect x="58" y="24" width="40" height="16" rx="3" fill="#2E6B66"/>' +
+      '<rect x="14" y="12" width="52" height="6" rx="2" fill="#0B1F3F"/>' +
+      '<rect x="14" y="24" width="40" height="16" rx="3" fill="#0B1F3F"/>' +
+      '<rect x="58" y="24" width="40" height="16" rx="3" fill="#0B1F3F"/>' +
       '<rect x="14" y="48" width="132" height="8" rx="2" fill="#D7EAE7"/>' +
       linhasMini(14, 60, 132, 4, 6),
     detalhamento:
-      '<rect x="14" y="10" width="46" height="6" rx="2" fill="#2E6B66"/>' +
+      '<rect x="14" y="10" width="46" height="6" rx="2" fill="#0B1F3F"/>' +
       '<rect x="14" y="22" width="132" height="7" rx="2" fill="#D7EAE7"/>' +
       linhasMini(14, 33, 132, 3, 5) +
-      '<rect x="14" y="56" width="46" height="6" rx="2" fill="#2E6B66"/>' +
+      '<rect x="14" y="56" width="46" height="6" rx="2" fill="#0B1F3F"/>' +
       '<rect x="14" y="66" width="132" height="7" rx="2" fill="#D7EAE7"/>' +
       linhasMini(14, 77, 132, 3, 3)
   };
@@ -15308,7 +15199,7 @@ def montar_html_painel(df_base):
     for (var i = 0; i < quantidade; i++) {
       var h = alturaMax * alturas[i % alturas.length];
       out += '<rect x="' + (x + i * (largura + 4)) + '" y="' + (base - h) +
-        '" width="' + largura + '" height="' + h + '" rx="2" fill="#4E92BA"/>';
+        '" width="' + largura + '" height="' + h + '" rx="2" fill="#0B5CAD"/>';
     }
     return out;
   }
@@ -16446,6 +16337,21 @@ def montar_html_painel(df_base):
 """
 
     html_paginal = html_paginal.replace("__DADOS_PAINEL__", dados_painel_json)
+    # Janela "Resumo das ações prioritárias e PAC" (botão RESUMO AÇÕES do
+    # dash) — ver resumo_acoes.py.
+    try:
+        injetar = _modulo_resumo_acoes().HTML_JANELA
+        # Tela HOME → "Ações em Monitoramento" (rota "/monitoramento" ou
+        # API ir_para_monitoramento, no desktop): abre esse overlay já
+        # direto, sem precisar passar pelo painel PAC antes — pedido do
+        # usuário em 14/11/2026. window.abrirResumoAcoes já foi definido
+        # pelo <script> de cima (HTML_JANELA), então pode chamar na hora.
+        if abrir_monitoramento:
+            injetar += '\n<script>window.abrirResumoAcoes();</script>'
+        html_paginal = html_paginal.replace("</body>", injetar + "\n</body>", 1)
+    except Exception:
+        import traceback
+        traceback.print_exc()
     texto_ultima_atualizacao_painel = (
         f"Base de dados atualizada em {ultima_atualizacao.strftime('%d/%m/%Y às %Hh%Mmin')}"
     )
@@ -16461,69 +16367,6 @@ def montar_html_painel(df_base):
     return html_paginal
 
 
-def _data_iso_mapa_mental(valor):
-    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
-        return None
-    try:
-        ts = pd.Timestamp(valor)
-    except (TypeError, ValueError):
-        return None
-    if pd.isna(ts):
-        return None
-    return ts.date().isoformat()
-
-
-def _construir_arvore_mapa_mental(df):
-    # Secretaria/Órgão > Executor > Objeto > Ação (item) — sem o nível de
-    # Eixo (o Objeto já separa bem as ações dentro de cada Executor, e o
-    # Eixo só acrescentava mais um clique sem separar muita coisa). O nó do
-    # Objeto não expande mais dentro do próprio mapa: clicar nele abre a
-    # lista das ações no painel lateral (ver abrirListaAcoes no JS), e
-    # clicar numa ação da lista abre a Ficha Cadastral completa (ver
-    # abrirPainel) — os nós do tipo "item" continuam existindo nos dados
-    # (para contagem, busca e a lista lateral), só não são mais desenhados
-    # como cartão dentro da árvore. Cada folha reaproveita EXATAMENTE os
-    # mesmos dados já usados na Ficha Cadastral (_montar_dados_ficha_acao)
-    # — uma única fonte de verdade para o que aparece nos dois lugares — e
-    # só acrescenta um "id" (garantidamente único, pelo índice da linha) e
-    # a data em ISO da Previsão de Conclusão Atual (para o JS calcular
-    # dias restantes sem precisar reinterpretar o texto já formatado).
-    raiz = {"nome": "BALANÇO PAC - BAHIA", "tipo": "raiz", "filhos": {}}
-
-    for idx, row in df.iterrows():
-        orgao = str(row.get("SECRETARIA_LIMPA")
-                    or "").strip() or "Sem órgão definido"
-
-        dados = _montar_dados_ficha_acao(row)
-        dados["id"] = str(idx)
-        dados["prazo_atual_iso"] = _data_iso_mapa_mental(
-            row.get(col_prazo_atual))
-
-        executor = dados["executor"] or "Sem executor definido"
-        objeto = dados["objeto"] or "Sem objeto"
-
-        n_org = raiz["filhos"].setdefault(
-            orgao, {"nome": orgao, "tipo": "orgao", "filhos": {}})
-        n_exec = n_org["filhos"].setdefault(
-            executor, {"nome": executor, "tipo": "executor", "filhos": {}})
-        n_obj = n_exec["filhos"].setdefault(
-            objeto, {"nome": objeto, "tipo": "objeto", "filhos": {}})
-
-        n_obj["filhos"][f"item-{idx}"] = {
-            "nome": dados["descricao"] or dados["objeto"],
-            "tipo": "item",
-            "dados": dados,
-            "filhos": {},
-        }
-
-    def para_lista(no):
-        no = dict(no)
-        no["filhos"] = [para_lista(f) for f in no["filhos"].values()]
-        return no
-
-    return para_lista(raiz)
-
-
 # =====================================================
 # API DO PAINEL — funções de módulo compartilhadas pela ponte pywebview
 # (classe APIFiltros, usada no modo desktop) e pelas rotas do servidor web
@@ -16533,37 +16376,6 @@ def _construir_arvore_mapa_mental(df):
 # mesmo contrato que o pywebview já usava, para o JS do painel não precisar
 # saber se está falando com uma janela nativa ou com um servidor HTTP.
 # =====================================================
-
-def _api_mapa_mental(filtros):
-    # Monta a página HTML autônoma do mapa mental (ver mapa_mental_html.py)
-    # a partir do MESMO recorte definido pelos filtros ativos no painel no
-    # momento do clique — igual ao botão DASHBOARD. Devolve o HTML pronto
-    # como texto (em vez de já abrir alguma coisa): quem chamou (JS do
-    # botão "MAPA MENTAL") é quem decide como abrir — sempre numa aba/
-    # janela nova, tanto no desktop quanto no navegador.
-    try:
-        df = _filtrar_dataframe(filtros)
-        if df.empty:
-            return {"ok": False, "vazio": True}
-        arvore = _construir_arvore_mapa_mental(df)
-        meta = {
-            "titulo": "BALANÇO PAC - BAHIA",
-            "titulo_aba": "Mapa Mental — BALANÇO PAC",
-            "subtitulo": "Secretarias/Órgãos, Executores e Objetos com ações do PAC",
-            "total": int(len(df)),
-            "gerado_em": agora_bahia().strftime("%d/%m/%Y %H:%M"),
-            # tema atual do painel (chave claro/escuro no topo) — o mapa
-            # mental é um <iframe srcdoc> isolado, sem acesso ao
-            # localStorage da página principal, então recebe pronto aqui
-            # (ver filtros.tema no JS do botão MAPA MENTAL).
-            "tema": filtros.get("tema"),
-        }
-        return {"ok": True, "html": montar_html_mapa_mental(arvore, meta)}
-    except Exception as erro:
-        import traceback
-        traceback.print_exc()
-        return {"ok": False, "erro": str(erro)}
-
 
 def _api_pre_visualizar(filtros):
     # Filtra os dados e devolve os números já agregados (sem gerar nenhum
@@ -16818,6 +16630,39 @@ def _modulo_monitoramento():
     return relatorio_monitoramento
 
 
+def _modulo_resumo_acoes():
+    # Janela "Resumo das ações prioritárias e PAC" do dash (resumo_acoes.py),
+    # portada do Relatório SSP.
+    import resumo_acoes
+    resumo_acoes.configurar(sys.modules[__name__])
+    return resumo_acoes
+
+
+def _api_resumo_acoes(filtros=None):
+    return _modulo_resumo_acoes().api_dados(filtros)
+
+
+def _api_resumo_acoes_base():
+    return _modulo_resumo_acoes().api_base()
+
+
+def _api_resumo_acoes_pptx(filtros=None):
+    if MODO_WEB:
+        return {"mensagem": "A apresentação é gerada pelo programa desktop."}
+    return _modulo_resumo_acoes().api_pptx(filtros)
+
+
+def _api_resumo_acoes_xlsx(filtros=None):
+    if MODO_WEB:
+        return {"mensagem": "A planilha é gerada pelo programa desktop."}
+    return _modulo_resumo_acoes().api_xlsx(filtros)
+
+
+def _api_resumo_acoes_html(filtros=None):
+    # Desktop grava em Downloads e abre; web devolve o HTML para uma aba.
+    return _modulo_resumo_acoes().api_html(filtros, devolver_conteudo=MODO_WEB)
+
+
 def _api_mon_dados_painel():
     # Grade de filtros do MONITORAMENTO: lida na primeira troca do seletor.
     try:
@@ -16944,12 +16789,16 @@ def _api_exportar_ficha_pdf_bytes(item):
 
 
 def abrir_interface_filtros(df_base):
-    # Ponto de entrada exclusivo do modo desktop: pega o HTML pronto de
-    # montar_html_painel e abre numa janela nativa (pywebview/WebView2). O
-    # servidor web NÃO chama esta função — ele usa montar_html_painel
-    # diretamente e serve o resultado como resposta HTTP normal (ver
-    # servidor_web.py).
-    html_paginal = montar_html_painel(df_base)
+    # Ponto de entrada exclusivo do modo desktop: abre a janela nativa
+    # (pywebview/WebView2) já na tela HOME (ver montar_html_home) — PAC
+    # (montar_html_painel) e MONITORAMENTO só são montados quando o
+    # usuário realmente clica num dos dois cartões (ver APIFiltros.
+    # ir_para_pac/ir_para_monitoramento abaixo), pra não gastar tempo
+    # montando o painel pesado à toa se a sessão for só consultar o
+    # Monitoramento, por exemplo — pedido do usuário em 14/11/2026. O
+    # servidor web NÃO chama esta função — ele usa montar_html_painel/
+    # montar_html_home diretamente e serve o resultado como resposta HTTP
+    # normal (ver servidor_web.py).
 
     # Lê a base do MONITORAMENTO em segundo plano, para a primeira troca do
     # seletor e a primeira geração não esperarem a planilha.
@@ -16961,6 +16810,31 @@ def abrir_interface_filtros(df_base):
     # reler a planilha. Holder mutável (não um bool solto) pra funcionar com
     # o fechamento tardio da closure, igual ao 'janela'.
     estado_reinicio = {"pedido": False}
+    # None até create_window rodar, logo abaixo — _carregar_tela chama a
+    # primeira vez (tela HOME) ANTES disso existir, só pra gerar o arquivo
+    # que vira o "url=" do create_window; precisa estar declarada aqui (em
+    # vez de só aparecer pela primeira vez lá embaixo) pra não virar
+    # UnboundLocalError nessa primeira chamada.
+    janela = None
+
+    # Cada tela (HOME/PAC/MONITORAMENTO) vira um arquivo temporário próprio
+    # (mesmo motivo de sempre: WebView2 tem limite de tamanho/escaping pra
+    # HTML passado direto por string — ver comentário mais abaixo, perto do
+    # create_window). Reaproveita o mesmo arquivo a cada vez que a MESMA
+    # tela é recarregada, em vez de acumular um arquivo novo por clique.
+    arquivos_temp_telas = {}
+
+    def _carregar_tela(nome, html):
+        caminho = arquivos_temp_telas.get(nome)
+        if caminho is None:
+            caminho = os.path.join(
+                tempfile.gettempdir(), f"pac_{nome}_{os.getpid()}.html")
+            arquivos_temp_telas[nome] = caminho
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write(html)
+        if janela is not None:
+            janela.load_url(caminho)
+        return caminho
 
     class APIFiltros:
         # Ponte entre o JS do painel e as funções Python já existentes.
@@ -16974,9 +16848,6 @@ def abrir_interface_filtros(df_base):
 
         def pre_visualizar(self, filtros):
             return _api_pre_visualizar(filtros)
-
-        def mapa_mental(self, filtros):
-            return _api_mapa_mental(filtros)
 
         def iniciar_geracao(self, filtros):
             return _api_iniciar_geracao(filtros)
@@ -16992,6 +16863,21 @@ def abrir_interface_filtros(df_base):
 
         def mon_aviso_qualidade(self, filtros_mon):
             return _api_mon_aviso_qualidade(filtros_mon)
+
+        def resumo_acoes(self, filtros=None):
+            return _api_resumo_acoes(filtros)
+
+        def resumo_acoes_base(self):
+            return _api_resumo_acoes_base()
+
+        def resumo_acoes_pptx(self, filtros=None):
+            return _api_resumo_acoes_pptx(filtros)
+
+        def resumo_acoes_xlsx(self, filtros=None):
+            return _api_resumo_acoes_xlsx(filtros)
+
+        def resumo_acoes_html(self, filtros=None):
+            return _api_resumo_acoes_html(filtros)
 
         def escolher_local_e_gerar(self, filtros, secoes=None):
             # Segunda etapa: reaplica os mesmos filtros (barato — é só
@@ -17213,28 +17099,44 @@ def abrir_interface_filtros(df_base):
                 janela.destroy()
             return {"ok": True}
 
-    # Escreve o HTML num arquivo temporário e abre via caminho de arquivo
-    # (url=) em vez de passar a string inteira direto (html=). Passar uma
-    # string HTML muito grande para o WebView2 via html= tem limitações de
-    # tamanho/escaping que podem cortar ou corromper o conteúdo de forma
-    # imprevisível (o sintoma era um SyntaxError sempre no mesmo tipo de
-    # lugar, mesmo com o JS validado como correto) — carregando de um
-    # arquivo real, o navegador lê exatamente como está gravado no disco,
-    # sem esse tipo de limite.
-    arquivo_html_temp = os.path.join(
-        tempfile.gettempdir(), f"pac_filtros_{os.getpid()}.html"
-    )
-    with open(arquivo_html_temp, "w", encoding="utf-8") as f:
-        f.write(html_paginal)
+        # Navegação da tela HOME (e do botão "← Início" nas outras duas) —
+        # pedido do usuário em 14/11/2026. Troca o conteúdo da MESMA janela
+        # (load_url pro arquivo temporário da tela pedida) em vez de abrir
+        # uma segunda janela — não precisa recriar js_api, a ponte
+        # continua a mesma.
+        def ir_para_home(self):
+            _carregar_tela("home", montar_html_home())
+            return {"ok": True}
+
+        def ir_para_pac(self):
+            _carregar_tela("pac", montar_html_painel(df_base))
+            return {"ok": True}
+
+        def ir_para_monitoramento(self):
+            _carregar_tela(
+                "monitoramento", montar_html_painel(df_base, abrir_monitoramento=True))
+            return {"ok": True}
+
+    # Primeiro arquivo (tela HOME) escrito ANTES da janela existir, pra
+    # servir de "url=" do create_window — ver _carregar_tela: com a janela
+    # ainda None, ela só grava o arquivo e devolve o caminho, sem tentar
+    # chamar load_url. Motivo de usar arquivo (url=) em vez de passar a
+    # string inteira direto (html=) pro WebView2: esse parâmetro tem
+    # limitações de tamanho/escaping que podem cortar ou corromper o
+    # conteúdo de forma imprevisível (o sintoma era um SyntaxError sempre
+    # no mesmo tipo de lugar, mesmo com o JS validado como correto) —
+    # carregando de um arquivo real, o navegador lê exatamente como está
+    # gravado no disco, sem esse tipo de limite.
+    arquivo_home = _carregar_tela("home", montar_html_home())
 
     janela = webview.create_window(
         "CGAPE - BALANÇO PAC",
-        url=arquivo_html_temp,
+        url=arquivo_home,
         js_api=APIFiltros(),
         width=1600,
         height=900,
         maximized=True,
-        background_color="#303030",
+        background_color="#EDEFF3",
     )
     # No Windows, o pywebview usa o WebView2 (motor do Edge) por padrão,
     # já presente de fábrica no Windows 10/11 — não exige instalar nada
@@ -17242,11 +17144,12 @@ def abrir_interface_filtros(df_base):
     # com o PyInstaller.
     webview.start()
 
-    # Limpeza do arquivo temporário ao fechar o painel.
-    try:
-        os.remove(arquivo_html_temp)
-    except Exception:
-        pass
+    # Limpeza dos arquivos temporários (um por tela visitada) ao fechar.
+    for caminho in arquivos_temp_telas.values():
+        try:
+            os.remove(caminho)
+        except Exception:
+            pass
 
     # Botão "Atualizar base de dados": a janela já fechou aqui — sobe uma
     # instância nova (que relê a planilha) e sai, deixando o app "reaberto".

@@ -4,7 +4,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = []
-hiddenimports = ['clr']
+hiddenimports = ['clr', 'resumo_acoes', 'identidade_visual']
 hiddenimports += collect_submodules('reportlab.graphics.barcode')
 tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]

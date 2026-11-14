@@ -32,6 +32,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import (Flowable, PageBreak, Paragraph, Spacer, Table,
                                 TableStyle)
 
+import identidade_visual as iv
+
 pac = None  # módulo principal, injetado por configurar()
 
 
@@ -65,22 +67,26 @@ def escala():
 
 
 # Um grupo por código de status, sem agregação. Ordem do fim do processo
-# para o começo. Cores do SSP para os códigos que ele já tinha; 04, 05, 13 e
-# 14 receberam cores novas (sem vermelho, reservado ao prazo vencido e à
-# faixa alta do mapa).
+# para o começo. Cores alinhadas à identidade visual única do projeto (ver
+# identidade_visual.CORES_CATEGORICAS — escala de 14 tons derivada da
+# paleta da referência, não cores soltas) — antes eram uma paleta própria
+# deste relatório, sem vermelho (reservado ao prazo vencido e à faixa alta
+# do mapa, continua reservado) — corrigido a pedido do usuário em
+# 14/11/2026.
+_CC = iv.CORES_CATEGORICAS
 GRUPOS_STATUS = [
-    ("01", "OBRAS CONCLUÍDAS", "#1B5E20"),
-    ("10", "OBRAS INAUGURADAS", "#66BB6A"),
-    ("02", "OBRAS/SERVIÇOS EM ANDAMENTO", "#1565C0"),
-    ("09", "EMISSÃO ORDEM DE SERVIÇO", "#EF6C00"),
-    ("03", "EM LICITAÇÃO/CONTRATAÇÃO", "#C9A227"),
-    ("04", "EM PROCESSAMENTO DE LICITAÇÃO", "#6D4C41"),
-    ("12", "AUTORIZADO", "#00838F"),
-    ("13", "AGUARDANDO AUTORIZO", "#80CBC4"),
-    ("05", "EM DESENVOLVIMENTO DE PROJETOS", "#9E9D24"),
-    ("07", "EM ESTUDO", "#8E24AA"),
-    ("08", "VERIFICAÇÃO DE VIABILIDADE", "#EC7FD1"),
-    ("14", "OBRAS CANCELADAS", "#424242"),
+    ("01", "OBRAS CONCLUÍDAS", f"#{_CC[0]}"),
+    ("10", "OBRAS INAUGURADAS", f"#{_CC[1]}"),
+    ("02", "OBRAS/SERVIÇOS EM ANDAMENTO", f"#{_CC[2]}"),
+    ("09", "EMISSÃO ORDEM DE SERVIÇO", f"#{_CC[3]}"),
+    ("03", "EM LICITAÇÃO/CONTRATAÇÃO", f"#{_CC[4]}"),
+    ("04", "EM PROCESSAMENTO DE LICITAÇÃO", f"#{_CC[5]}"),
+    ("12", "AUTORIZADO", f"#{_CC[6]}"),
+    ("13", "AGUARDANDO AUTORIZO", f"#{_CC[7]}"),
+    ("05", "EM DESENVOLVIMENTO DE PROJETOS", f"#{_CC[8]}"),
+    ("07", "EM ESTUDO", f"#{_CC[9]}"),
+    ("08", "VERIFICAÇÃO DE VIABILIDADE", f"#{_CC[10]}"),
+    ("14", "OBRAS CANCELADAS", f"#{_CC[12]}"),
 ]
 NOME_POR_CODIGO = {c: n for c, n, _h in GRUPOS_STATUS}
 COR_POR_GRUPO = {n: colors.HexColor(h) for _c, n, h in GRUPOS_STATUS}
