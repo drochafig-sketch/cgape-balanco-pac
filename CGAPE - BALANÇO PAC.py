@@ -9565,7 +9565,16 @@ def montar_html_home():
     # a mesma referência usada no resto do projeto.
     logo_pac = iv.data_uri_logo("PAC.png")
     logo_governo = iv.data_uri_logo("GOVERNO.png")
-    atualizacao = f"Base atualizada em {ultima_atualizacao.strftime('%d/%m/%Y às %Hh%Mmin')}"
+    # Cada cartão usa uma base própria (PAC: a planilha principal; MONITORAMENTO:
+    # "Ações do Cronograma.xlsx", lida por resumo_acoes.py) — datas de atualização
+    # diferentes, então cada uma aparece dentro do seu cartão, não num rótulo
+    # único no cabeçalho (que sugeria uma base só) — pedido do usuário em 14/11/2026.
+    atualizacao_pac = f'Base atualizada em {ultima_atualizacao.strftime("%d/%m/%Y às %Hh%Mmin")}'
+    data_monitoramento = _modulo_resumo_acoes().data_atualizacao_base()
+    atualizacao_monitoramento = (
+        f'Base atualizada em {data_monitoramento.strftime("%d/%m/%Y às %Hh%Mmin")}'
+        if data_monitoramento else "Base “Ações do Cronograma” não encontrada"
+    )
     return f"""<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9593,6 +9602,7 @@ body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE
 .home-cartao-rotulo {{ font-size:16px; font-weight:800; letter-spacing:.4px; color:{iv.hex_css(iv.NAVY)};
   text-transform:uppercase; }}
 .home-cartao-sub {{ font-size:12.5px; color:{iv.hex_css(iv.CINZA_TEXTO)}; }}
+.home-cartao-data {{ font-size:11px; color:{iv.hex_css(iv.CINZA_TEXTO)}; }}
 @media (max-width:720px) {{
   .home-cartoes {{ flex-direction:column; align-items:center; }}
   .home-cartao {{ width:100%; max-width:320px; }}
@@ -9603,7 +9613,6 @@ body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE
 <div class="ivp-cabecalho">
   <div class="ivp-titulo">CGAPE</div>
   <div class="ivp-subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
-  <div class="ivp-subtitulo" style="font-weight:400;margin-top:2px">{atualizacao}</div>
   <img class="ivp-governo-logo" src="{logo_governo}" alt="Governo do Estado da Bahia">
 </div>
 <div class="home-corpo">
@@ -9612,6 +9621,7 @@ body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE
       <img class="home-cartao-logo" src="{logo_pac}" alt="PAC">
       <div class="home-cartao-rotulo">Balanço PAC - Bahia</div>
       <div class="home-cartao-sub">Painel de filtros, relatório e apresentação</div>
+      <div class="home-cartao-data">{atualizacao_pac}</div>
     </div>
     <div class="home-cartao" id="home-monitoramento" role="button" tabindex="0"
          aria-label="Abrir Ações em Monitoramento">
@@ -9623,6 +9633,7 @@ body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE
       </svg>
       <div class="home-cartao-rotulo">Ações em Monitoramento</div>
       <div class="home-cartao-sub">Base "Ações do Cronograma"</div>
+      <div class="home-cartao-data">{atualizacao_monitoramento}</div>
     </div>
   </div>
 </div>
@@ -16345,9 +16356,20 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         # API ir_para_monitoramento, no desktop): abre esse overlay já
         # direto, sem precisar passar pelo painel PAC antes — pedido do
         # usuário em 14/11/2026. window.abrirResumoAcoes já foi definido
-        # pelo <script> de cima (HTML_JANELA), então pode chamar na hora.
+        # pelo <script> de cima (HTML_JANELA). Mesma espera por
+        # "pywebviewready" do carregarDashboard() logo acima: no desktop,
+        # chamar antes do evento faz pacApiDesktopDisponivel() mentir que
+        # está no modo web (window.pywebview ainda não existe) e cair no
+        # fetch() de "/api/..." — que não existe numa página file://, e
+        # devolve HTML de erro em vez de JSON ("corrija" do usuário em
+        # 14/11/2026).
         if abrir_monitoramento:
-            injetar += '\n<script>window.abrirResumoAcoes();</script>'
+            injetar += (
+                '\n<script>'
+                'if (window.PAC_MODO_WEB || window.pywebview) { window.abrirResumoAcoes(); }'
+                'else { window.addEventListener("pywebviewready", window.abrirResumoAcoes, { once: true }); }'
+                '</script>'
+            )
         html_paginal = html_paginal.replace("</body>", injetar + "\n</body>", 1)
     except Exception:
         import traceback
@@ -16833,7 +16855,19 @@ def abrir_interface_filtros(df_base):
         with open(caminho, "w", encoding="utf-8") as f:
             f.write(html)
         if janela is not None:
-            janela.load_url(caminho)
+            # load_url() tem que rodar DEPOIS do método ir_para_* (ir_para_home/
+            # ir_para_pac/ir_para_monitoramento) devolver {"ok": True} pro JS, não
+            # antes nem junto: a ponte js_api do pywebview entrega esse retorno
+            # avaliando um JS que chama de volta um callback guardado em
+            # "window.pywebview._returnValuesCallbacks" NA PÁGINA ATUAL — só que
+            # load_url() já troca o documento (e apaga esse callback) antes desse
+            # retorno chegar, e o pywebview estoura "JavascriptException: ... is
+            # not a function" tentando entregar um retorno que não tem mais pra
+            # onde ir. Agendar a navegação pra rodar um instante depois (thread
+            # própria) deixa o retorno da chamada atual ser entregue na tela
+            # ainda viva antes da troca — corrigido a pedido do usuário em
+            # 14/11/2026.
+            threading.Timer(0.1, janela.load_url, args=(caminho,)).start()
         return caminho
 
     class APIFiltros:

@@ -63,7 +63,8 @@
       "Bash(curl -s http://localhost:5000/saude)",
       "Bash(curl -s -o /dev/null -w \"home=%{http_code}\\\\n\" http://localhost:5000/)",
       "Bash(curl -s -o /dev/null -w \"pac=%{http_code}\\\\n\" http://localhost:5000/pac)",
-      "Bash(curl -s -o /dev/null -w \"monitoramento=%{http_code}\\\\n\" http://localhost:5000/monitoramento)"
+      "Bash(curl -s -o /dev/null -w \"monitoramento=%{http_code}\\\\n\" http://localhost:5000/monitoramento)",
+      "Bash(python -m py_compile \"CGAPE - BALANÇO PAC.py\" resumo_acoes.py)"
     ]
   }
 }

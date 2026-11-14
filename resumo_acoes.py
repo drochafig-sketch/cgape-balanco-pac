@@ -108,6 +108,18 @@ def caminho_planilha():
     return caminho if os.path.exists(caminho) else None
 
 
+def data_atualizacao_base():
+    """Data/hora de modificação de "Ações do Cronograma.xlsx" — base própria
+    do MONITORAMENTO, independente da planilha do PAC (ver cabeçalho do
+    módulo). Usada no cartão MONITORAMENTO da tela HOME — pedido do usuário
+    em 14/11/2026. None se o arquivo não existir (tela HOME sem o cartão
+    quebrar por causa disso)."""
+    caminho = caminho_planilha()
+    if caminho is None:
+        return None
+    return datetime.fromtimestamp(os.path.getmtime(caminho))
+
+
 def pasta_downloads():
     pasta = getattr(pac, "PASTA_DOWNLOADS_PADRAO", None)
     if pasta and os.path.isdir(pasta):
