@@ -27,10 +27,12 @@ import re
 import json
 import math
 import colorsys
+import functools
 import itertools
 import shutil
 import subprocess
 import threading
+import time
 import unicodedata
 import webbrowser
 from datetime import datetime, timedelta, timezone
@@ -16956,6 +16958,29 @@ def abrir_interface_filtros(df_base):
     # tela é recarregada, em vez de acumular um arquivo novo por clique.
     arquivos_temp_telas = {}
 
+    # Contador de chamadas da API ainda em andamento (ver _api_pendente
+    # abaixo, usado em TODOS os métodos de APIFiltros): mesmo bug do
+    # load_url() x callback descrito logo abaixo, só que agora pelo lado de
+    # uma chamada LENTA (ex.: resumo_acoes(), que lê/recalcula a planilha do
+    # Monitoramento e pode levar vários segundos) — se o usuário troca de
+    # tela (HOME/PAC/MONITORAMENTO) enquanto ela ainda está rodando, o
+    # pywebview tenta entregar o retorno dela numa página que load_url() já
+    # trocou, e estoura o mesmo "JavascriptException: ... is not a
+    # function". _carregar_tela agora espera essas chamadas terminarem
+    # antes de navegar — corrigido a pedido do usuário em 15/11/2026.
+    _chamadas_pendentes = {"n": 0}
+    LIMITE_ESPERA_NAVEGACAO = 20.0   # segundos; não trava pra sempre se uma chamada travar de vez
+
+    def _api_pendente(func):
+        @functools.wraps(func)
+        def envolvida(*args, **kwargs):
+            _chamadas_pendentes["n"] += 1
+            try:
+                return func(*args, **kwargs)
+            finally:
+                _chamadas_pendentes["n"] -= 1
+        return envolvida
+
     def _carregar_tela(nome, html):
         caminho = arquivos_temp_telas.get(nome)
         if caminho is None:
@@ -16977,7 +17002,16 @@ def abrir_interface_filtros(df_base):
             # própria) deixa o retorno da chamada atual ser entregue na tela
             # ainda viva antes da troca — corrigido a pedido do usuário em
             # 14/11/2026.
-            threading.Timer(0.1, janela.load_url, args=(caminho,)).start()
+            def _navegar_quando_livre():
+                espera = 0.0
+                # pelo mesmo motivo acima, mas agora esperando QUALQUER outra
+                # chamada da API (não só o retorno do próprio ir_para_*) —
+                # pedido do usuário em 15/11/2026.
+                while _chamadas_pendentes["n"] > 0 and espera < LIMITE_ESPERA_NAVEGACAO:
+                    time.sleep(0.1)
+                    espera += 0.1
+                janela.load_url(caminho)
+            threading.Timer(0.1, _navegar_quando_livre).start()
         return caminho
 
     class APIFiltros:
@@ -17262,6 +17296,17 @@ def abrir_interface_filtros(df_base):
             _carregar_tela(
                 "monitoramento", montar_html_painel(df_base, abrir_monitoramento=True))
             return {"ok": True}
+
+    # Envolve TODOS os métodos de APIFiltros em _api_pendente (ver
+    # definição acima, perto de _carregar_tela) — pedido do usuário em
+    # 15/11/2026: fecha de vez essa classe de erro (não só pra
+    # resumo_acoes(), que foi o caso relatado, mas pra qualquer chamada
+    # futura que também possa demorar).
+    for _nome_metodo, _metodo in list(vars(APIFiltros).items()):
+        if _nome_metodo.startswith("__") or not callable(_metodo):
+            continue
+        setattr(APIFiltros, _nome_metodo, _api_pendente(_metodo))
+    del _nome_metodo, _metodo
 
     # Primeiro arquivo (tela HOME) escrito ANTES da janela existir, pra
     # servir de "url=" do create_window — ver _carregar_tela: com a janela

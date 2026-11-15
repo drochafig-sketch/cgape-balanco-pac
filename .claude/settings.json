@@ -106,7 +106,11 @@
       "Bash(powershell -Command 'Get-NetTCPConnection -LocalPort 8061 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }')",
       "Bash(python \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\verificar_nav_proximidade.py\")",
       "Bash(python \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\screenshot_nav.py\")",
-      "Bash(python \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\verificar_secretaria_telacheia.py\")"
+      "Bash(python \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\verificar_secretaria_telacheia.py\")",
+      "Bash(awk '/class APIFiltros:/{start=NR} start && /^    class |^class /{if\\(NR!=start && start\\){print start\" \"NR; exit}}' \"CGAPE - BALANÇO PAC.py\")",
+      "Bash(awk -F: '$1>16983 && $1<17290')",
+      "Bash(python \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\extrair_dados_indice.py\")",
+      "Bash(python \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\gerar_memoria_calculo.py\")"
     ]
   }
 }
