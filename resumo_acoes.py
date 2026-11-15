@@ -9,6 +9,7 @@ pasta do programa); independe da planilha e dos filtros do PAC.
 Ligado ao módulo principal pelo mesmo padrão do gerar_pptx_pac:
 configurar(sys.modules[__name__]).
 """
+import json
 import math
 import os
 import re
@@ -78,6 +79,30 @@ RA_TOP30 = [
     "Irecê", "Senhor do Bonfim", "Casa Nova", "Dias d'Ávila",
     "Campo Formoso", "Candeias", "Brumado", "Conceição do Coité"]
 
+# População de cada um dos 30 acima — MESMA fonte/arquivo de RA_TOP30_FONTE
+# (IBGE, "Estimativas da População Residente nos Municípios Brasileiros",
+# data de referência 01/07/2026, arquivo oficial
+# https://ftp.ibge.gov.br/Estimativas_de_Populacao/Estimativas_2026/estimativa_dou_2026.xlsx,
+# aba "municípios", UF=BA). Conferido em 15/11/2026: a ordem de RA_TOP30
+# bate exatamente com a ordem decrescente de população deste arquivo, e o
+# 31º colocado é mesmo Bom Jesus da Lapa — usada para os indicadores da
+# avaliação quantitativa (item 3.1 do pedido do usuário em 15/11/2026:
+# per capita, gap de participação, Índice de Necessidade de Investimento).
+RA_TOP30_POP = {
+    "Salvador": 2_559_945, "Feira de Santana": 663_408,
+    "Vitória da Conquista": 398_970, "Camaçari": 323_676,
+    "Juazeiro": 257_616, "Lauro de Freitas": 221_023,
+    "Itabuna": 196_041, "Ilhéus": 189_259, "Porto Seguro": 184_087,
+    "Barreiras": 172_521, "Jequié": 169_623, "Alagoinhas": 161_682,
+    "Teixeira de Freitas": 154_114, "Eunápolis": 121_577,
+    "Simões Filho": 120_429, "Luís Eduardo Magalhães": 119_947,
+    "Paulo Afonso": 119_686, "Santo Antônio de Jesus": 110_268,
+    "Guanambi": 93_873, "Valença": 90_075, "Jacobina": 87_121,
+    "Serrinha": 84_928, "Irecê": 79_105, "Senhor do Bonfim": 78_193,
+    "Casa Nova": 76_416, "Dias d'Ávila": 75_516, "Campo Formoso": 75_311,
+    "Candeias": 74_645, "Brumado": 74_617, "Conceição do Coité": 71_860,
+}
+
 
 def _chave_municipio(nome):
     """Só letras e números, sem acento e em maiúsculas: "Dias D'Ávila" e
@@ -88,6 +113,65 @@ def _chave_municipio(nome):
 
 
 RA_TOP30_CHAVES = {_chave_municipio(m) for m in RA_TOP30}
+# Mesma chave normalizada de RA_TOP30_CHAVES, pra achar a população de um
+# município pelo NOME COMO ELE VEM DA PLANILHA (pode diferir de RA_TOP30 em
+# acento/maiúscula — ex.: "Dias D'Ávila" na planilha x "Dias d'Ávila" aqui),
+# em vez de por igualdade exata de string — corrigido a pedido do usuário
+# em 15/11/2026, depois de "Dias D'Ávila" sair com população 0 no teste.
+RA_TOP30_POP_CHAVE = {_chave_municipio(nome): pop for nome, pop in RA_TOP30_POP.items()}
+
+# ---- Carteira dos 30 maiores municípios: mapa oculto + gráfico/avaliação ---
+# Pedido do usuário em 15/11/2026: o mapa de investimento por município sai
+# de vista (mas as funções continuam existindo, religáveis por aqui), e no
+# lugar entram um gráfico de colunas e uma avaliação quantitativa dos 30
+# maiores municípios por população, antes da grade de cards.
+RA_HTML_MOSTRAR_MAPA = False
+
+# Pesos do Índice de Necessidade de Investimento (0 a 100) — combinação
+# ponderada e normalizada (min-max entre os 30) de: investimento per capita
+# (invertido — quanto menor, maior a necessidade), gap de participação
+# (população % menos investimento %), fração do investimento ainda em
+# status iniciais da carteira (maturidade) e cobertura — nº de ações e de
+# eixos atendidos (invertida — quanto menor a cobertura, maior a
+# necessidade). Pedido do usuário em 15/11/2026; pesos documentados aqui
+# porque a fórmula depende deles — mudar um sem mudar o outro descalibra o
+# índice.
+RA_PESOS_NECESSIDADE = {
+    "per_capita": 0.40,
+    "gap": 0.30,
+    "maturidade": 0.20,
+    "cobertura": 0.10,
+}
+
+# Classificação de maturidade da carteira por STATUS — mesmo código "NN -"
+# no início do texto do Status já usado em todo o resto do módulo (ver
+# re.sub em _acoes_do_municipio), aqui para decidir se o valor da ação
+# ainda está em estágio inicial (estudo/projeto/licitação) ou já avançou
+# para obra/conclusão. "14 - Obras Canceladas" fica de fora dos dois
+# grupos — não é nem um bom nem um mau sinal de maturidade, é uma ação que
+# saiu da carteira.
+RA_CODIGOS_STATUS_INICIAL = {"03", "04", "05", "07", "08", "12", "13"}
+RA_CODIGOS_STATUS_AVANCADO = {"01", "02", "09", "10"}
+
+# Cores das 3 classes de prioridade (mesma paleta já usada nas faixas do
+# mapa, RA_FAIXAS_MAPA — reaproveitadas aqui a pedido do usuário em
+# 15/11/2026, sem inventar uma paleta nova): vermelho = Prioridade alta,
+# laranja = Atenção, azul da marca (RA_AZUL) = Adequado.
+RA_COR_PRIORIDADE_ALTA = "#D32F45"
+RA_COR_ATENCAO = "#F0834E"
+RA_COR_ADEQUADO = f"#{RA_AZUL}"
+
+
+def _maturidade_status(status_bruto):
+    """"inicial"/"avancado"/None (cancelada ou código não mapeado) a partir
+    do código "NN - " no início do texto bruto do Status."""
+    m = re.match(r"^\s*(\d+)\s*-", str(status_bruto or ""))
+    codigo = m.group(1) if m else ""
+    if codigo in RA_CODIGOS_STATUS_INICIAL:
+        return "inicial"
+    if codigo in RA_CODIGOS_STATUS_AVANCADO:
+        return "avancado"
+    return None
 _ra_cache = None   # (caminho, data do arquivo, base)
 
 # PPTX (mesmas cores/fontes do slide do SSP)
@@ -862,15 +946,16 @@ def _cor_faixa(v):
 
 
 def _investimento_por_municipio(caminho_base, dados):
-    """{chave normalizada do geojson: {nome, valor, qtd, orc, eixos}} do
-    recorte atual, e a lista dos que não casaram com o geojson."""
+    """({chave normalizada do geojson: {nome, valor, qtd, orc, eixos}} do
+    recorte atual, a lista dos que não casaram com o geojson, dados dos
+    cards de ação dos 30 maiores — ver _dados_cards_acoes_top30)."""
     import relatorio_monitoramento as mon
     base = _ra_base(caminho_base)
     if dados.get("entregue"):
         base, _ = _ra_juntar_entregues(base)
     df = base.iloc[dados["ids"]]
     if "Município" not in df.columns:
-        return {}, []
+        return {}, [], {"campos": [], "acoes": []}
     chave = df["Município"].map(mon.normalizar).map(
         lambda k: mon.APELIDOS_MUNICIPIO.get(k, k))
     saida = {}
@@ -878,12 +963,69 @@ def _investimento_por_municipio(caminho_base, dados):
         if not k:
             continue
         por_eixo = parte.groupby("_eixo")["_valor"].sum().sort_values(ascending=False)
+        eixos_com_valor = [(e, float(v)) for e, v in por_eixo.items() if v > 0]
+        # Maturidade da carteira (pedido do usuário em 15/11/2026, ver
+        # RA_CODIGOS_STATUS_INICIAL/AVANCADO e _maturidade_status): soma do
+        # _valor por grupo de status, à parte dos campos já formatados de
+        # "acoes" — o índice de necessidade precisa do número bruto, não do
+        # texto "R$ X Mi" que _acoes_do_municipio devolve.
+        maturidade = parte["_f_status"].map(_maturidade_status)
         saida[k] = {"valor": float(parte["_valor"].sum()), "qtd": int(len(parte)),
                     "orc": bool(parte["_orc"].any()),
                     "nome": parte["Município"].astype(str).str.strip().mode().iloc[0],
-                    "eixos": [(e, float(v)) for e, v in por_eixo.items() if v > 0][:4],
+                    "eixos": eixos_com_valor[:4],
+                    "n_eixos": len(eixos_com_valor),
+                    "valor_inicial": float(parte.loc[maturidade == "inicial", "_valor"].sum()),
+                    "valor_avancado": float(parte.loc[maturidade == "avancado", "_valor"].sum()),
                     "acoes": _acoes_do_municipio(parte)}
-    return saida, []
+    return saida, [], _dados_cards_acoes_top30(df)
+
+
+def _dados_cards_acoes_top30(df):
+    """Uma linha por ação dos 30 maiores municípios (RA_TOP30), pra janela de
+    cards aberta ao clicar num objeto na grade Município > Status > Objeto
+    (ver detalhe_rank/cartao_municipio) — pedido do usuário em 15/11/2026.
+    Município/status/objeto na MESMA forma usada pelos data-* do clique (ver
+    _acoes_do_municipio), pra o filtro em JS bater certo com a linha."""
+    campos = ["mu", "st", "ob", "nome", "mun", "ex", "ds", "av", "pz", "val", "orc"]
+    if "_top30" not in df.columns:
+        return {"campos": campos, "acoes": []}
+    parte = df[df["_top30"]]
+    if parte.empty:
+        return {"campos": campos, "acoes": []}
+    objeto = (parte["_f_objeto"] if "_f_objeto" in parte.columns
+              else pd.Series(RA_SEM_INFO, index=parte.index))
+    status = parte["_f_status"].map(lambda s: re.sub(r"^\d+\s*-\s*", "", str(s)))
+    nome_acao = (parte["Ação"] if "Ação" in parte.columns else objeto).map(
+        lambda v: " ".join(str(v).split()) if pd.notna(v) else "")
+    executor = (parte["Executor"] if "Executor" in parte.columns
+                else pd.Series("", index=parte.index)).fillna("")
+    if "Detalhamento Escopo" in parte.columns:
+        descricao = parte["Detalhamento Escopo"]
+    elif "Escopo" in parte.columns:
+        descricao = parte["Escopo"]
+    else:
+        descricao = pd.Series("", index=parte.index)
+    descricao = descricao.fillna("")
+    avanco = (pd.to_numeric(parte["Avanço"], errors="coerce") if "Avanço" in parte.columns
+              else pd.Series(float("nan"), index=parte.index))
+    prazo = (parte["_d_entrega"] if "_d_entrega" in parte.columns
+             else pd.Series(pd.NaT, index=parte.index))
+
+    acoes = []
+    for i in parte.index:
+        av, pz, nome = avanco.loc[i], prazo.loc[i], str(nome_acao.loc[i]).strip()
+        acoes.append([
+            _chave_municipio(parte.loc[i, "Município"]), status.loc[i], objeto.loc[i],
+            nome or str(objeto.loc[i]),
+            str(parte.loc[i, "Município"]).strip() if pd.notna(parte.loc[i, "Município"]) else "",
+            str(executor.loc[i]).strip(), " ".join(str(descricao.loc[i]).split()),
+            round(float(av), 1) if pd.notna(av) else None,
+            pz.strftime("%d/%m/%Y") if pd.notna(pz) else "A definir",
+            _ra_rs(float(parte.loc[i, "_valor"])) + ("*" if bool(parte.loc[i, "_orc"]) else ""),
+            bool(parte.loc[i, "_orc"]),
+        ])
+    return {"campos": campos, "acoes": acoes}
 
 
 def _acoes_do_municipio(parte):
@@ -954,35 +1096,335 @@ def _svg_mapa(por_mun, largura=640):
     return svg, fora
 
 
-def gerar_html_resumo_acoes(caminho_base, dados):
-    """Página única (abre sem internet) com cards, mapa de investimento por
-    município e o quadro Status × Eixo do recorte atual."""
-    por_mun, _ = _investimento_por_municipio(caminho_base, dados)
-    svg, fora = _svg_mapa(por_mun)
+# ---- Avaliação da carteira dos 30 maiores municípios -----------------------
+# Pedido do usuário em 15/11/2026 (substitui o mapa, oculto por
+# RA_HTML_MOSTRAR_MAPA): indicadores quantitativos/comparativos e o Índice
+# de Necessidade de Investimento de cada um dos 30 maiores municípios por
+# população, usados no gráfico de colunas, na "Leitura da carteira" e no
+# selo de cada cartão.
+def _calcular_indicadores_carteira_top30(ranking):
+    """[{pos_pop, nome, populacao, valor, qtd, orc, per_capita, pct_pop,
+    pct_investimento, gap_participacao, fracao_inicial, n_eixos, indice,
+    classe, cor_classe}], mediana_per_capita — um item por município de
+    `ranking` (já na ordem de RA_TOP30, com os campos de
+    _investimento_por_municipio ou os de reserva de município sem ação).
+    A mediana usa só os municípios com ação no recorte atual, para o filtro
+    não arrastar a mediana pra baixo com municípios zerados por ele."""
+    investimento_total = sum(m["valor"] for m in ranking) or 1.0
+    populacao_total = sum(RA_TOP30_POP.values()) or 1.0
 
-    # legenda: só as faixas que existem no recorte, com a contagem
-    valores = [i["valor"] for i in por_mun.values() if i["valor"] > 0]
-    legenda = []
-    for minimo, maximo, cor in reversed(RA_FAIXAS_MAPA):
-        n = sum(1 for v in valores if v >= minimo and (maximo is None or v < maximo))
-        if not n:
-            continue
-        rot = (f"até {_ra_rs(maximo)}" if minimo == 0 else
-               f"acima de {_ra_rs(minimo)}" if maximo is None else
-               f"{_ra_rs(minimo)} a {_ra_rs(maximo)}")
-        legenda.append(f'<li><i style="background:{cor}"></i>{rot}'
-                       f'<b>{n} município{"s" if n > 1 else ""}</b></li>')
-    sem_valor = sum(1 for i in por_mun.values() if i["valor"] <= 0)
-    legenda.append(f'<li><i style="background:{RA_COR_SEM_ACAO}"></i>sem ação'
-                   + (f" ou sem valor ({sem_valor} com ação e R$ 0)" if sem_valor else "")
-                   + "</li>")
+    itens = []
+    for i, m in enumerate(ranking):
+        populacao = RA_TOP30_POP_CHAVE.get(_chave_municipio(m["nome"]), 0)
+        per_capita = (m["valor"] / populacao) if populacao else 0.0
+        pct_pop = populacao / populacao_total * 100
+        pct_investimento = m["valor"] / investimento_total * 100
+        base_maturidade = m.get("valor_inicial", 0.0) + m.get("valor_avancado", 0.0)
+        fracao_inicial = (m.get("valor_inicial", 0.0) / base_maturidade
+                          if base_maturidade else 0.0)
+        itens.append({
+            "pos_pop": i + 1, "nome": m["nome"], "populacao": populacao,
+            "valor": m["valor"], "qtd": m["qtd"], "orc": m.get("orc", False),
+            "per_capita": per_capita, "pct_pop": pct_pop,
+            "pct_investimento": pct_investimento,
+            "gap_participacao": pct_pop - pct_investimento,
+            "fracao_inicial": fracao_inicial, "n_eixos": m.get("n_eixos", 0),
+        })
+
+    def minmax(valores):
+        # 0.5 (meio da escala) quando todos os valores são iguais — não há
+        # necessidade nem excesso relativo para distinguir.
+        baixo, alto = min(valores), max(valores)
+        if alto <= baixo:
+            return [0.5] * len(valores)
+        return [(v - baixo) / (alto - baixo) for v in valores]
+
+    cobertura_qtd = minmax([it["qtd"] for it in itens])
+    cobertura_eixo = minmax([it["n_eixos"] for it in itens])
+    coberturas = [(a + b) / 2 for a, b in zip(cobertura_qtd, cobertura_eixo)]
+    norm_per_capita = minmax([it["per_capita"] for it in itens])
+    norm_gap = minmax([it["gap_participacao"] for it in itens])
+    norm_maturidade = minmax([it["fracao_inicial"] for it in itens])
+    pesos = RA_PESOS_NECESSIDADE
+
+    for it, npc, ngap, nmat, cob in zip(
+        itens, norm_per_capita, norm_gap, norm_maturidade, coberturas
+    ):
+        # per_capita e cobertura entram invertidos: quanto MENOR o valor
+        # per capita/a cobertura, MAIOR a necessidade de investimento.
+        it["indice"] = round(100 * (
+            pesos["per_capita"] * (1 - npc)
+            + pesos["gap"] * ngap
+            + pesos["maturidade"] * nmat
+            + pesos["cobertura"] * (1 - cob)
+        ), 1)
+
+    indices = pd.Series([it["indice"] for it in itens])
+    q75, q50 = indices.quantile(0.75), indices.quantile(0.50)
+    for it in itens:
+        if it["indice"] >= q75:
+            it["classe"], it["cor_classe"] = "Prioridade alta", RA_COR_PRIORIDADE_ALTA
+        elif it["indice"] >= q50:
+            it["classe"], it["cor_classe"] = "Atenção", RA_COR_ATENCAO
+        else:
+            it["classe"], it["cor_classe"] = "Adequado", RA_COR_ADEQUADO
+
+    per_capitas_com_acao = [it["per_capita"] for it in itens if it["qtd"] > 0]
+    mediana_per_capita = (float(pd.Series(per_capitas_com_acao).median())
+                          if per_capitas_com_acao else 0.0)
+    return itens, mediana_per_capita
+
+
+def _gerar_leitura_carteira(itens, mediana_per_capita):
+    """(html da lista dos 5 mais prioritários, html do parágrafo geral) —
+    texto gerado a partir dos números de `itens` (ver
+    _calcular_indicadores_carteira_top30), nunca um texto fixo."""
+    por_investimento = sorted(itens, key=lambda it: -it["valor"])
+    pos_investimento = {it["nome"]: i + 1 for i, it in enumerate(por_investimento)}
+    prioritarios = sorted(itens, key=lambda it: -it["indice"])[:5]
+
+    frases = []
+    for it in prioritarios:
+        delta = ((it["per_capita"] - mediana_per_capita) / mediana_per_capita * 100
+                 if mediana_per_capita else 0.0)
+        sentido = "acima" if delta >= 0 else "abaixo"
+        frases.append(
+            f'<li><b>{_esc(it["nome"])}</b>: {it["pos_pop"]}º mais populoso, '
+            f'{pos_investimento[it["nome"]]}º em investimento; per capita de '
+            f'{_esc(_rs_cheio(it["per_capita"]))}, {abs(delta):.0f}% {sentido} da '
+            f'mediana dos 30; {it["fracao_inicial"] * 100:.0f}% do valor ainda em '
+            'estudo/projeto/licitação.</li>'
+        )
+
+    total = sum(it["valor"] for it in itens) or 1.0
+    valor_salvador = next(
+        (it["valor"] for it in itens if _chave_municipio(it["nome"]) == _chave_municipio("Salvador")),
+        0.0,
+    )
+    com_acao = sum(1 for it in itens if it["qtd"])
+    abaixo_mediana = sum(1 for it in itens if it["qtd"] and it["per_capita"] < mediana_per_capita)
+    paragrafo = (
+        f'Salvador concentra {valor_salvador / total * 100:.0f}% do investimento '
+        f'somado dos 30 maiores municípios por população. Entre os {com_acao} com '
+        f'ação no recorte, {abaixo_mediana} têm investimento per capita abaixo da '
+        'mediana do grupo — a desigualdade por habitante é maior do que a '
+        'distribuição do investimento bruto, sozinha, sugere.'
+    )
+    return "".join(frases), paragrafo
+
+
+# Geometria do gráfico de colunas (SVG) — ver _svg_grafico_investimento_top30.
+# Margens esquerda/direita calibradas pelo texto mais largo que de fato
+# aparece nelas (rótulo "R$ 1,04 BI" do eixo Y e o nome do último município,
+# sempre "Conceição do Coité" — RA_TOP30 é fixa), medindo o getBBox() real
+# no navegador: com as margens antigas (58/10) os rótulos mais largos do
+# eixo Y e o nome da última coluna ficavam com as pontas cortadas pelo
+# viewBox do SVG — corrigido a pedido do usuário em 15/11/2026.
+RA_GRAFICO_LARGURA = 920
+RA_GRAFICO_ALTURA = 260
+RA_GRAFICO_MARGEM_ESQ = 68
+RA_GRAFICO_MARGEM_DIR = 90
+RA_GRAFICO_MARGEM_SUP = 22
+RA_GRAFICO_MARGEM_INF = 108
+
+
+def _svg_grafico_investimento_top30(itens, quebra, escala, vmax, mediana_per_capita):
+    """Colunas (SVG puro, sem internet) do investimento dos 30 maiores
+    municípios por população, na ordem de RA_TOP30 — substitui o mapa
+    (RA_HTML_MOSTRAR_MAPA=False) a pedido do usuário em 15/11/2026. Cor por
+    classe de prioridade (ver _calcular_indicadores_carteira_top30); traço
+    pontilhado = investimento esperado pela população do município, pela
+    mediana per capita dos que têm ação no recorte."""
+    n = len(itens)
+    largura_total = RA_GRAFICO_LARGURA
+    altura_total = RA_GRAFICO_MARGEM_SUP + RA_GRAFICO_ALTURA + RA_GRAFICO_MARGEM_INF
+    largura_util = largura_total - RA_GRAFICO_MARGEM_ESQ - RA_GRAFICO_MARGEM_DIR
+    largura_col = largura_util / n if n else largura_util
+    largura_barra = largura_col * 0.62
+    base_y = RA_GRAFICO_MARGEM_SUP + RA_GRAFICO_ALTURA
+
+    def y_de(valor):
+        return base_y - (min(valor, escala) / escala * RA_GRAFICO_ALTURA if escala else 0)
+
+    partes = []
+    n_linhas_grade = 4
+    for i in range(n_linhas_grade + 1):
+        y = base_y - (RA_GRAFICO_ALTURA * i / n_linhas_grade)
+        valor_linha = escala * i / n_linhas_grade
+        partes.append(
+            f'<line x1="{RA_GRAFICO_MARGEM_ESQ}" y1="{y:.1f}" x2="{largura_total - 6}" y2="{y:.1f}" '
+            'class="grafico-grade"/>'
+            f'<text x="{RA_GRAFICO_MARGEM_ESQ - 8}" y="{y + 4:.1f}" text-anchor="end" '
+            f'class="grafico-eixo-y">{_esc(_ra_rs(valor_linha) if valor_linha else "R$ 0")}</text>'
+        )
+
+    for i, it in enumerate(itens):
+        x = RA_GRAFICO_MARGEM_ESQ + i * largura_col + (largura_col - largura_barra) / 2
+        tem_acao = it["qtd"] > 0
+        y = y_de(it["valor"]) if tem_acao else base_y - 3
+        altura_barra = max(0.0, base_y - y) if tem_acao else 3.0
+        cor = it["cor_classe"] if tem_acao else "#D8DCE3"
+        tip = (
+            f'data-n="{_esc(it["nome"])}" data-pos="{it["pos_pop"]}" '
+            f'data-v="{_esc(_ra_rs(it["valor"]) if tem_acao else "sem ação no recorte")}" '
+            f'data-q="{_esc(_ra_qtd(it["qtd"]) if tem_acao else "")}" '
+            f'data-pc="{_esc(_rs_cheio(it["per_capita"])) if it["populacao"] and tem_acao else ""}" '
+            f'data-idx="{it["indice"]:.0f}" data-classe="{_esc(it["classe"])}"'
+        )
+        partes.append(
+            f'<rect class="barra-top30" tabindex="0" data-alvo="mun-card-{i}" '
+            f'x="{x:.1f}" y="{y:.1f}" width="{largura_barra:.1f}" height="{altura_barra:.1f}" '
+            f'rx="3" fill="{cor}" {tip}><title>{_esc(it["nome"])}</title></rect>'
+        )
+        if quebra and it["valor"] == vmax:
+            partes.append(
+                f'<text x="{x + largura_barra / 2:.1f}" y="{y - 6:.1f}" text-anchor="middle" '
+                'class="grafico-quebra">≈</text>'
+            )
+        if it["populacao"] and mediana_per_capita:
+            y_esperado = y_de(mediana_per_capita * it["populacao"])
+            if y_esperado >= RA_GRAFICO_MARGEM_SUP:
+                partes.append(
+                    f'<line x1="{x - 2:.1f}" y1="{y_esperado:.1f}" x2="{x + largura_barra + 2:.1f}" '
+                    f'y2="{y_esperado:.1f}" class="grafico-esperado"/>'
+                )
+        centro_x = x + largura_barra / 2
+        rotulo = it["nome"] if tem_acao else f'{it["nome"]} (sem ação)'
+        partes.append(
+            f'<text x="{centro_x:.1f}" y="{base_y + 14:.1f}" '
+            f'transform="rotate(45 {centro_x:.1f} {base_y + 14:.1f})" '
+            f'class="grafico-eixo-x{"" if tem_acao else " sem-acao"}">{_esc(rotulo)}</text>'
+        )
+
+    partes.append(
+        f'<line x1="{RA_GRAFICO_MARGEM_ESQ}" y1="{base_y:.1f}" x2="{largura_total - 6}" '
+        f'y2="{base_y:.1f}" class="grafico-eixo"/>'
+    )
+    return (
+        f'<svg class="grafico-top30" viewBox="0 0 {largura_total} {altura_total}" '
+        'role="img" aria-label="Investimento dos 30 maiores municípios por população">'
+        + "".join(partes) + "</svg>"
+    )
+
+
+def _escopar_css(css, escopo, nao_escopar=()):
+    """Prefixa cada seletor de nível superior do `css` (inclusive dentro de
+    @media) com `escopo `, convertendo ":root" e "*" nos equivalentes
+    escopados — usado para isolar o CSS do Monitoramento (`.mon-ra`) de
+    qualquer CSS global da Apresentação CGAPE quando os dois aparecem na
+    mesma página (pedido do usuário em 15/11/2026: "nada de seletores
+    globais como header, main, body, .card, .cards, :root" vazando de um
+    pro outro, nos dois sentidos). Reaproveita o MESMO texto de CSS usado
+    pela página autônoma (gerar_html_resumo_acoes) em vez de manter uma
+    segunda cópia, que haveria o risco de divergir dela com o tempo.
+
+    `nao_escopar`: prefixos de seletor que saem de "escopo" sem nenhum
+    prefixo — caso do tooltip #mon-dica, que fica fora de qualquer
+    .mon-ra de propósito (ver montar_partes_html_monitoramento)."""
+    # Comentários removidos ANTES de tudo: um comentário logo antes de um
+    # seletor (ex.: antes de ":root{...}") entrava junto do texto do
+    # seletor e quebrava a comparação exata com ":root"/"*" abaixo — bug
+    # encontrado na validação em 15/11/2026 (as variáveis de cor --navy/
+    # --azul ficavam indefinidas dentro de .mon-ra).
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+    def pertence_a(sel, p):
+        # sel é o próprio p, ou p seguido de combinador/pseudo-classe/classe/
+        # atributo (ex.: "p .x", "p:hover", "p.aberta", "p[data-x]") — NUNCA
+        # um id/classe diferente que só começa igual (ex.: "p2" não é "p").
+        # Faltava o caso "p.classe" (sem espaço): "#ra-oc-fundo.aberta" caía
+        # no escopo .mon-ra por engano (a janela nunca aparecia, pois o
+        # elemento de verdade fica FORA de .mon-ra) — bug encontrado na
+        # validação em 15/11/2026.
+        if sel == p:
+            return True
+        if not sel.startswith(p):
+            return False
+        seguinte = sel[len(p)]
+        return not (seguinte.isalnum() or seguinte in "-_")
+
+    def prefixar_seletor(sel):
+        sel = sel.strip()
+        if not sel:
+            return sel
+        if any(pertence_a(sel, p) for p in nao_escopar):
+            return sel
+        if sel == ":root":
+            return escopo
+        if sel == "*":
+            return f"{escopo}, {escopo} *"
+        if sel.startswith(escopo):
+            return sel
+        return f"{escopo} {sel}"
+
+    def prefixar_lista(seletores):
+        return ", ".join(prefixar_seletor(s) for s in seletores.split(","))
+
+    def processar_bloco(texto):
+        saida, i, n = [], 0, len(texto)
+        while i < n:
+            if texto[i].isspace():
+                i += 1
+                continue
+            fim_sel = texto.index("{", i)
+            seletor = texto[i:fim_sel]
+            if seletor.strip().startswith("@media"):
+                j, profundidade = fim_sel + 1, 1
+                while profundidade:
+                    if texto[j] == "{":
+                        profundidade += 1
+                    elif texto[j] == "}":
+                        profundidade -= 1
+                    j += 1
+                conteudo = texto[fim_sel + 1:j - 1]
+                saida.append(f"{seletor.strip()}{{{processar_bloco(conteudo)}}}")
+                i = j
+                continue
+            fim_corpo = texto.index("}", fim_sel)
+            corpo = texto[fim_sel + 1:fim_corpo]
+            saida.append(f"{prefixar_lista(seletor)}{{{corpo}}}")
+            i = fim_corpo + 1
+        return "".join(saida)
+
+    return processar_bloco(css)
+
+
+def _sufixar_ids_monitoramento(html):
+    """Garante que os ids do bloco embutido na Apresentação CGAPE não
+    colidam com os da própria apresentação (mesmo princípio do
+    _sufixar_ids usado lá entre variantes de gestão/secretaria, ver
+    gerar_pptx_pac.py) — pedido do usuário em 15/11/2026. Troca tanto a
+    declaração ("id=") quanto toda referência a ela (aria-controls=,
+    data-alvo=), já que o JS do Monitoramento lê esses atributos em vez de
+    guardar o id como texto fixo."""
+    sufixo = "monra"
+    for id_html in set(re.findall(r'\bid="([^"]+)"', html)):
+        novo = f"{id_html}--{sufixo}"
+        html = html.replace(f'"{id_html}"', f'"{novo}"').replace(f"'{id_html}'", f"'{novo}'")
+    return html
+
+
+def _montar_blocos_monitoramento(caminho_base, dados):
+    """Monta as peças reaproveitáveis do HTML "Ações em Monitoramento":
+    cards, gráfico/avaliação dos 30 maiores municípios, grade de cards por
+    município (com o detalhamento Município > Status > Objeto) e os dois
+    quadros Status × Eixo/Objeto — junto do CSS e do JS que os fazem
+    funcionar, tudo em texto bruto (sem nenhum isolamento/prefixo ainda).
+    Usada tanto pela página autônoma (gerar_html_resumo_acoes, que monta
+    essas peças exatamente como antes) quanto pelas páginas MON_* da
+    Apresentação CGAPE (montar_partes_html_monitoramento, que embrulha e
+    isola as mesmas peças) — pedido do usuário em 15/11/2026, pra
+    incorporar o Monitoramento na apresentação do PAC sem duplicar a
+    lógica de geração nem criar um terceiro gerador."""
+    por_mun, _, dados_cards_acoes = _investimento_por_municipio(caminho_base, dados)
 
     # Lista = os 30 maiores municípios por POPULAÇÃO (RA_TOP30, já em ordem
     # de população), não mais os 15 maiores investimentos — pedido do usuário
     # em 13/11/2026. Município sem ação no recorte aparece zerado, sem "+".
     por_chave = {_chave_municipio(i["nome"]): i for i in por_mun.values()}
     ranking = [por_chave.get(_chave_municipio(nome))
-               or {"nome": nome, "valor": 0.0, "qtd": 0, "orc": False, "acoes": []}
+               or {"nome": nome, "valor": 0.0, "qtd": 0, "orc": False, "eixos": [],
+                   "n_eixos": 0, "valor_inicial": 0.0, "valor_avancado": 0.0, "acoes": []}
                for nome in RA_TOP30]
     valores_rank = sorted((m["valor"] for m in ranking), reverse=True)
     vmax = valores_rank[0] if valores_rank and valores_rank[0] > 0 else 1
@@ -991,47 +1433,175 @@ def gerar_html_resumo_acoes(caminho_base, dados):
     # leva uma marca de quebra
     quebra = len(valores_rank) > 1 and valores_rank[1] > 0 and vmax > 3 * valores_rank[1]
     escala = valores_rank[1] * 1.15 if quebra else vmax
-    # detalhamento de cada município abre na própria lista pelo "+" (mesmo
-    # botão das seções do HTML do PAC), sem caixa de diálogo
-    # Município > Status > Objeto: cada status é um subtítulo com o seu
-    # próprio "+"; tudo fica oculto enquanto o município estiver recolhido
-    def detalhe_rank(i, m):
+
+    indicadores, mediana_per_capita = _calcular_indicadores_carteira_top30(ranking)
+    frases_leitura, paragrafo_leitura = _gerar_leitura_carteira(indicadores, mediana_per_capita)
+    grafico_top30 = _svg_grafico_investimento_top30(
+        indicadores, quebra, escala, vmax, mediana_per_capita)
+
+    # detalhamento de cada município (Município > Status > Objeto) abre pelo
+    # "+" (mesmo botão das seções do HTML do PAC), sem caixa de diálogo —
+    # reaproveitado tanto pelos cards dos 30 maiores quanto, se o mapa for
+    # religado (RA_HTML_MOSTRAR_MAPA), pela lista de ranking ao lado dele.
+    # Cada status é um subtítulo com o seu próprio "+"; tudo fica oculto
+    # enquanto o município estiver recolhido. Clicar no NOME do objeto abre
+    # a janela de cards com cada ação daquele Município > Status > Objeto
+    # (ver raObjClic no JS e _dados_cards_acoes_top30) — pedido do usuário
+    # em 15/11/2026.
+    def detalhe_rank(prefixo, m):
+        chave_mun = _chave_municipio(m["nome"])
         blocos = []
         for j, g in enumerate(m["acoes"]):
             tabela = ('<table><thead><tr><th>Objeto</th><th class="r">Investimento</th>'
                       '</tr></thead><tbody>'
-                      + "".join(f'<tr><td>{_esc(o)}{f"<small>{_esc(q)}</small>" if q else ""}</td>'
-                                f'<td class="r">{_esc(v)}</td></tr>' for o, q, v in g["objetos"])
+                      + "".join(
+                          f'<tr><td><span class="ra-obj-clic" data-mun="{_esc(chave_mun)}" '
+                          f'data-status="{_esc(g["status"])}" data-objeto="{_esc(o)}" '
+                          f'title="Ver os cards das ações">{_esc(o)}</span>'
+                          + (f"<small>{_esc(q)}</small>" if q else "") + "</td>"
+                          f'<td class="r">{_esc(v)}</td></tr>' for o, q, v in g["objetos"])
                       + "</tbody></table>")
             blocos.append(
                 f'<div class="rk-st"><div class="rk-st-linha"><button type="button" class="det det-st" '
-                f'aria-expanded="false" aria-controls="rk-det-{i}-{j}" '
+                f'aria-expanded="false" aria-controls="rk-det-{prefixo}-{j}" '
                 f'title="Ver objetos — {_esc(g["status"])}">+</button>'
                 f'<span class="rk-st-nome">{_esc(g["status"])}<small>{_esc(g["qtd"])}</small></span>'
                 f'<b>{_esc(g["valor"])}</b></div>'
-                f'<div class="rk-st-obj oculto" id="rk-det-{i}-{j}">{tabela}</div></div>')
+                f'<div class="rk-st-obj oculto" id="rk-det-{prefixo}-{j}">{tabela}</div></div>')
         return "".join(blocos)
 
-    def linha_rank(i, m):
-        largura = (min(100, max(2, 100 * m["valor"] / escala)) if m["valor"] > 0 else 0)
-        botao = (f'<button type="button" class="det" aria-expanded="false" aria-controls="rk-det-{i}"'
-                 f' title="Ver detalhamento de {_esc(m["nome"])}">+</button>' if m["acoes"]
-                 else '<span></span>')
-        return (f'<li><div class="rk-linha{"" if m["qtd"] else " vazio"}"><span class="pos">{i + 1}</span>'
-                f'<span class="nm">{_esc(m["nome"])}'
-                f'<small>{_ra_qtd(m["qtd"]) if m["qtd"] else "sem ação no recorte"}</small></span>'
-                f'<span class="barra{" quebra" if quebra and m["valor"] == vmax else ""}"><span style="width:'
-                f'{largura:.1f}%;background:{_cor_faixa(m["valor"])}"></span></span>'
-                f'<b>{_ra_rs(m["valor"]) if m["qtd"] else "–"}{"*" if m["orc"] else ""}</b>{botao}</div>'
-                + (f'<div class="rk-det oculto" id="rk-det-{i}">{detalhe_rank(i, m)}</div>' if m["acoes"] else "")
-                + "</li>")
+    # ---- Grade dos 30 maiores municípios — cards acima dos quadros, no
+    # lugar da antiga lista ao lado do mapa (pedido do usuário em
+    # 15/11/2026). Cada card abre, logo abaixo (ocupando a largura toda da
+    # grade — ver .mun-det{{grid-column:1/-1}} no CSS), o detalhamento por
+    # status (reaproveita detalhe_rank acima); município sem ação fica
+    # esmaecido e não clicável.
+    def cartao_municipio(i, m, it):
+        selo = f'<span class="mun-selo" style="background:{it["cor_classe"]}">{_esc(it["classe"])}</span>'
+        if not m["qtd"]:
+            return (
+                '<div class="mun-card sem-acao" aria-disabled="true">'
+                f'<div class="mun-card-topo"><span class="mun-pos">{it["pos_pop"]}º em população</span></div>'
+                f'<div class="mun-nome">{_esc(m["nome"])}</div>'
+                '<div class="mun-vazio">sem ação no recorte</div></div>'
+            )
+        corpo = (
+            f'<div class="mun-card-topo"><span class="mun-pos">{it["pos_pop"]}º em população</span>{selo}</div>'
+            f'<div class="mun-nome">{_esc(m["nome"])}</div>'
+            '<div class="mun-metricas">'
+            f'<div><span class="mun-rot">INVESTIMENTO</span><b>{_esc(_ra_rs(m["valor"]))}'
+            f'{"*" if m["orc"] else ""}</b></div>'
+            f'<div><span class="mun-rot">AÇÕES</span><b>{m["qtd"]}</b></div>'
+            '</div>'
+        )
+        return (
+            f'<div class="mun-card" id="mun-card-{i}" role="button" tabindex="0" '
+            f'aria-expanded="false" aria-controls="mun-det-{i}" '
+            f'title="Ver detalhamento por status — {_esc(m["nome"])}">{corpo}</div>'
+            f'<div class="rk-det mun-det oculto" id="mun-det-{i}">{detalhe_rank(f"m{i}", m)}</div>'
+        )
 
-    linhas_rank = "".join(linha_rank(i, m) for i, m in enumerate(ranking))
-    nota_rank = ('<div class="nota-mapa">Em ordem de população (IBGE, estimativa 2026).'
-                 + (" Barra do maior investimento interrompida (≈) para não achatar as demais."
-                    if quebra else "") + "</div>")
+    cartoes_mun = "".join(
+        cartao_municipio(i, m, it) for i, (m, it) in enumerate(zip(ranking, indicadores)))
 
-    cards = "".join(
+    # Metodologia dos indicadores, recolhida num <details> — pedido do
+    # usuário em 15/11/2026 (nota pequena, não precisa estar sempre à vista).
+    pesos_pct = {k: f"{v * 100:.0f}%" for k, v in RA_PESOS_NECESSIDADE.items()}
+    nota_metodologia = (
+        '<details class="leitura-metodologia"><summary>Metodologia do Índice de Necessidade de Investimento</summary>'
+        '<p>Combinação ponderada e normalizada (mín-máx entre os 30) de: investimento per capita — '
+        f'invertido, peso {pesos_pct["per_capita"]} (quanto menor o valor por habitante, maior a '
+        'necessidade); gap de participação — % da população menos % do investimento dos 30, peso '
+        f'{pesos_pct["gap"]}; fração do investimento ainda em status iniciais da carteira (em '
+        'estudo, verificação de viabilidade, desenvolvimento de projetos, autorizo ou licitação), '
+        f'peso {pesos_pct["maturidade"]}; e cobertura — nº de ações e de eixos atendidos, invertida, '
+        f'peso {pesos_pct["cobertura"]}. Classificação por quartil do índice entre os 30: Prioridade '
+        'alta (25% mais altos), Atenção (entre o 2º e o 3º quartil) e Adequado (os demais 50%). '
+        f'População: {_esc(RA_TOP30_FONTE)}. A mediana per capita (linha pontilhada do gráfico) usa '
+        'só os municípios com ação no recorte atual.</p></details>'
+    )
+
+    # Separadas em duas variáveis (gráfico/avaliação x grade de cards) —
+    # pedido do usuário em 15/11/2026: na Apresentação CGAPE elas viram
+    # páginas MON_* diferentes (MON_TOP30 e MON_MUNICIPIOS); concatenadas
+    # as duas, dá exatamente o antigo "secao_top30" da página autônoma.
+    secao_top30_grafico = (
+        '<section class="sec-top30"><h2>INVESTIMENTO DOS 30 MAIORES MUNICÍPIOS (POPULAÇÃO)'
+        '<small>passe o mouse (ou clique) numa coluna para ver o detalhe</small></h2>'
+        '<div class="legenda-top30">'
+        f'<span><i style="background:{RA_COR_PRIORIDADE_ALTA}"></i>Prioridade alta</span>'
+        f'<span><i style="background:{RA_COR_ATENCAO}"></i>Atenção</span>'
+        f'<span><i style="background:{RA_COR_ADEQUADO}"></i>Adequado</span>'
+        '<span><i class="legenda-esperado"></i>investimento esperado pela população '
+        '(mediana per capita dos 30)</span></div>'
+        f'<div class="rolagem-grafico">{grafico_top30}</div>'
+        '<div class="nota-mapa">Em ordem de população (IBGE, estimativa 2026).'
+        + (' Barra do maior investimento interrompida (≈) para não achatar as demais.'
+           if quebra else '') + '</div>'
+        '<h3>LEITURA DA CARTEIRA</h3>'
+        f'<ol class="leitura-lista">{frases_leitura}</ol>'
+        f'<p class="leitura-paragrafo">{_esc(paragrafo_leitura)}</p>'
+        f'{nota_metodologia}</section>'
+    )
+    secao_cartoes = (
+        '<section class="sec-cartoes"><h2>OS 30 MAIORES MUNICÍPIOS (POPULAÇÃO)</h2>'
+        f'<div class="mun-grade">{cartoes_mun}</div></section>'
+    )
+
+    # Mapa de investimento por município — OCULTO a pedido do usuário em
+    # 15/11/2026 (RA_HTML_MOSTRAR_MAPA), mas a função continua existindo:
+    # só não é chamada (nem a legenda/lista antigas são montadas) quando a
+    # chave está desligada, pra não gastar tempo com o SVG geográfico à toa.
+    secao_mapa = ""
+    if RA_HTML_MOSTRAR_MAPA:
+        svg, fora = _svg_mapa(por_mun)
+        valores = [i["valor"] for i in por_mun.values() if i["valor"] > 0]
+        legenda = []
+        for minimo, maximo, cor in reversed(RA_FAIXAS_MAPA):
+            n = sum(1 for v in valores if v >= minimo and (maximo is None or v < maximo))
+            if not n:
+                continue
+            rot = (f"até {_ra_rs(maximo)}" if minimo == 0 else
+                   f"acima de {_ra_rs(minimo)}" if maximo is None else
+                   f"{_ra_rs(minimo)} a {_ra_rs(maximo)}")
+            legenda.append(f'<li><i style="background:{cor}"></i>{rot}'
+                           f'<b>{n} município{"s" if n > 1 else ""}</b></li>')
+        sem_valor = sum(1 for i in por_mun.values() if i["valor"] <= 0)
+        legenda.append(f'<li><i style="background:{RA_COR_SEM_ACAO}"></i>sem ação'
+                       + (f" ou sem valor ({sem_valor} com ação e R$ 0)" if sem_valor else "")
+                       + "</li>")
+
+        def linha_rank(i, m):
+            largura = (min(100, max(2, 100 * m["valor"] / escala)) if m["valor"] > 0 else 0)
+            botao = (f'<button type="button" class="det" aria-expanded="false" aria-controls="rk-det-{i}"'
+                     f' title="Ver detalhamento de {_esc(m["nome"])}">+</button>' if m["acoes"]
+                     else '<span></span>')
+            return (f'<li><div class="rk-linha{"" if m["qtd"] else " vazio"}"><span class="pos">{i + 1}</span>'
+                    f'<span class="nm">{_esc(m["nome"])}'
+                    f'<small>{_ra_qtd(m["qtd"]) if m["qtd"] else "sem ação no recorte"}</small></span>'
+                    f'<span class="barra{" quebra" if quebra and m["valor"] == vmax else ""}"><span style="width:'
+                    f'{largura:.1f}%;background:{_cor_faixa(m["valor"])}"></span></span>'
+                    f'<b>{_ra_rs(m["valor"]) if m["qtd"] else "–"}{"*" if m["orc"] else ""}</b>{botao}</div>'
+                    + (f'<div class="rk-det oculto" id="rk-det-{i}">{detalhe_rank(i, m)}</div>' if m["acoes"] else "")
+                    + "</li>")
+
+        linhas_rank = "".join(linha_rank(i, m) for i, m in enumerate(ranking))
+        nota_rank = ('<div class="nota-mapa">Em ordem de população (IBGE, estimativa 2026).'
+                     + (" Barra do maior investimento interrompida (≈) para não achatar as demais."
+                        if quebra else "") + "</div>")
+        total_mun = sum(1 for i in por_mun.values())
+        nota_mapa = (f"{total_mun} municípios com ação no recorte."
+                     + (f" Fora do mapa (nome não casa com o IBGE): {', '.join(fora)}." if fora else ""))
+        secao_mapa = (
+            '<section class="sec-mapa"><h2>MAPA DE INVESTIMENTO POR MUNICÍPIO</h2>'
+            f'<div class="mapa-grade"><div>{svg}<div class="nota-mapa">{_esc(nota_mapa)} '
+            'Passe o mouse sobre um município para ver o detalhe.</div></div>'
+            f'<div><h3>FAIXAS DE INVESTIMENTO</h3><ul class="legenda">{"".join(legenda)}</ul>'
+            f'<h3>30 MAIORES MUNICÍPIOS (POPULAÇÃO)</h3><ol class="ranking">{linhas_rank}</ol>'
+            f'{nota_rank}</div></div></section>'
+        )
+
+    cards_html = "".join(
         f'<div><div class="card" style="--c:#{c["cor"]}"><span>{_esc(c["rotulo"])}</span>'
         f'<b>{_esc(c["txt"])}</b><small>{_esc(c["qtd"])}</small></div>'
         + (f'<div class="card-nota">{_esc(c["nota"])}</div>' if c.get("nota") else "")
@@ -1039,6 +1609,13 @@ def gerar_html_resumo_acoes(caminho_base, dados):
         for c in dados["cards"])
     filtros_html = (f'<b>Recorte filtrado.</b> Filtros: {_esc(dados.get("filtros_txt") or "")}. '
                     if dados["filtrado"] else "<b>Base completa.</b> ")
+    aviso_cards_html = (f'<div class="aviso-cards">{_esc(dados.get("aviso_cards"))}</div>'
+                        if dados.get("aviso_cards") else "")
+    # Recorte em texto puro (sem HTML), pro selo "AÇÕES EM MONITORAMENTO ·
+    # base Ações do Cronograma · <recorte>" da Apresentação CGAPE — pedido
+    # do usuário em 15/11/2026.
+    recorte_txt = (f"Filtros: {dados.get('filtros_txt') or ''}"
+                   if dados["filtrado"] else "Base completa")
 
     def cel(c, cls=""):
         cl = f' class="{cls}"' if cls else ""
@@ -1080,17 +1657,19 @@ def gerar_html_resumo_acoes(caminho_base, dados):
             + "".join(f"<tr>{linha_obj(l)}</tr>" for l in q["linhas"])
             + f'</tbody><tfoot><tr>{linha_obj(q["total"], "rod")}</tr></tfoot></table>')
 
-    total_mun = sum(1 for i in por_mun.values())
-    nota_mapa = (f"{total_mun} municípios com ação no recorte."
-                 + (f" Fora do mapa (nome não casa com o IBGE): {', '.join(fora)}." if fora else ""))
-    agora = datetime.now()
-    titulo = "AÇÕES EM MONITORAMENTO"
-    return f"""<!DOCTYPE html>
-<html lang="pt-BR"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ações em Monitoramento</title>
-<style>
-/* Tokens alinhados à identidade visual única do projeto (ver
+    quadro_status_eixo_html = (
+        '<section><h2>QUADRO RESUMO — STATUS × EIXO</h2>'
+        f'<div class="rolagem">{quadro}</div>'
+        f'<div class="nota">{_esc(dados["nota"])}</div></section>'
+    )
+    quadro_status_objeto_html = (
+        '<section><h2>QUADRO RESUMO — STATUS × OBJETO '
+        '<small>objetos agrupados pelo eixo, na mesma ordem do quadro acima</small></h2>'
+        f'<div class="rolagem rolagem-obj">{quadro_obj}</div>'
+        f'<div class="nota">{_esc(dados["nota"])}</div></section>'
+    ) if quadro_obj else ""
+
+    css_bruto = f"""/* Tokens alinhados à identidade visual única do projeto (ver
    identidade_visual.py) — --azul era #1F5C85 (divergente da referência) e
    os cinzas eram quase, mas não exatamente, os da referência — corrigido
    a pedido do usuário em 14/11/2026. */
@@ -1135,6 +1714,50 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .ranking .barra.quebra::after{{content:"";position:absolute;top:-2px;bottom:-2px;right:14%;width:6px;background:#fff;transform:skewX(-20deg)}}
 .ranking b{{text-align:right;color:var(--navy)}}
 .nota-mapa{{font-size:12px;color:var(--cinza);margin-top:10px}}
+/* ---- Gráfico + avaliação dos 30 maiores municípios (substitui o mapa
+   oculto — RA_HTML_MOSTRAR_MAPA — pedido do usuário em 15/11/2026) ---- */
+.legenda-top30{{display:flex;flex-wrap:wrap;gap:16px;font-size:12.5px;color:var(--cinza);margin-bottom:10px}}
+.legenda-top30 i{{width:14px;height:14px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-2px}}
+.legenda-top30 i.legenda-esperado{{background:none;border-top:2px dashed var(--navy);width:16px;height:0;vertical-align:4px}}
+.rolagem-grafico{{overflow-x:auto}}
+/* ocupa toda a largura da seção (até o limite do <main>) em telas largas —
+   só cai pro mínimo de 920px, com rolagem horizontal, se a tela for estreita
+   demais pra isso (pedido do usuário em 15/11/2026, aproveitar o espaço
+   lateral que sobrava com a largura fixa) */
+.grafico-top30{{width:100%;min-width:920px;height:auto;display:block}}
+.grafico-grade{{stroke:#E3E8EF;stroke-width:1}}
+.grafico-eixo{{stroke:var(--navy);stroke-width:1.2}}
+.grafico-eixo-y,.grafico-eixo-x{{font-size:10.5px;font-family:inherit}}
+.grafico-eixo-y{{fill:var(--cinza)}}
+.grafico-eixo-x{{fill:var(--navy);text-anchor:start}}
+.grafico-eixo-x.sem-acao{{fill:var(--cinza);font-style:italic}}
+.grafico-quebra{{font-size:13px;font-weight:700;fill:var(--navy);font-family:inherit}}
+.grafico-esperado{{stroke:var(--navy);stroke-width:1.6;stroke-dasharray:3 2;opacity:.55}}
+.barra-top30{{cursor:pointer;transition:opacity .1s}}
+.barra-top30:hover,.barra-top30:focus-visible{{opacity:.78;outline:none}}
+.leitura-lista{{margin:10px 0 14px;padding-left:20px;font-size:13.5px;line-height:1.55}}
+.leitura-lista li{{margin-bottom:6px}}
+.leitura-lista b{{color:var(--navy)}}
+.leitura-paragrafo{{font-size:13.5px;color:var(--cinza);line-height:1.55;margin:0 0 10px}}
+.leitura-metodologia{{font-size:12px;color:var(--cinza)}}
+.leitura-metodologia summary{{cursor:pointer;color:var(--navy);font-weight:600}}
+.leitura-metodologia p{{margin:8px 0 0}}
+.mun-grade{{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}}
+@media (max-width:900px){{.mun-grade{{grid-template-columns:repeat(2,1fr)}}}}
+@media (max-width:560px){{.mun-grade{{grid-template-columns:1fr}}}}
+.mun-card{{background:#fff;border:1px solid var(--linha);border-top:4px solid var(--azul);border-radius:10px;padding:14px 16px;box-shadow:0 2px 10px rgba(11,31,63,.06);cursor:pointer;transition:box-shadow .15s}}
+.mun-card:hover,.mun-card:focus-visible{{box-shadow:0 6px 18px rgba(11,31,63,.16);outline:none}}
+.mun-card.aberto{{border-top-color:var(--navy)}}
+.mun-card.sem-acao{{opacity:.55;cursor:default;border-top-color:#D8DCE3}}
+.mun-card-topo{{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}}
+.mun-pos{{font-size:11px;color:var(--cinza);font-weight:600}}
+.mun-selo{{font-size:10.5px;font-weight:700;color:#fff;padding:2px 9px;border-radius:10px;white-space:nowrap}}
+.mun-nome{{font-size:15.5px;font-weight:700;color:var(--navy);margin-bottom:8px}}
+.mun-metricas{{display:flex;gap:20px}}
+.mun-rot{{display:block;font-size:10px;color:var(--cinza);letter-spacing:.4px;margin-bottom:2px}}
+.mun-metricas b{{font-size:18px;color:var(--azul);font-weight:800}}
+.mun-vazio{{font-size:12.5px;color:var(--cinza);font-style:italic;margin-top:4px}}
+.mun-det{{grid-column:1/-1}}
 .ranking .det{{width:26px;height:26px;border-radius:50%;border:1px solid #D8DCE3;background:#F2F4F7;color:var(--navy);font-size:16px;font-weight:700;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;font-family:inherit}}
 .ranking .det:hover{{background:#E6E9EE}}
 .ranking .det:focus-visible{{outline:2px solid var(--azul);outline-offset:1px}}
@@ -1177,7 +1800,11 @@ h2 small{{font-weight:400;font-size:12px;color:var(--cinza);letter-spacing:0;mar
 .rolagem{{overflow-x:auto}}
 .nota{{font-size:12.5px;font-style:italic;color:var(--cinza);margin-top:12px}}
 footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
-#dica{{position:fixed;pointer-events:none;background:var(--navy);color:#fff;border-radius:8px;padding:9px 12px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.25);display:none;max-width:280px;z-index:5}}
+/* Cor fixa (não var(--navy)): na Apresentação CGAPE o tooltip (#mon-dica)
+   fica DE PROPÓSITO fora de .mon-ra, então não herdaria a variável — ficava
+   com fundo transparente, texto branco ilegível sobre o gráfico. Bug
+   encontrado pelo usuário em 15/11/2026. */
+#dica{{position:fixed;pointer-events:none;background:#0B1F3F;color:#fff;border-radius:8px;padding:9px 12px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.25);display:none;max-width:280px;z-index:5}}
 #dica b{{display:block;font-size:13.5px;margin-bottom:2px}}
 #dica .v{{color:#9FD3FF;font-weight:700}}
 #dica ul{{list-style:none;padding:6px 0 0;margin:6px 0 0;border-top:1px solid rgba(255,255,255,.2)}}
@@ -1186,30 +1813,56 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 @media print{{body{{background:#fff}}section{{box-shadow:none;break-inside:avoid}}#dica{{display:none!important}}}}
 .btn-pdf{{position:fixed;top:18px;right:24px;z-index:20;padding:11px 22px;font:700 14px "Segoe UI",Roboto,system-ui,sans-serif;color:#fff;background:#0B5CAD;border:none;border-radius:8px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.3)}}
 .btn-pdf:hover{{background:#0A4E92}}
-@media print{{.btn-pdf,.ranking .det{{display:none!important}}.rk-det{{max-height:none;overflow:visible}}section.sec-mapa{{break-inside:auto}}.rk-det tr{{break-inside:avoid}}
+@media print{{.btn-pdf,.ranking .det,.mun-det .det{{display:none!important}}.rk-det{{max-height:none;overflow:visible}}section.sec-mapa{{break-inside:auto}}.rk-det tr{{break-inside:avoid}}
 .mapa-grade{{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px}}.mapa{{max-width:330px;margin:0}}.mapa-grade>div:first-child{{break-inside:avoid}}
-.ranking .rk-linha{{grid-template-columns:18px minmax(0,1.9fr) minmax(0,.7fr) 96px;gap:6px}}.ranking .nm small{{margin-left:4px}}}}
-</style></head><body>
-<button type="button" class="btn-pdf" onclick="gerarPdf()" title="Imprime/salva em PDF com o detalhamento dos {RA_PDF_DETALHADOS} maiores municípios aberto">Gerar PDF</button>
-<header><div><h1>{titulo}</h1><p>COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</p></div>
-<div class="gov">GOVERNO DO ESTADO DA BAHIA<br>CASA CIVIL</div></header>
-<main>
-<div class="filtros">{filtros_html}Gerado em {agora:%d/%m/%Y às %Hh%M}.</div>
-{f'<div class="aviso-cards">{_esc(dados.get("aviso_cards"))}</div>' if dados.get("aviso_cards") else ""}
-<div class="cards">{cards}</div>
-<section class="sec-mapa"><h2>MAPA DE INVESTIMENTO POR MUNICÍPIO</h2>
-<div class="mapa-grade"><div>{svg}<div class="nota-mapa">{_esc(nota_mapa)} Passe o mouse sobre um município para ver o detalhe.</div></div>
-<div><h3>FAIXAS DE INVESTIMENTO</h3><ul class="legenda">{"".join(legenda)}</ul>
-<h3>30 MAIORES MUNICÍPIOS (POPULAÇÃO)</h3><ol class="ranking">{linhas_rank}</ol>{nota_rank}</div></div></section>
-<section><h2>QUADRO RESUMO — STATUS × EIXO</h2><div class="rolagem">{quadro}</div>
-<div class="nota">{_esc(dados["nota"])}</div></section>
-{f'<section><h2>QUADRO RESUMO — STATUS × OBJETO <small>objetos agrupados pelo eixo, na mesma ordem do quadro acima</small></h2><div class="rolagem rolagem-obj">{quadro_obj}</div><div class="nota">{_esc(dados["nota"])}</div></section>' if quadro_obj else ""}
-</main>
-<footer>CGAPE · Casa Civil · Base Ações do Cronograma</footer>
-<div id="dica"></div>
-<script>
-(function(){{
-  // "+" / "–" de cada município: abre/fecha o detalhamento na própria lista
+.ranking .rk-linha{{grid-template-columns:18px minmax(0,1.9fr) minmax(0,.7fr) 96px;gap:6px}}.ranking .nm small{{margin-left:4px}}
+/* Gráfico/avaliação numa página só, cards com o status (nível 1) já
+   aberto e os objetos (nível 2) escondidos — pedido do usuário em
+   15/11/2026. Força a visibilidade por CSS, independente da classe
+   "oculto" que o JS controla na tela. */
+.sec-top30,.sec-cartoes{{break-inside:avoid}}
+.rolagem-grafico{{overflow:visible}}
+.mun-card{{break-inside:avoid;cursor:default}}
+.mun-det.oculto{{display:block!important}}
+.mun-det .rk-st-obj{{display:none!important}}}}
+/* Janela de cards ao clicar num objeto da grade de município (ver
+   detalhe_rank) — pedido do usuário em 15/11/2026. Tudo dentro dela
+   prefixado por "#ra-oc-fundo " (como o tooltip #dica) pra ficar de fora
+   do escopo .mon-ra quando embutida na Apresentação CGAPE: a janela
+   precisa ficar FORA de qualquer slide (ver oc_html em
+   montar_partes_html_monitoramento), senão o overflow:hidden do slide a
+   recortaria. ".ra-obj-clic" fica de fora dessa regra de propósito: o
+   objeto clicável é parte do conteúdo normal (dentro de .mon-ra).*/
+.ra-obj-clic{{cursor:pointer;color:var(--azul);text-decoration:underline dotted;text-underline-offset:2px}}
+.ra-obj-clic:hover{{color:var(--navy);text-decoration-style:solid}}
+#ra-oc-fundo{{display:none;position:fixed;inset:0;z-index:1150;background:rgba(11,31,63,.55);align-items:center;justify-content:center;padding:24px}}
+#ra-oc-fundo.aberta{{display:flex}}
+#ra-oc-fundo .ra-oc-janela{{background:#fff;border-radius:12px;width:min(1200px,100%);max-height:100%;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)}}
+#ra-oc-fundo .ra-oc-topo{{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:20px 24px 14px;border-bottom:1px solid var(--linha)}}
+#ra-oc-fundo .ra-oc-titulo{{font-size:19px;font-weight:800;color:var(--navy)}}
+#ra-oc-fundo .ra-oc-sub{{font-size:13px;color:var(--cinza);margin-top:4px}}
+#ra-oc-fundo .ra-oc-fechar{{background:none;border:none;font-size:26px;line-height:1;color:var(--cinza);cursor:pointer;padding:0 4px}}
+#ra-oc-fundo .ra-oc-fechar:hover{{color:var(--navy)}}
+#ra-oc-fundo .ra-oc-corpo{{padding:16px 24px 24px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}}
+#ra-oc-fundo .ra-oc-card{{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;box-shadow:0 2px 8px rgba(11,31,63,.06)}}
+#ra-oc-fundo .ra-oc-card-topo{{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}}
+#ra-oc-fundo .ra-oc-card-objeto{{font-size:15px;font-weight:800;color:var(--navy)}}
+#ra-oc-fundo .ra-oc-card-linha{{font-size:12.5px;color:var(--cinza);margin-top:3px}}
+#ra-oc-fundo .ra-oc-card-desc{{font-size:12.5px;color:#3A4456;line-height:1.4}}
+#ra-oc-fundo .ra-oc-card-rodape{{display:flex;gap:16px;margin-top:auto;padding-top:8px;border-top:1px solid var(--linha)}}
+#ra-oc-fundo .ra-oc-card-rotulo{{font-size:10px;color:var(--cinza);letter-spacing:.3px;text-transform:uppercase}}
+#ra-oc-fundo .ra-oc-card-valor{{font-size:14.5px;font-weight:800;color:var(--navy);white-space:nowrap}}
+#ra-oc-fundo .ra-oc-sem-gauge{{font-size:10px;color:var(--cinza);text-align:center;line-height:1.25;flex:none}}
+#ra-oc-fundo .ra-oc-vazio{{font-size:13px;color:var(--cinza);padding:20px 4px}}
+@media print{{#ra-oc-fundo{{display:none!important}}.ra-obj-clic{{color:inherit;text-decoration:none}}}}
+"""
+
+    agora = datetime.now()
+    titulo = "AÇÕES EM MONITORAMENTO"
+    js_bruto = f"""(function(){{
+  // "+" / "–" de cada status/objeto — da lista de ranking do mapa (se
+  // religado) e dos cards dos 30 maiores municípios: abre/fecha o
+  // detalhamento no próprio lugar onde está.
   function alternar(b,abrir){{
     var alvo=document.getElementById(b.getAttribute("aria-controls"));
     if(abrir===undefined)abrir=alvo.classList.contains("oculto");
@@ -1218,43 +1871,280 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     b.setAttribute("aria-expanded",abrir?"true":"false");
     b.title=abrir?b.title.replace("Ver","Ocultar"):b.title.replace("Ocultar","Ver");
   }}
-  var botoes=Array.prototype.slice.call(document.querySelectorAll(".ranking .det"));
-  botoes.forEach(function(b){{b.addEventListener("click",function(){{alternar(b);}});}});
-  var botoesMun=Array.prototype.slice.call(document.querySelectorAll(".ranking .rk-linha .det"));
-  // Gerar PDF (pedido do usuário em 13/11/2026): abre o detalhamento dos
-  // {RA_PDF_DETALHADOS} primeiros municípios (com os status e objetos deles)
-  // para a impressão e devolve a lista ao estado anterior quando a janela de
-  // impressão fecha.
-  window.gerarPdf=function(){{
-    var antes=botoes.map(function(b){{return b.getAttribute("aria-expanded")==="true";}});
-    var abrir=new Set(botoesMun.slice(0,{RA_PDF_DETALHADOS}));
-    botoes.forEach(function(b){{
-      var mun=b.classList.contains("det-st")?b.closest("li").querySelector(".rk-linha .det"):b;
-      alternar(b,abrir.has(mun));
+  Array.prototype.slice.call(document.querySelectorAll(".det")).forEach(function(b){{
+    b.addEventListener("click",function(){{alternar(b);}});
+  }});
+
+  // Cartão de cada um dos 30 maiores municípios: clicar abre, logo abaixo
+  // dele (ocupando a largura toda da grade — ver .mun-det no CSS), o
+  // detalhamento por status; só um cartão aberto por vez — pedido do
+  // usuário em 15/11/2026.
+  var cartoes=Array.prototype.slice.call(document.querySelectorAll(".mun-card:not(.sem-acao)"));
+  function alternarCartao(cartao){{
+    var det=document.getElementById(cartao.getAttribute("aria-controls"));
+    var vaiAbrir=det.classList.contains("oculto");
+    cartoes.forEach(function(outro){{
+      document.getElementById(outro.getAttribute("aria-controls")).classList.add("oculto");
+      outro.classList.remove("aberto");
+      outro.setAttribute("aria-expanded","false");
     }});
-    function restaurar(){{
-      botoes.forEach(function(b,i){{alternar(b,antes[i]);}});
-      window.removeEventListener("afterprint",restaurar);
+    det.classList.toggle("oculto",!vaiAbrir);
+    cartao.classList.toggle("aberto",vaiAbrir);
+    cartao.setAttribute("aria-expanded",vaiAbrir?"true":"false");
+  }}
+  cartoes.forEach(function(cartao){{
+    cartao.addEventListener("click",function(){{alternarCartao(cartao);}});
+    cartao.addEventListener("keydown",function(ev){{
+      if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();alternarCartao(cartao);}}
+    }});
+  }});
+
+  // Clicar (ou "Enter"/espaço) numa coluna do gráfico rola até o cartão do
+  // município correspondente e o abre — pedido do usuário em 15/11/2026.
+  Array.prototype.slice.call(document.querySelectorAll(".barra-top30[data-alvo]")).forEach(function(barra){{
+    function irParaCartao(){{
+      var cartao=document.getElementById(barra.dataset.alvo);
+      if(!cartao||cartao.classList.contains("sem-acao"))return;
+      cartao.scrollIntoView({{behavior:"smooth",block:"center"}});
+      if(!cartao.classList.contains("aberto"))alternarCartao(cartao);
     }}
-    window.addEventListener("afterprint",restaurar);
-    window.print();
-  }};
+    barra.addEventListener("click",irParaCartao);
+    barra.addEventListener("keydown",function(ev){{
+      if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();irParaCartao();}}
+    }});
+  }});
+
+  // Imprimir/salvar em PDF: o CSS de @media print já força o gráfico, a
+  // avaliação e o detalhamento por status de cada cartão a aparecerem
+  // abertos (ver .mun-det.oculto{{display:block!important}}), então não
+  // precisa pré-abrir nada em JS antes de chamar window.print().
+  window.gerarPdf=function(){{window.print();}};
+
+  // Dica (tooltip) ao passar o mouse — reaproveitada tanto pelo mapa (se
+  // religado) quanto pelas colunas do gráfico dos 30 maiores municípios.
   var dica=document.getElementById("dica");
+  function mostrarDica(html,ev,elemento){{
+    dica.innerHTML=html;
+    dica.style.display="block";
+    var r=dica.getBoundingClientRect();
+    var x,y;
+    if(ev){{
+      x=ev.clientX+14;y=ev.clientY+14;
+    }} else {{
+      var re=elemento.getBoundingClientRect();
+      x=re.left;y=re.bottom+8;
+    }}
+    if(x+r.width>innerWidth-8)x=innerWidth-r.width-8;
+    if(y+r.height>innerHeight-8)y=innerHeight-r.height-8;
+    dica.style.left=Math.max(4,x)+"px";dica.style.top=Math.max(4,y)+"px";
+  }}
+  function linhaDica(rotulo,valor){{
+    return valor?"<li><span>"+rotulo+"</span><span>"+valor+"</span></li>":"";
+  }}
   document.querySelectorAll(".mapa path").forEach(function(p){{
     p.addEventListener("mousemove",function(ev){{
-      var e=p.dataset.e?p.dataset.e.split("|").map(function(x){{var a=x.split("~");return "<li><span>"+a[0]+"</span><span>"+a[1]+"</span></li>";}}).join(""):"";
-      dica.innerHTML="<b>"+p.dataset.n+"</b>"+(p.dataset.v?'<span class="v">'+p.dataset.v+"</span> · ":"")+p.dataset.q+(e?"<ul>"+e+"</ul>":"");
-      dica.style.display="block";
-      var x=ev.clientX+14,y=ev.clientY+14,r=dica.getBoundingClientRect();
-      if(x+r.width>innerWidth-8)x=ev.clientX-r.width-14;
-      if(y+r.height>innerHeight-8)y=ev.clientY-r.height-14;
-      dica.style.left=x+"px";dica.style.top=y+"px";
+      var e=p.dataset.e?p.dataset.e.split("|").map(function(x){{var a=x.split("~");return linhaDica(a[0],a[1]);}}).join(""):"";
+      mostrarDica("<b>"+p.dataset.n+"</b>"+(p.dataset.v?'<span class="v">'+p.dataset.v+"</span> · ":"")+p.dataset.q+(e?"<ul>"+e+"</ul>":""),ev);
     }});
     p.addEventListener("mouseleave",function(){{dica.style.display="none";}});
   }});
+  document.querySelectorAll(".barra-top30").forEach(function(b){{
+    function html(){{
+      return "<b>"+b.dataset.n+"</b><ul>"
+        +linhaDica("Posição (população)",b.dataset.pos+"º")
+        +linhaDica("Investimento",b.dataset.v)
+        +linhaDica("Ações",b.dataset.q)
+        +linhaDica("Per capita",b.dataset.pc)
+        +linhaDica("Índice de necessidade",b.dataset.idx+" ("+b.dataset.classe+")")
+        +"</ul>";
+    }}
+    b.addEventListener("mousemove",function(ev){{mostrarDica(html(),ev);}});
+    b.addEventListener("mouseleave",function(){{dica.style.display="none";}});
+    b.addEventListener("focus",function(){{mostrarDica(html(),null,b);}});
+    b.addEventListener("blur",function(){{dica.style.display="none";}});
+  }});
 }})();
+// Janela de cards ao clicar num objeto da grade de município (ver
+// detalhe_rank/_dados_cards_acoes_top30) — pedido do usuário em 15/11/2026.
+(function(){{
+  var dadosEl=document.getElementById("ra-oc-dados");
+  if(!dadosEl)return;
+  var D=JSON.parse(dadosEl.textContent),C={{}};
+  (D.campos||[]).forEach(function(k,i){{C[k]=i;}});
+  var fundo=document.getElementById("ra-oc-fundo");
+  function esc(t){{var d=document.createElement("div");d.textContent=t==null?"":String(t);return d.innerHTML;}}
+  function gauge(v){{
+    if(v==null)return '<div class="ra-oc-sem-gauge">Avanço<br>não<br>informado</div>';
+    v=Math.max(0,Math.min(100,v));
+    var r=26,c=2*Math.PI*r,cheio=(v/100*c).toFixed(1);
+    return '<svg width="64" height="64" viewBox="0 0 64 64">'
+      +'<circle cx="32" cy="32" r="'+r+'" fill="none" stroke="#E9ECF2" stroke-width="6"></circle>'
+      +(v>0.5?'<circle cx="32" cy="32" r="'+r+'" fill="none" stroke="#2E7D32" stroke-width="6" '
+        +'stroke-dasharray="'+cheio+' '+c.toFixed(1)+'" stroke-linecap="round" transform="rotate(-90 32 32)"></circle>':'')
+      +'<text x="32" y="37" text-anchor="middle" font-size="15" font-weight="900" fill="#0B1F3F">'+Math.round(v)+'%</text></svg>';
+  }}
+  function card(a){{
+    return '<div class="ra-oc-card"><div class="ra-oc-card-topo"><div>'
+      +'<div class="ra-oc-card-objeto">'+esc(a[C.nome])+'</div>'
+      +'<div class="ra-oc-card-linha">'+[a[C.mun],a[C.ex]].filter(Boolean).map(esc).join(" · ")+'</div>'
+      +'</div>'+gauge(a[C.av])+'</div>'
+      +(a[C.ds]?'<div class="ra-oc-card-desc">'+esc(a[C.ds])+'</div>':'')
+      +'<div class="ra-oc-card-rodape">'
+      +'<div><div class="ra-oc-card-rotulo">Conclusão prevista</div><div class="ra-oc-card-valor">'+esc(a[C.pz])+'</div></div>'
+      +'<div><div class="ra-oc-card-rotulo">Investimento</div><div class="ra-oc-card-valor">'+esc(a[C.val])+'</div></div>'
+      +'</div></div>';
+  }}
+  window.raOcFechar=function(){{if(fundo)fundo.classList.remove("aberta");}};
+  document.addEventListener("click",function(ev){{
+    var alvo=ev.target.closest(".ra-obj-clic");
+    if(!alvo)return;
+    var mun=alvo.dataset.mun,status=alvo.dataset.status,objeto=alvo.dataset.objeto;
+    var lista=D.acoes.filter(function(a){{
+      return a[C.mu]===mun&&a[C.st]===status&&a[C.ob]===objeto;
+    }});
+    document.getElementById("ra-oc-titulo").textContent=objeto;
+    document.getElementById("ra-oc-sub").textContent=[status,lista.length+(lista.length===1?" ação":" ações")].filter(Boolean).join(" · ");
+    document.getElementById("ra-oc-corpo").innerHTML=lista.map(card).join("")
+      ||'<div class="ra-oc-vazio">Nenhuma ação encontrada.</div>';
+    fundo.classList.add("aberta");
+  }});
+  if(fundo)fundo.addEventListener("click",function(ev){{if(ev.target===fundo)window.raOcFechar();}});
+  document.addEventListener("keydown",function(e){{
+    if(!fundo||!fundo.classList.contains("aberta"))return;
+    if(e.key==="Escape")window.raOcFechar();
+  }});
+}})();
+"""
+
+    # Janela de cards ao clicar num objeto (ver detalhe_rank/.ra-obj-clic):
+    # fica FORA de <main>, igual ao tooltip #dica, pelo mesmo motivo (ver
+    # oc_html em montar_partes_html_monitoramento) — pedido do usuário em
+    # 15/11/2026.
+    oc_dados_json = json.dumps(dados_cards_acoes, ensure_ascii=False,
+                               separators=(",", ":")).replace("</", "<\\/")
+    oc_html = (
+        f'<script type="application/json" id="ra-oc-dados">{oc_dados_json}</script>'
+        '<div id="ra-oc-fundo">'
+        '<div class="ra-oc-janela" role="dialog" aria-modal="true">'
+        '<div class="ra-oc-topo"><div><div id="ra-oc-titulo" class="ra-oc-titulo"></div>'
+        '<div id="ra-oc-sub" class="ra-oc-sub"></div></div>'
+        '<button type="button" class="ra-oc-fechar" onclick="raOcFechar()" title="Fechar (Esc)">&times;</button></div>'
+        '<div id="ra-oc-corpo" class="ra-oc-corpo"></div></div></div>'
+    )
+
+    return {
+        "cards_html": cards_html,
+        "aviso_cards_html": aviso_cards_html,
+        "filtros_html": filtros_html,
+        "secao_mapa": secao_mapa,
+        "secao_top30_grafico": secao_top30_grafico,
+        "secao_cartoes": secao_cartoes,
+        "quadro_status_eixo_html": quadro_status_eixo_html,
+        "quadro_status_objeto_html": quadro_status_objeto_html,
+        "css_bruto": css_bruto,
+        "js_bruto": js_bruto,
+        "oc_html": oc_html,
+        "recorte_txt": recorte_txt,
+        "agora": agora,
+        "titulo": titulo,
+    }
+
+
+def gerar_html_resumo_acoes(caminho_base, dados):
+    """Página única (abre sem internet) com cards, o gráfico/avaliação dos
+    30 maiores municípios por população (mapa oculto — RA_HTML_MOSTRAR_MAPA)
+    e o quadro Status × Eixo do recorte atual."""
+    p = _montar_blocos_monitoramento(caminho_base, dados)
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ações em Monitoramento</title>
+<style>
+{p["css_bruto"]}
+</style></head><body>
+<button type="button" class="btn-pdf" onclick="gerarPdf()" title="Imprime/salva em PDF com o gráfico, a avaliação e o detalhamento por status de cada município já abertos">Gerar PDF</button>
+<header><div><h1>{p["titulo"]}</h1><p>COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</p></div>
+<div class="gov">GOVERNO DO ESTADO DA BAHIA<br>CASA CIVIL</div></header>
+<main>
+<div class="filtros">{p["filtros_html"]}Gerado em {p["agora"]:%d/%m/%Y às %Hh%M}.</div>
+{p["aviso_cards_html"]}
+<div class="cards">{p["cards_html"]}</div>
+{p["secao_mapa"]}
+{p["secao_top30_grafico"]}
+{p["secao_cartoes"]}
+{p["quadro_status_eixo_html"]}
+{p["quadro_status_objeto_html"]}
+</main>
+<footer>CGAPE · Casa Civil · Base Ações do Cronograma</footer>
+<div id="dica"></div>
+{p["oc_html"]}
+<script>
+{p["js_bruto"]}
 </script>
 </body></html>"""
+
+
+def montar_partes_html_monitoramento(caminho_base, dados):
+    """Pedaços do HTML "Ações em Monitoramento", já isolados (CSS sob
+    .mon-ra, ids sufixados, tooltip em #mon-dica) prontos para entrar como a
+    página MON_ACOES da Apresentação CGAPE (ver gerar_pptx_pac.py), ao lado
+    das páginas do PAC na mesma janela de seleção — pedido do usuário em
+    15/11/2026. Uma única página, com rolagem, juntando cards + gráfico dos
+    30 maiores + cartões por município + quadros, na mesma ordem e estrutura
+    da página autônoma (gerar_html_resumo_acoes) — pedido do usuário em
+    15/11/2026, pra não fatiar o Monitoramento em vários slides. Base e
+    filtros do Monitoramento são completamente independentes dos do PAC (os
+    `dados` já vêm de resumo_acoes_dados, com os filtros do próprio
+    Monitoramento); CSS e ids isolados garantem que o visual de um não vaza
+    pro outro, inclusive quando a apresentação troca de gestão/secretaria —
+    a página MON_ACOES fica de fora dessas variantes (ver
+    montar_html_apresentacao: renderizada uma única vez, nunca recalculada
+    por gestão/secretaria)."""
+    p = _montar_blocos_monitoramento(caminho_base, dados)
+
+    def envolver(html_interno):
+        return _sufixar_ids_monitoramento(f'<div class="mon-ra">{html_interno}</div>')
+
+    secoes = {
+        "MON_ACOES": envolver(
+            f'<div class="filtros">{p["filtros_html"]}</div>'
+            f'{p["aviso_cards_html"]}'
+            f'<div class="cards">{p["cards_html"]}</div>'
+            f'{p["secao_mapa"]}'
+            f'{p["secao_top30_grafico"]}'
+            f'{p["secao_cartoes"]}'
+            f'{p["quadro_status_eixo_html"]}'
+            f'{p["quadro_status_objeto_html"]}'
+        ),
+    }
+
+    # O tooltip (#dica) e o botão "Gerar PDF" (window.gerarPdf) da página
+    # autônoma viram, no embutido, #mon-dica — fora de qualquer .mon-ra,
+    # pra não sumir se o slide que o contém não for o ativo (ver
+    # "dica_html" abaixo, colocado fora de qualquer slide por quem monta a
+    # apresentação) — e window.monRaGerarPdf, sem botão próprio: a
+    # apresentação já tem o seu, que imprime a página inteira.
+    css_renomeado = p["css_bruto"].replace("#dica", "#mon-dica")
+    css_isolado = _escopar_css(css_renomeado, ".mon-ra",
+                               nao_escopar=("#mon-dica", "#ra-oc-fundo"))
+    js_isolado = (
+        p["js_bruto"]
+        .replace('getElementById("dica")', 'getElementById("mon-dica")')
+        .replace("window.gerarPdf=", "window.monRaGerarPdf=")
+    )
+
+    return {
+        "css": css_isolado,
+        "secoes": secoes,
+        "js": js_isolado,
+        "dica_html": '<div id="mon-dica"></div>',
+        # Janela de cards ao clicar num objeto (ver .ra-obj-clic): mesmo
+        # motivo do #mon-dica acima, fica fora de qualquer .mon-ra/slide —
+        # ids já únicos (ra-oc-*), não colidem com a janela "oc-*" que o
+        # próprio PAC usa pro clique em objeto/executor das suas tabelas.
+        "oc_html": p["oc_html"],
+        "recorte": p["recorte_txt"],
+    }
 
 
 # ---- API (chamada pelo painel) ----------------------------------------------
@@ -1384,7 +2274,8 @@ HTML_JANELA = r"""
         <small>base Ações do Cronograma</small></h2>
       <div class="ra-botoes">
         <button type="button" class="ra-inicio" id="raInicio" title="Voltar à tela inicial">← Início</button>
-        <button type="button" id="raHtml" title="Gera uma página HTML com o mapa de investimento por município e o quadro Status × Eixo do recorte atual">GERAR HTML</button>
+        <button type="button" id="raHtml" title="Gera uma página HTML com o gráfico de investimento dos 30 maiores municípios por população, a avaliação da carteira e o quadro Status × Eixo do recorte atual">GERAR HTML</button>
+        <button type="button" id="raIncluirApresentacao" title="Abre a Apresentação CGAPE (HTML) já com as páginas do Monitoramento marcadas — você escolhe quais páginas do PAC entram junto">INCLUIR NA APRESENTAÇÃO</button>
         <button type="button" id="raGerar" title="Lê de novo a planilha Ações do Cronograma e gera o slide em Downloads">GERAR APRESENTAÇÃO</button>
         <button type="button" class="ra-fechar" id="raFechar">FECHAR</button>
       </div>
@@ -1610,7 +2501,28 @@ HTML_JANELA = r"""
     return await r.json();
   }
 
+  // Chave de localStorage pros filtros deste overlay sobreviverem a uma
+  // troca de tela (HOME/PAC/MONITORAMENTO recarrega a página inteira, ver
+  // _carregar_tela em "CGAPE - BALANÇO PAC.py") — pedido do usuário em
+  // 15/11/2026: o botão "VER APRESENTAÇÃO (HTML)" do painel do PAC precisa
+  // enxergar o último filtro escolhido aqui, mesmo se a pessoa tiver saído
+  // desta tela antes de clicar nele.
+  var MON_RA_CHAVE_STORAGE = "monRaFiltros";
   var raFiltros = {};
+  try {
+    var raFiltrosSalvos = window.localStorage && localStorage.getItem(MON_RA_CHAVE_STORAGE);
+    if (raFiltrosSalvos) raFiltros = JSON.parse(raFiltrosSalvos) || {};
+  } catch (e) { /* localStorage indisponível (ex.: aba anônima) — segue com base completa */ }
+  function raSalvarFiltros() {
+    try { if (window.localStorage) localStorage.setItem(MON_RA_CHAVE_STORAGE, JSON.stringify(raFiltros)); }
+    catch (e) { /* ignora — não é crítico, só perde a persistência entre telas */ }
+  }
+  // Exposto pro script do painel (montar_html_painel), que injeta este
+  // overlay na mesma página — usado pelo botão "VER APRESENTAÇÃO (HTML)" /
+  // "INCLUIR NA APRESENTAÇÃO" pra levar o filtro do Monitoramento junto do
+  // filtro do PAC, sem cruzar as duas bases — pedido do usuário em
+  // 15/11/2026.
+  window.monRaFiltrosAtuais = function () { return raFiltros; };
   var raPedido = 0;
   var overlay = document.getElementById("ra-overlay");
 
@@ -1704,10 +2616,13 @@ HTML_JANELA = r"""
     raConsultar();
   }
   // Atalhos de período por mandato na Entrega da Obra (pedido do usuário em
-  // 13/11/2026): um clique preenche de/até; clicar no ativo limpa.
+  // 13/11/2026): um clique preenche de/até; clicar no ativo limpa. "Macro
+  // Jerônimo" (os dois mandatos somados) adicionada a pedido do usuário em
+  // 15/11/2026, mantendo M01/M02 com os mesmos períodos de cada mandato.
   var RA_MANDATOS = [
-    {rotulo: "JERÔNIMO 01", de: "2023-01-01", ate: "2026-12-31"},
-    {rotulo: "JERÔNIMO 02", de: "2027-01-01", ate: "2030-12-31"}];
+    {rotulo: "1º M", de: "2023-01-01", ate: "2026-12-31"},
+    {rotulo: "2º M", de: "2027-01-01", ate: "2030-12-31"},
+    {rotulo: "Jerônimo", de: "2023-01-01", ate: "2030-12-31"}];
   var RA_DATAS_COM_MANDATO = ["entrega"];
   function raMontarData(f) {
     var bloco = document.createElement("div");
@@ -1955,6 +2870,10 @@ HTML_JANELA = r"""
       "</tbody><tfoot><tr>" + linha(q.total, "tot") + "</tr></tfoot></table></div>";
   }
   function raConsultar() {
+    // Chamada depois de QUALQUER mutação de raFiltros (ver raAlternar,
+    // raLimparFiltros etc.) — ponto único pra persistir em localStorage,
+    // sem precisar repetir isso em cada lugar que mexe no filtro.
+    raSalvarFiltros();
     var msg = document.getElementById("raMsg");
     var pedido = ++raPedido;
     msg.textContent = "Lendo a planilha Ações do Cronograma…";
@@ -2004,6 +2923,25 @@ HTML_JANELA = r"""
   document.getElementById("raFechar").onclick = fechar;
   document.getElementById("raGerar").onclick = raGerar;
   document.getElementById("raHtml").onclick = raHtml;
+  // "INCLUIR NA APRESENTAÇÃO" — abre a mesma janela de seleção de slides
+  // da Apresentação CGAPE (definida no script do painel, injetado nesta
+  // mesma página — ver window.abrirApresentacaoComMonitoramento em "CGAPE
+  // - BALANÇO PAC.py"), já com as páginas MON_* marcadas. Os filtros do
+  // Monitoramento usados são os deste overlay (raFiltros, via
+  // window.monRaFiltrosAtuais); os do PAC são os últimos do painel (ou
+  // base completa, se o painel nunca foi aberto) — pedido do usuário em
+  // 15/11/2026.
+  var botaoIncluirApresentacao = document.getElementById("raIncluirApresentacao");
+  if (botaoIncluirApresentacao) {
+    if (window.abrirApresentacaoComMonitoramento) {
+      botaoIncluirApresentacao.onclick = window.abrirApresentacaoComMonitoramento;
+    } else {
+      // Nunca deveria acontecer (este overlay só existe injetado no painel
+      // do PAC, que sempre define essa função) — esconde em vez de deixar
+      // um botão quebrado.
+      botaoIncluirApresentacao.style.display = "none";
+    }
+  }
   // irParaHome vem do próprio documento do painel (ver montar_html_painel)
   // — este overlay vive dentro dele, nunca sozinho — pedido do usuário em
   // 14/11/2026.

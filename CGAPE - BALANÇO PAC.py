@@ -682,7 +682,7 @@ RESUMO_FONTE_TAM_CORPO = 14      # demais células
 # --- Larguras de coluna: tabela por Secretaria/Fase ---
 # Colunas fixas, sobre a largura útil total da página (LARGURA_UTIL). O
 # espaço restante (1 - soma abaixo) é dividido igualmente entre as colunas
-# de fase ativas (CAPTAÇÃO DE RECURSO, LICITAÇÃO, EXECUÇÃO DO OBJETO,
+# de fase ativas (SELECIONADA, LICITAÇÃO, EXECUÇÃO DO OBJETO,
 # CONCLUÍDA), para a tabela sempre ocupar 100% da largura da página.
 SEC_FASE_LARGURA_SECRETARIA = 0.14
 SEC_FASE_LARGURA_EXECUTOR = 0.14
@@ -1013,7 +1013,7 @@ def _multiplicador_peso_investimento_status(status_texto):
 def _score_fase_desempenho(fase_texto):
     # Usa o texto já limpo da fase (não o número extraído do texto bruto,
     # que usa 999 como valor "não reconhecido" e explodiria o cálculo) —
-    # ORDEM_FASES vai do pior (Captação de Recurso) pro melhor (Concluída).
+    # ORDEM_FASES vai do pior (Selecionada) pro melhor (Concluída).
     try:
         posicao = ORDEM_FASES.index(str(fase_texto).strip().upper())
         return (posicao / (len(ORDEM_FASES) - 1)) * 100
@@ -1395,7 +1395,15 @@ def extrair_ordem_fase(fase):
 
 
 def limpar_texto_fase(fase):
-    return re.sub(r"F\s*\d+\s*-\s*", "", str(fase), flags=re.IGNORECASE).strip()
+    texto = re.sub(r"F\s*\d+\s*-\s*", "", str(fase), flags=re.IGNORECASE).strip()
+    # Fase "Captação de Recurso" renomeada para "Selecionada" em todo o
+    # projeto — pedido do usuário em 15/11/2026. A base de dados ainda não
+    # foi atualizada com o novo nome, então normaliza aqui: tanto o texto
+    # antigo (hoje, na planilha) quanto o novo (quando a planilha for
+    # atualizada) caem em "SELECIONADA".
+    if texto.upper() == "CAPTAÇÃO DE RECURSO":
+        return "SELECIONADA"
+    return texto
 
 
 def formatar_prazo(valor):
@@ -3891,7 +3899,7 @@ def gerar_tabela_secretaria_fase(df_base, gestao, altura_maxima=None):
     df_filtrado = df_base[df_base["GESTAO"] == gestao]
     df_filtrado = df_filtrado.assign(
         _INV_AJ=_serie_investimento_ajustado(df_filtrado))
-    fases = ["CAPTAÇÃO DE RECURSO", "LICITAÇÃO",
+    fases = ["SELECIONADA", "LICITAÇÃO",
              "EXECUÇÃO DO OBJETO", "CONCLUÍDA"]
     pares = df_filtrado[["SECRETARIA_LIMPA",
                          "EXECUTOR"]].drop_duplicates().copy()
@@ -4131,10 +4139,10 @@ COR_AMARELO = cor_grafico("#BC9E2C")
 # Ordem e cores padrão das FASES, usadas tanto no gráfico PANORAMA GERAL DAS
 # FASES quanto na nova página PANORAMA POR SECRETARIA | EXECUTOR — mantém as
 # duas visualizações com a mesma paleta.
-ORDEM_FASES = ["CAPTAÇÃO DE RECURSO", "LICITAÇÃO",
+ORDEM_FASES = ["SELECIONADA", "LICITAÇÃO",
                "EXECUÇÃO DO OBJETO", "CONCLUÍDA"]
 CORES_FASE = {
-    "CAPTAÇÃO DE RECURSO": COR_VERMELHO,
+    "SELECIONADA": COR_VERMELHO,
     "LICITAÇÃO": COR_AMARELO,
     "EXECUÇÃO DO OBJETO": COR_VERDE,
     "CONCLUÍDA": COR_AZUL,
@@ -4149,7 +4157,7 @@ GRUPOS_STATUS_POR_FASE = {
     "ANDAMENTO": (2, COR_VERDE),
     # "Licitação" (amarelo)
     "LICITAÇÃO /CONTRATAÇÃO": (1, COR_AMARELO),
-    # Todo o resto — incluindo "À LICITAR" — cai em "Captação de Recurso"
+    # Todo o resto — incluindo "À LICITAR" — cai em "Selecionada"
     # (vermelho), que é o valor padrão devolvido pelo .get() abaixo, não
     # precisa listar aqui.
 }
@@ -4160,12 +4168,12 @@ def _cor_status_por_grupo_fase(status_texto):
     # prática — não é mais um gradiente numérico solto, é a MESMA cor da
     # fase correspondente, pra ler os dois gráficos (FASE e STATUS) com a
     # mesma linguagem visual: um status vermelho no gráfico da direita
-    # sempre corresponde a uma ação que ainda está na fase de Captação de
-    # Recurso no gráfico da esquerda, e assim por diante.
+    # sempre corresponde a uma ação que ainda está na fase Selecionada
+    # no gráfico da esquerda, e assim por diante.
     #   Concluída (azul): Concluída, Inaugurada
     #   Execução do Objeto (verde): Aguardando Ordem de Serviço, Andamento
     #   Licitação (amarelo): Licitação/Contratação
-    #   Captação de Recurso (vermelho): À Licitar e todos os demais status
+    #   Selecionada (vermelho): À Licitar e todos os demais status
     return GRUPOS_STATUS_POR_FASE.get(str(status_texto).strip().upper(), (0, COR_VERMELHO))
 
 
@@ -4246,7 +4254,7 @@ def _tabela_fase_status(df_base, max_linhas_por_bloco=8):
     # só que aqui apresentada como texto/tabela em vez de cor. Dinâmica:
     # só lista os status que aparecem de fato no filtro atual.
     NOME_GRUPO_FASE = {
-        0: "CAPTAÇÃO DE RECURSO",
+        0: "SELECIONADA",
         1: "LICITAÇÃO",
         2: "EXECUÇÃO DO OBJETO",
         3: "CONCLUÍDA",
@@ -6403,7 +6411,7 @@ def _campos_alerta_qualidade(row, hoje=None):
     #
     #   2. Não existe abertura nenhuma: aí não há sinal de que a licitação
     #      tenha começado, e a leitura mais provável é que a ação ainda
-    #      esteja em Captação de Recurso. O destaque vai na FASE.
+    #      esteja em Selecionada. O destaque vai na FASE.
     #
     # Antes os dois casos caíam no segundo, e a ficha acusava fase errada em
     # ações cuja fase estava correta — o problema era só o campo em branco.
@@ -6424,7 +6432,7 @@ def _campos_alerta_qualidade(row, hoje=None):
             else:
                 alertas["fase"] = (
                     "Fase Licitação sem Aviso de Licitação publicado — deveria "
-                    "permanecer em Captação de Recurso"
+                    "permanecer em Selecionada"
                 )
 
     # Prazo da Pendência / Tarefa vencido — uma tarefa/pendência em aberto
@@ -7875,7 +7883,7 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 ),
                 Spacer(1, 15),
                 Paragraph(
-                    "Exemplo: Temos obras que já estão com STATUS de licitação ou em andamento que ainda não venceram a FASE de captação de recurso.",
+                    "Exemplo: Temos obras que já estão com STATUS de licitação ou em andamento que ainda não venceram a FASE Selecionada.",
                     obs_texto,
                 ),
                 Spacer(1, 26),
@@ -8548,7 +8556,7 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                     "<b>Status (30%)</b> e <b>Fase (30%):</b> os status que ainda não representam entrega se "
                     "distribuem de 0 a <b>65</b> conforme a posição na ordem — por isso Andamento, a última "
                     "delas, vale 65 e não 100: o que sobra acima disso fica reservado para a entrega de fato "
-                    "(Concluída 85, Inaugurada 100). Fase segue a mesma ideia, de Captação de Recurso até "
+                    "(Concluída 85, Inaugurada 100). Fase segue a mesma ideia, de Selecionada até "
                     "Concluída.",
                     metodologia_texto,
                 ),
@@ -10799,6 +10807,20 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     font-weight: 700;
     border-bottom: 1px solid var(--cor-card-elevado);
   }
+  /* Resumo dos dois grupos de filtro (PAC + Monitoramento) na janela de
+     slides da apresentação — só aparece no formato HTML, onde as duas
+     bases/filtros coexistem (ver mostrarJanelaPaginas) — pedido do
+     usuário em 15/11/2026: deixar claro que são dois recortes
+     independentes, nenhum afeta o outro. */
+  .paginas-resumo-filtros {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    padding: 10px 22px 0 22px;
+    font-size: 12px;
+    color: var(--cor-texto-secundario);
+  }
+  .paginas-resumo-filtros b { color: var(--cor-texto-primario); }
   .paginas-acoes {
     display: flex;
     align-items: center;
@@ -12383,6 +12405,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     <div class="modal-titulo">
       <span id="paginas-titulo">Selecione as páginas do relatório</span>
     </div>
+    <div id="paginas-resumo-filtros" class="paginas-resumo-filtros" style="display:none"></div>
     <div class="paginas-acoes">
       <button class="btn-mini" id="paginas-marcar-tudo">Marcar tudo</button>
       <button class="btn-mini" id="paginas-limpar">Limpar</button>
@@ -12547,7 +12570,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         <h3 class="preview-secao-titulo">Panorama por Secretaria | Executor<span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div class="preview-legenda-fases">
-            <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="vermelho"></span>Captação de Recurso</span>
+            <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="vermelho"></span>Selecionada</span>
             <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="amarelo"></span>Licitação</span>
             <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="verde"></span>Execução do Objeto</span>
             <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="azul"></span>Concluída</span>
@@ -13751,7 +13774,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     if (cor) elemento.style.background = cor;
   });
   const CORES_FASE = {
-    "CAPTAÇÃO DE RECURSO": COR_VERMELHO,
+    "SELECIONADA": COR_VERMELHO,
     "LICITAÇÃO": COR_AMARELO,
     "EXECUÇÃO DO OBJETO": COR_VERDE,
     "CONCLUÍDA": COR_AZUL,
@@ -15241,13 +15264,43 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     return out;
   }
 
+  // Chaves que montarFiltrosAtuais() inclui mas que NÃO são filtro de linha
+  // nenhum: COLUNAS_DETALHAMENTO/FINANCEIRO_DETALHADO são opção de
+  // exibição (sempre têm algum valor, mesmo sem nenhum filtro real
+  // marcado), e MONITORAMENTO é o filtro de outra seção (a do
+  // relatório PDF, relatorio_monitoramento.py — nada a ver com o
+  // Monitoramento/resumo_acoes.py desta apresentação). Sem excluir essas
+  // três, o resumo mostrava "2 filtros ativos" mesmo com o painel do PAC
+  // intocado — bug encontrado na validação em 15/11/2026.
+  var CHAVES_NAO_FILTRO_PAC = {"COLUNAS_DETALHAMENTO": 1, "FINANCEIRO_DETALHADO": 1, "MONITORAMENTO": 1};
+
+  // Resumo compacto de um conjunto de filtros (PAC ou Monitoramento) pra
+  // janela de seleção de slides — "nenhum filtro" vira "base completa" em
+  // vez de uma lista vazia, que parece erro — pedido do usuário em
+  // 15/11/2026.
+  function resumoFiltrosAtivos(filtrosObj, ignorarChaves) {
+    if (!filtrosObj) return "base completa";
+    var chaves = Object.keys(filtrosObj).filter(function (k) {
+      if (ignorarChaves && ignorarChaves[k]) return false;
+      var v = filtrosObj[k];
+      if (Array.isArray(v)) return v.length > 0;
+      if (v && typeof v === "object") return Object.keys(v).length > 0;
+      return !!v;
+    });
+    if (!chaves.length) return "base completa";
+    return chaves.length + " filtro" + (chaves.length > 1 ? "s" : "") + " ativo" + (chaves.length > 1 ? "s" : "");
+  }
+
   function mostrarJanelaPaginas(filtros, opcoes) {
     // Resolve com a lista de chaves escolhidas, ou com null quando a pessoa
     // cancela (aí a geração inteira é abortada, sem abrir o "Salvar como").
     // opcoes (usado pela apresentação; sem ele, é a janela do relatório):
     // api, titulo, rotuloConfirmar, semColunas, unidade/unidades, contador,
     // formato (repassado pra api, ex.: "html" esconde slides que só existem
-    // mesclados no HTML).
+    // mesclados no HTML), marcarPadrao(chave) -> true/false/undefined
+    // (undefined = usa o padrão do catálogo) — usado pelo atalho "INCLUIR
+    // NA APRESENTAÇÃO" do Monitoramento, que marca só as páginas MON_* —
+    // pedido do usuário em 15/11/2026.
     opcoes = opcoes || {};
     var unidade = opcoes.unidade || "página";
     var unidades = opcoes.unidades || "páginas";
@@ -15258,6 +15311,24 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       var overlay = document.getElementById("paginas-overlay");
       var grade = document.getElementById("paginas-grade");
       var contador = document.getElementById("paginas-contador");
+
+      // Linha "PAC: ... / Monitoramento: ..." — só no HTML da apresentação,
+      // onde as duas bases/filtros coexistem na mesma página (ver
+      // SLIDES_SO_NO_HTML/CHAVES_MONITORAMENTO em gerar_pptx_pac.py) —
+      // deixa explícito que um recorte não influencia o outro.
+      var resumoFiltrosEl = document.getElementById("paginas-resumo-filtros");
+      if (resumoFiltrosEl) {
+        if (opcoes.formato === "html") {
+          var filtrosMonAtuais = window.monRaFiltrosAtuais ? window.monRaFiltrosAtuais() : null;
+          resumoFiltrosEl.style.display = "flex";
+          resumoFiltrosEl.innerHTML =
+            "<span>PAC: <b>" + resumoFiltrosAtivos(filtros, CHAVES_NAO_FILTRO_PAC) + "</b></span>" +
+            "<span>Monitoramento: <b>" + resumoFiltrosAtivos(filtrosMonAtuais) + "</b></span>";
+        } else {
+          resumoFiltrosEl.style.display = "none";
+          resumoFiltrosEl.innerHTML = "";
+        }
+      }
 
       var lista;
       try {
@@ -15279,9 +15350,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 
       // O padrão vem do backend: quase tudo marcado, mas o Detalhamento
       // Financeiro chega desmarcado quando o recorte só tem ANDAMENTO.
+      // opcoes.marcarPadrao, quando informado, tem prioridade sobre esse
+      // padrão — usado pelo atalho "INCLUIR NA APRESENTAÇÃO".
       var marcadas = {};
       lista.secoes.forEach(function (sec) {
-        marcadas[sec.chave] = sec.marcada !== false;
+        var padraoCustom = opcoes.marcarPadrao ? opcoes.marcarPadrao(sec.chave) : undefined;
+        marcadas[sec.chave] = padraoCustom !== undefined ? padraoCustom : sec.marcada !== false;
       });
 
       function atualizarContador() {
@@ -15901,7 +15975,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // filtros e topo do dashboard, mesmo padrão do par btnGerar/
   // previewGerarTopo acima) — com os filtros ativos no painel e a mesma
   // janela de seleção do relatório (aqui, de slides), sem passo de qualidade.
-  function escolherSlides(filtros, rotuloConfirmar, formato) {
+  function escolherSlides(filtros, rotuloConfirmar, formato, marcarPadrao) {
     return mostrarJanelaPaginas(filtros, {
       api: "listar_slides_apresentacao",
       titulo: "Selecione os slides da apresentação",
@@ -15916,6 +15990,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       // dash — o PPTX mantém a ordem fixa do catálogo — pedido do usuário
       // em 08/11/2026.
       permitirReordenar: formato === "html",
+      marcarPadrao: marcarPadrao,
     });
   }
   var AVISO_RECORTE_VAZIO = "Nenhum registro encontrado para os filtros selecionados. A apresentação não será gerada.";
@@ -15954,13 +16029,26 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   ].filter(Boolean);
   const textoOriginalBtnVerHTML = botoesVerHTML.length ? botoesVerHTML[0].textContent : "";
 
-  async function verApresentacaoHtml() {
+  // opcoesExtra.marcarPadrao / rotuloConfirmar: usados pelo atalho "INCLUIR
+  // NA APRESENTAÇÃO" do Monitoramento (ver window.abrirApresentacaoComMonitoramento
+  // abaixo), que abre esta MESMA janela já com as páginas MON_* marcadas e
+  // as do PAC desmarcadas — pedido do usuário em 15/11/2026.
+  async function verApresentacaoHtml(opcoesExtra) {
+    opcoesExtra = opcoesExtra || {};
     var filtros = montarFiltrosAtuais();
-    var secoes = await escolherSlides(filtros, "VER APRESENTAÇÃO", "html");
+    // Filtros do Monitoramento (resumo_acoes.py, overlay "Ações em
+    // Monitoramento") — TOTALMENTE independentes dos do PAC acima; "null"
+    // quando o overlay nunca existiu nesta página (função ainda não
+    // definida) ou nunca foi customizado, o que o backend trata como base
+    // completa — pedido do usuário em 15/11/2026.
+    var filtrosMon = window.monRaFiltrosAtuais ? window.monRaFiltrosAtuais() : null;
+    var secoes = await escolherSlides(
+      filtros, opcoesExtra.rotuloConfirmar || "VER APRESENTAÇÃO", "html", opcoesExtra.marcarPadrao
+    );
     if (secoes === null) return;
     botoesVerHTML.forEach(function (b) { b.disabled = true; b.textContent = "Gerando..."; });
     try {
-      var resultado = await baixarHTML("visualizar_html_analise_financeira", filtros, secoes);
+      var resultado = await baixarHTML("visualizar_html_analise_financeira", filtros, secoes, filtrosMon);
       if (!resultado || resultado.cancelado) return;
       if (resultado.vazio) {
         alert(AVISO_RECORTE_VAZIO);
@@ -15973,7 +16061,21 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       botoesVerHTML.forEach(function (b) { b.disabled = false; b.textContent = textoOriginalBtnVerHTML; });
     }
   }
-  botoesVerHTML.forEach(function (b) { b.onclick = verApresentacaoHtml; });
+  botoesVerHTML.forEach(function (b) { b.onclick = function () { verApresentacaoHtml(); }; });
+
+  // Atalho "INCLUIR NA APRESENTAÇÃO" (botão do overlay de Monitoramento,
+  // ver HTML_JANELA em resumo_acoes.py) — mesma janela/geração do botão
+  // "VER APRESENTAÇÃO (HTML)" acima, só que já chegando com as páginas
+  // MON_* marcadas e as do PAC desmarcadas (o usuário marca o que quiser
+  // do PAC) — pedido do usuário em 15/11/2026. Exposto em window porque
+  // quem aciona é o script de resumo_acoes.py, injetado nesta mesma
+  // página mas definido num <script> à parte.
+  window.abrirApresentacaoComMonitoramento = function () {
+    return verApresentacaoHtml({
+      rotuloConfirmar: "VER APRESENTAÇÃO",
+      marcarPadrao: function (chave) { return chave.indexOf("MON_") === 0; },
+    });
+  };
 
   // --- Fechamento automático por inatividade (5 minutos) ---
   const TEMPO_INATIVIDADE_MS = 15 * 60 * 1000;
@@ -16763,23 +16865,31 @@ def _api_gerar_pptx_analise_financeira_bytes(filtros=None, secoes=None):
     return {"ok": True, "nome_arquivo": nome_arquivo_pptx_analise_financeira, "conteudo": conteudo}
 
 
-def _construir_html_analise_financeira_bytes(filtros=None, secoes=None):
+def _construir_html_analise_financeira_bytes(filtros=None, secoes=None, filtros_mon=None):
     # Mesma ideia de _construir_pptx_analise_financeira_bytes, mas pra
     # versão HTML da apresentação (ver montar_html_apresentacao em
     # gerar_pptx_pac.py) — existe porque texto em caixa de tamanho fixo do
     # PPTX precisa de fonte calculada à mão pra não estourar; no HTML o
     # navegador quebra linha e redimensiona sozinho, então serve como
     # conferência visual rápida sem precisar abrir PowerPoint/Canva.
-    return _modulo_apresentacao().gerar_html_bytes(_df_analise_financeira(filtros), filtros, secoes)
+    #
+    # filtros_mon: filtros do overlay "Ações em Monitoramento" (resumo_
+    # acoes.py — NÃO confundir com _modulo_monitoramento()/relatorio_
+    # monitoramento.py, a seção de MONITORAMENTO do relatório PDF, outra
+    # coisa). Repassado à parte de `filtros` (do painel do PAC) porque as
+    # páginas MON_* da apresentação usam base e filtros independentes —
+    # pedido do usuário em 15/11/2026.
+    return _modulo_apresentacao().gerar_html_bytes(
+        _df_analise_financeira(filtros), filtros, secoes, filtros_mon)
 
 
-def _api_gerar_html_analise_financeira_bytes(filtros=None, secoes=None):
+def _api_gerar_html_analise_financeira_bytes(filtros=None, secoes=None, filtros_mon=None):
     # Equivalente web do botão "VER APRESENTAÇÃO (HTML)" — mesmo padrão de
     # _api_gerar_pptx_analise_financeira_bytes, só que o navegador abre o
     # HTML direto numa aba (ver abrirEmNovaAba em baixarArquivoBinario),
     # sem forçar download.
     try:
-        conteudo = _construir_html_analise_financeira_bytes(filtros, secoes)
+        conteudo = _construir_html_analise_financeira_bytes(filtros, secoes, filtros_mon)
     except RecorteVazioErro:
         return {"ok": False, "vazio": True}
     except Exception as erro:
@@ -17010,15 +17120,17 @@ def abrir_interface_filtros(df_base):
                 traceback.print_exc()
                 return {"ok": False, "erro": str(erro)}
 
-        def visualizar_html_analise_financeira(self, filtros=None, secoes=None):
+        def visualizar_html_analise_financeira(self, filtros=None, secoes=None, filtros_mon=None):
             # Botão "VER APRESENTAÇÃO (HTML)" no modo desktop — sem diálogo
             # de salvar: é só uma conferência visual rápida, então grava
             # sempre no mesmo arquivo (sobrescreve a cada clique) e abre
             # direto no navegador padrão. Quem quiser guardar/enviar o
             # arquivo pode "Salvar como" dali do próprio navegador.
+            # filtros_mon: filtros do overlay de Monitoramento, ver
+            # _construir_html_analise_financeira_bytes.
             try:
                 conteudo = _construir_html_analise_financeira_bytes(
-                    filtros, secoes)
+                    filtros, secoes, filtros_mon)
                 pasta_destino = (
                     PASTA_DOWNLOADS_PADRAO if os.path.isdir(
                         PASTA_DOWNLOADS_PADRAO) else PASTA_BASE

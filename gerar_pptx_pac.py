@@ -467,7 +467,7 @@ def _sincronizar_cores_com_painel():
 # A CONTRATAR (claro), igual ao slide 2 — a fase é só o rótulo da linha.
 # ---------------------------------------------------------------------------
 FASES_ORIGEM = [
-    ("CAPTAÇÃO DE RECURSO", "Captação de Recurso"),
+    ("SELECIONADA", "Selecionada"),
     ("LICITAÇÃO", "Licitação"),
     ("EXECUÇÃO DO OBJETO", "Execução do Objeto"),
     ("CONCLUÍDA", "Concluída"),
@@ -484,6 +484,12 @@ def rotulo_fase(fase):
 # adotadas" do gráfico de avanço).
 _PALETA_SEMESTRES_MAPA = [AZUL, VERDE, LARANJA, TEAL, VERMELHO, "6A3D9A"]
 _COR_MAPA_SEM_ENTREGA = "E0E0E0"
+
+# Mapa de municípios beneficiados oculto no HTML do PAC — pedido do usuário
+# em 15/11/2026. A função de geração (_mapa_entregas_municipios/
+# _html_mapa_entregas) continua existindo, só não é chamada, pra poder ser
+# religada depois sem reescrever nada.
+PAC_HTML_MOSTRAR_MAPA_ENTREGAS = False
 
 
 def _mapa_entregas_municipios(sub_exec, ordem_entrega, rotulos_entrega):
@@ -687,6 +693,12 @@ def calcular_metricas(df):
     # da composição por fase
     executor = (df["EXECUTOR"] if "EXECUTOR" in df.columns else df[pac.col_executor]).fillna("NÃO INFORMADO").astype(str)
     executor = executor.where(executor.str.strip() != "", "NÃO INFORMADO")
+    # usado pelo filtro de Secretaria no HTML (data-cards, chave "se") — ver
+    # montar_html_apresentacao/_montar_html_variante — pedido do usuário em
+    # 15/11/2026.
+    secretaria_linha = (df["SECRETARIA_LIMPA"] if "SECRETARIA_LIMPA" in df.columns else df[pac.col_orgao]
+                        ).fillna("NÃO INFORMADO").astype(str).str.strip()
+    secretaria_linha = secretaria_linha.where(secretaria_linha != "", "NÃO INFORMADO")
     m["eixo_executor"] = {
         e: {x: {k: (float(c[(eixo == e) & (executor == x)].sum()), float(a[(eixo == e) & (executor == x)].sum()))
                 for k, (c, a) in fontes_eixo.items()}
@@ -869,7 +881,7 @@ def calcular_metricas(df):
     # usadas para somar as tabelas, então o filtro do clique bate com a linha.
     m["_df"] = df
     m["_acoes_base"] = pd.DataFrame({
-        "o": objeto, "f": fase, "e": eixo, "x": executor,
+        "o": objeto, "f": fase, "e": eixo, "x": executor, "se": secretaria_linha,
         "c": contratado, "a": a_contratar_linha, "inv": investimento_linha,
         "na_exec": exec_obj_mask})
 
@@ -2957,10 +2969,14 @@ def _html_panorama_entregas(m):
     # Panorama geral da seção, acima do detalhamento por semestre: valores
     # macro à esquerda (empilhados, alinhados verticalmente entre si) e o
     # mapa de municípios beneficiados à direita — pedido do usuário em
-    # 12/11/2026.
+    # 12/11/2026. Mapa oculto (PAC_HTML_MOSTRAR_MAPA_ENTREGAS) a pedido do
+    # usuário em 15/11/2026: as estatísticas passam a ocupar a largura toda,
+    # lado a lado, em vez de empilhadas ao lado do mapa.
     total_municipios = m["entregas_mapa"]["qtd_municipios"] if m["entregas_mapa"] else 0
+    mapa_html = _html_mapa_entregas(m["entregas_mapa"]) if PAC_HTML_MOSTRAR_MAPA_ENTREGAS else ""
+    classe_corpo = "entrega-panorama-corpo" if PAC_HTML_MOSTRAR_MAPA_ENTREGAS else "entrega-panorama-corpo sem-mapa"
     return f'''<div class="entrega-panorama">
-      <div class="entrega-panorama-corpo">
+      <div class="{classe_corpo}">
         <div class="entrega-panorama-stats">
           <div class="entrega-panorama-stat">
             <div class="entrega-panorama-stat-valor">{m["qtd_execucao_objeto"]}</div>
@@ -2975,7 +2991,7 @@ def _html_panorama_entregas(m):
             <div class="entrega-panorama-stat-rotulo">municípios beneficiados</div>
           </div>
         </div>
-        {_html_mapa_entregas(m["entregas_mapa"])}
+        {mapa_html}
       </div>
     </div>'''
 
@@ -3036,33 +3052,91 @@ def _html_entregas_execucao(m, fichas_cartoes):
 
 
 def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_gestao="",
-                          chave_gestao="todas", metricas_saida=None):
+                          chave_gestao="todas", metricas_saida=None, secretaria=None,
+                          partes_monitoramento=None):
     """Slides de UMA gestão (ou de todas), já numerados. Slides que não
     dependem dos dados (institucionais, páginas do Canva) entram uma vez só
     em `comuns` e aqui viram só um marcador (.slide-ref). Devolve
-    (html dos slides, css)."""
+    (html dos slides, css).
+
+    `secretaria`: quando informado, `df` já vem filtrado para UMA secretaria
+    (ver montar_html_apresentacao — filtro de Secretaria no HTML do PAC, que
+    precisa recalcular a apresentação inteira, não só Cláusulas/Entregas;
+    pedido do usuário em 15/11/2026, trocando o filtro de Executor que tinha
+    sido feito antes pelo mesmo motivo); usado só pra marcar o recorte no
+    rodapé e pro clique nas tabelas (data-cards) restringir à chave "se"
+    (secretaria) do mesmo jeito que já faz com "g" (gestão).
+
+    `partes_monitoramento`: dict de resumo_acoes.montar_partes_html_
+    monitoramento (ou None se a planilha "Ações do Cronograma" não existe
+    ou nenhuma página MON_* foi pedida), calculado UMA VEZ só em
+    montar_html_apresentacao e repassado pra cá — pedido do usuário em
+    15/11/2026: incorporar o Monitoramento (base e filtros TOTALMENTE
+    independentes do PAC) como mais um grupo de páginas da apresentação,
+    sem recalcular a base dele a cada variante de gestão/secretaria (são
+    até ~15 variantes por geração) nem duplicá-lo entre elas — as páginas
+    MON_* entram em CHAVES_HTML_SEM_DADOS (mesmo mecanismo de cache já
+    usado por ORGANOGRAMA/FLUXO_TRABALHO/Canva) e saem idênticas em toda
+    gestão/secretaria."""
     m = calcular_metricas(df)
     if metricas_saida is not None:
         metricas_saida[chave_gestao] = m
     # o clique num objeto/executor das tabelas só procura ações desta gestão
+    # (e, se for uma variante de secretaria, só desta secretaria também)
     filtro_gestao = {} if chave_gestao == "todas" else {"g": chave_gestao}
+    if secretaria:
+        filtro_gestao = dict(filtro_gestao, se=secretaria)
     # manter_ordem=True: o painel de seleção do HTML permite reordenar os
     # cartões (inclusive intercalando as páginas do Canva), então a ordem
     # final é a que vier em `secoes`, não a ordem fixa do catálogo do PPTX
     # — pedido do usuário em 08/11/2026.
     paginas_canva = _paginas_canva_disponiveis()
     chaves_validas_html = {s["chave"] for s in SLIDES_APRESENTACAO} | {_chave_canva(n) for n, _ in paginas_canva}
+    if not partes_monitoramento:
+        # Sem Monitoramento disponível (planilha "Ações do Cronograma" não
+        # encontrada, ou nenhuma página MON_* foi pedida): essas chaves nem
+        # entram como válidas, pra nunca aparecerem — nem pela ordem
+        # explícita, nem pelo "nada escolhido = tudo" de _preparar_plano —
+        # pedido do usuário em 15/11/2026 ("sem as páginas MON_*").
+        chaves_validas_html = chaves_validas_html - CHAVES_MONITORAMENTO
     escolhidas = _preparar_plano(m, secoes, contagem_paginas=_paginas_por_chave_html(m),
                                  manter_ordem=True, chaves_validas=chaves_validas_html)
     recorte = descrever_filtros(filtros)
     if rotulo_gestao:
         recorte = (recorte + " · " if recorte else "") + rotulo_gestao.title()
+    if secretaria:
+        recorte = (recorte + " · " if recorte else "") + f"Secretaria: {secretaria}"
 
     # todo slide abaixo leva o mesmo recorte no rodapé; o número da página é
     # preenchido no fim, quando já se sabe quais slides entram
     def _html_cabecalho_rodape(tema, conteudo, classe_extra="", id_html=""):
         return _html_cabecalho_rodape_base(tema, "§PAG§", m["total_slides"], conteudo, recorte=recorte,
                                            classe_extra=classe_extra, id_html=id_html)
+
+    # Página do Monitoramento ("Ações em Monitoramento", base e filtros
+    # TOTALMENTE independentes do PAC — ver resumo_acoes.py): uma página só,
+    # com rolagem (slide-continua, o mesmo recurso já usado pelo PANORAMA DA
+    # CARTEIRA), juntando cards + gráfico dos 30 maiores + cartões por
+    # município + quadros — igual à página autônoma, sem fatiar em vários
+    # slides (pedido do usuário em 15/11/2026). Mesma moldura das páginas do
+    # PAC, mas com o RECORTE DO MONITORAMENTO no rodapé (não o do
+    # PAC/gestão/secretaria acima) e a data de "Base atualizada em" do
+    # Monitoramento.
+    def _slide_monitoramento(chave, titulo):
+        if not partes_monitoramento:
+            return []
+        html = _html_cabecalho_rodape_base(
+            titulo, "§PAG§", m["total_slides"], partes_monitoramento["secoes"][chave],
+            recorte=partes_monitoramento["recorte"], classe_extra="slide-continua slide-monitoramento")
+        # "PAC + ..." em vez do "PAC - ..." padrão (pedido do usuário em
+        # 15/11/2026): só nesta página, que soma o Monitoramento ao PAC em
+        # vez de ser uma seção interna dele.
+        html = html.replace(f"PAC - {_html_esc(titulo)}", f"PAC + {_html_esc(titulo)}", 1)
+        texto_pac = texto_base_atualizada()
+        texto_mon = partes_monitoramento.get("data_atualizacao_texto") or ""
+        if texto_pac and texto_mon:
+            html = html.replace(_html_esc(texto_pac), _html_esc(texto_mon), 1)
+        return [html]
 
     total_investimento = m["total_investimento"]
 
@@ -3499,16 +3573,14 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         </div>
         <div class="vg-termos">{recursos_contratados}{recursos_a_contratar}</div>
       </div>
-      <div class="barra-empilhada">
-        <div class="barra-empilhada-seg" style="width:{frac_contratado:.2f}%;background:#2E7D32">
-          <div class="be-titulo">T.C. FIRMADO · {_html_esc(abreviar_moeda(m["total_contratado"]))}</div>
+      <div class="barra-empilhada">{"".join(seg for seg in [
+        f'''<div class="barra-empilhada-seg" style="width:{frac_contratado:.2f}%;background:#2E7D32">
           <div class="be-sub">{_html_esc(pct(m["total_contratado"], total_investimento))}</div>
-        </div>
-        <div class="barra-empilhada-seg" style="width:{100 - frac_contratado:.2f}%;background:#E68A00">
-          <div class="be-titulo">T.C. NÃO FIRMADO · {_html_esc(abreviar_moeda(m["total_a_contratar"]))}</div>
+        </div>''' if m["total_contratado"] > 0 else "",
+        f'''<div class="barra-empilhada-seg" style="width:{100 - frac_contratado:.2f}%;background:#E68A00">
           <div class="be-sub">{_html_esc(pct(m["total_a_contratar"], total_investimento))}</div>
-        </div>
-      </div>
+        </div>''' if m["total_a_contratar"] > 0 else "",
+      ] if seg)}</div>
       {cartoes_status_html}
       <div style="margin-top:40px">
         <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
@@ -3596,10 +3668,9 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .rotulo-secao { font-size:18px; font-weight:700; color:#5B6576; text-transform:uppercase; }
     .valor-principal { font-size:68px; font-weight:900; margin-top:6px; }
     .texto-secundario { font-size:17px; color:#5B6576; margin-top:6px; }
-    .barra-empilhada { display:flex; height:90px; border-radius:4px; overflow:hidden; margin-top:14px; }
-    .barra-empilhada-seg { padding:14px 18px; color:#fff; }
-    .be-titulo { font-size:19px; font-weight:700; }
-    .be-sub { font-size:16px; margin-top:6px; }
+    .barra-empilhada { display:flex; height:45px; border-radius:4px; overflow:hidden; margin-top:14px; }
+    .barra-empilhada-seg { padding:0 18px; color:#fff; display:flex; align-items:center; }
+    .be-sub { font-size:16px; }
     .cartoes-grade { display:flex; gap:20px; margin-top:28px; }
     .cartao-status { flex:1; background:#fff; border:1px solid #D8DCE3; border-radius:10px; overflow:hidden; }
     .cs-barra { height:8px; }
@@ -3659,7 +3730,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .visao-geral table.pac-tabela th { padding:7px 14px; font-size:14px; }
     .visao-geral table.pac-tabela td { padding:5px 14px; }
     .visao-geral .valor-principal { font-size:66px; margin-top:0; line-height:1.1; }
-    .visao-geral .barra-empilhada { height:64px; margin-top:6px; }
+    .visao-geral .barra-empilhada { height:32px; margin-top:6px; }
     .vg-topo { display:flex; justify-content:space-between; }
     .vg-recursos { text-align:right; }
     /* Hierarquia entre os dois valores do topo: Investimento Total da
@@ -3672,9 +3743,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .vg-termos { display:flex; gap:56px; align-items:flex-start; }
     .vg-firmado .vg-recurso-linha { color:#2E7D32; }
     .visao-geral .barra-empilhada-seg { white-space:nowrap; overflow:hidden; }
-    .visao-geral .barra-empilhada-seg { padding:8px 16px; }
-    .visao-geral .be-titulo { font-size:16px; }
-    .visao-geral .be-sub { font-size:14px; margin-top:2px; }
+    .visao-geral .barra-empilhada-seg { padding:0 16px; }
+    .visao-geral .be-sub { font-size:14px; }
     .visao-geral .cartoes-grade { margin-top:28px; }
     .visao-geral .cs-barra { height:6px; }
     .visao-geral .cs-num { font-size:28px; padding:2px 16px 0; }
@@ -3821,16 +3891,40 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .btn-gerar-pdf:hover { background:#0A4E92; }
     body.tela-cheia .btn-gerar-pdf { display:none; }
 
-    /* Barra de navegação do carrossel (‹/›, contador, dica de tela cheia) —
-       mesmo recurso do projeto Relatório SSP, pedido do usuário em
-       08/11/2026. Some sozinha depois de 2,5s sem mexer o mouse. */
+    /* Contador de página + dica de tela cheia — só aparecem perto da borda
+       inferior da tela (mesmo gatilho do rodapé de filtros, ver
+       body.mostra-rodape) tanto na exibição normal quanto em tela cheia;
+       os botões ‹/› saíram daqui e viraram setas nas laterais (.nav-seta,
+       abaixo) — pedido do usuário em 15/11/2026, reaproveitando a mesma
+       caixinha do recurso original do Relatório SSP (08/11/2026).
+       Em telas sem mouse (toque), o gatilho é bater na tela em qualquer
+       lugar (ver "toque" no JS), não a proximidade da borda. */
     #nav-carrossel { position:fixed; left:14px; bottom:14px; z-index:1000; color:#C9D6EA; font-size:12px;
       display:flex; gap:10px; align-items:center; user-select:none; background:rgba(11,31,63,.85);
-      padding:6px 10px; border-radius:8px; opacity:0; transition:opacity .3s; }
-    body.mostra-nav #nav-carrossel, #nav-carrossel:hover { opacity:1; }
-    #nav-carrossel button { background:rgba(255,255,255,.1); color:#fff; border:none; border-radius:6px;
-      width:30px; height:26px; cursor:pointer; font-size:14px; font-family:inherit; }
-    #nav-carrossel button:hover { background:rgba(255,255,255,.22); }
+      padding:6px 10px; border-radius:8px; opacity:0; pointer-events:none; transition:opacity .25s; }
+    body.mostra-rodape #nav-carrossel { opacity:1; pointer-events:auto; }
+
+    /* Setas de navegação minimalistas nas laterais da tela, só visíveis
+       perto da borda esquerda/direita (ou ao tocar, em tela sensível ao
+       toque) — pedido do usuário em 15/11/2026, no lugar dos botões ‹/›
+       que ficavam dentro de #nav-carrossel. */
+    .nav-seta { position:fixed; top:50%; transform:translateY(-50%); z-index:1000; width:44px; height:76px;
+      display:flex; align-items:center; justify-content:center; background:rgba(11,31,63,.4); color:#fff;
+      border:none; font-size:30px; line-height:1; cursor:pointer; opacity:0; pointer-events:none;
+      transition:opacity .25s, background .2s; font-family:inherit; }
+    .nav-seta:hover { background:rgba(11,31,63,.65); }
+    .nav-seta-esq { left:0; border-radius:0 10px 10px 0; }
+    .nav-seta-dir { right:0; border-radius:10px 0 0 10px; }
+    body.mostra-esq .nav-seta-esq, body.mostra-dir .nav-seta-dir { opacity:1; pointer-events:auto; }
+    /* Tela sensível ao toque: alvo maior (recomendação de acessibilidade é
+       44px mínimo — aqui já ficam ~56px) e opacidade nunca cai a 0 sozinha
+       (não existe "aproximar o mouse" no toque); aparecem com um toque em
+       qualquer lugar (ver revelarToque() no JS) e setas maiores facilitam
+       o toque com o dedo — pedido do usuário em 15/11/2026. */
+    @media (hover:none) {
+      .nav-seta { width:56px; }
+      #seletor-gestao button, #seletor-secretaria button { padding-top:11px; padding-bottom:11px; }
+    }
 
     /* Página do Canva (imagem exportada) — pedido do usuário em 08/11/2026.
        Sem cabeçalho/rodapé do dash; a imagem já vem na mesma proporção
@@ -3878,6 +3972,12 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
        12/11/2026. */
     .entrega-panorama-corpo { display:flex; align-items:flex-start; justify-content:space-between; gap:36px; }
     .entrega-panorama-stats { display:flex; flex-direction:column; gap:20px; flex-shrink:0; }
+    /* sem o mapa (PAC_HTML_MOSTRAR_MAPA_ENTREGAS=False), as estatísticas
+       ocupam toda a largura, lado a lado, em vez de ficarem empilhadas e
+       deixarem o espaço do mapa em branco — pedido do usuário em
+       15/11/2026. */
+    .entrega-panorama-corpo.sem-mapa .entrega-panorama-stats { flex-direction:row; flex-wrap:wrap;
+      justify-content:space-between; width:100%; gap:24px; }
     .entrega-panorama-stat-valor { font-size:32px; font-weight:900; color:#0B1F3F; line-height:1.1; }
     .entrega-panorama-stat-investimento { color:#0B5CAD; }
     .entrega-panorama-stat-rotulo { font-size:12px; font-weight:700; color:#5B6576; text-transform:uppercase;
@@ -3948,7 +4048,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         break-after:page; page-break-after:always; break-inside:avoid; page-break-inside:avoid; }
       .slide:last-of-type { break-after:auto; page-break-after:auto; }
       .slide-continua.ativo { overflow:visible !important; }
-      #nav-carrossel { display:none !important; }
+      #nav-carrossel, .nav-seta { display:none !important; }
       /* Slides de altura variável (Panorama e Composição por Fase) podem
          ficar maiores que uma folha quando os detalhamentos são expandidos
          pelo botão "Gerar PDF" — sem isso, break-inside:avoid força o
@@ -4003,7 +4103,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
                                                                id_html=ID_HTML_ENTREGAS_EXECUCAO)],
                  "CLAUSULAS": [slide_clausulas], "TABELA_RESUMO": [], "QUADRO_FASE": [],
                  "DETALHE_EIXO": [],
-                 "MAIORES_ACOES": [], "PENDENCIAS": [], "SINTESE": []}
+                 "MAIORES_ACOES": [], "PENDENCIAS": [], "SINTESE": [],
+                 "MON_ACOES": _slide_monitoramento("MON_ACOES", "AÇÕES EM MONITORAMENTO")}
 
     # --- páginas extras: imagens exportadas do site do Canva, uma por
     # página, só geradas pras que realmente foram escolhidas (evita ler e
@@ -4041,8 +4142,17 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     return "".join(saida), css
 
 
+# Página da Apresentação CGAPE vinda de "Ações em Monitoramento"
+# (resumo_acoes.py) — base e filtros TOTALMENTE independentes do PAC —
+# pedido do usuário em 15/11/2026: incorporar o Monitoramento como mais uma
+# página, ao lado das do PAC, na mesma janela de seleção, sem herdar filtro
+# nem estilo do PAC. Uma única página com rolagem (cards + gráfico dos 30
+# maiores + cartões + quadros juntos, igual à página autônoma), não um grupo
+# de 4 — pedido do usuário em 15/11/2026.
+CHAVES_MONITORAMENTO = {"MON_ACOES"}
+
 # Slides que não dependem do recorte nem da gestão (ver _montar_html_variante)
-CHAVES_HTML_SEM_DADOS = {"ORGANOGRAMA", "FLUXO_TRABALHO"}
+CHAVES_HTML_SEM_DADOS = {"ORGANOGRAMA", "FLUXO_TRABALHO"} | CHAVES_MONITORAMENTO
 
 # Seletor de gestão do HTML (pedido do usuário em 13/11/2026): a Gestão
 # Federal separada das demais ações, com a visão consolidada mantida.
@@ -4062,7 +4172,7 @@ def _recortes_gestao(df):
     return variantes
 
 
-CAMPOS_CARD_ACAO = ["o", "f", "e", "x", "t", "g", "mu", "ex", "ds", "lk", "av", "dt", "fase", "inv", "fi", "v"]
+CAMPOS_CARD_ACAO = ["o", "f", "e", "x", "t", "g", "mu", "ex", "ds", "lk", "av", "dt", "fase", "inv", "fi", "v", "se"]
 
 
 def _dados_cards_acoes(m, fichas_cartoes):
@@ -4093,7 +4203,7 @@ def _dados_cards_acoes(m, fichas_cartoes):
             round(float(avanco), 1) if pd.notna(avanco) else None,
             data.strftime("%d/%m/%Y") if pd.notna(data) else "A definir",
             1 if na_exec else 0,
-            abreviar_moeda(b["inv"]), _indice_ficha(fichas_cartoes, ficha), round(float(b["inv"]), 2)])
+            abreviar_moeda(b["inv"]), _indice_ficha(fichas_cartoes, ficha), round(float(b["inv"]), 2), b["se"]])
     return {"campos": CAMPOS_CARD_ACAO, "acoes": linhas}
 
 
@@ -4119,7 +4229,11 @@ def _compactar_html(html):
     return re.sub(r"\n{2,}", "\n", html)
 
 
-def montar_html_apresentacao(df, filtros=None, secoes=None):
+def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
+    # filtros_mon: filtros do overlay "Ações em Monitoramento" (resumo_acoes.
+    # HTML_JANELA, estado raFiltros), TOTALMENTE independentes de `filtros`
+    # (painel do PAC) — None = base do Monitoramento inteira. Pedido do
+    # usuário em 15/11/2026.
     registro = {"gauge": False, "poligonos": {}}
     _CTX_HTML.registro = registro
     try:
@@ -4127,10 +4241,33 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         comuns, blocos, botoes, css = {}, [], [], ""
         variantes = _recortes_gestao(df)
         metricas = {}
+
+        # Monitoramento calculado UMA VEZ só aqui (base e ETL completos —
+        # caro pra recalcular a cada variante de gestão/secretaria) e
+        # repassado pronto pra _montar_html_variante, que só embrulha esse
+        # resultado já pronto na moldura de slide (barato, pode repetir) —
+        # ver CHAVES_HTML_SEM_DADOS/_slide_monitoramento. Só é calculado se
+        # alguma página MON_* foi pedida (ou nada foi pedido, que pede tudo)
+        # e a planilha "Ações do Cronograma" existe — pedido do usuário em
+        # 15/11/2026.
+        partes_monitoramento = None
+        if (not secoes) or any(c in CHAVES_MONITORAMENTO for c in secoes):
+            try:
+                ra = _modulo_resumo_acoes()
+                caminho_ra = ra.caminho_planilha()
+                if caminho_ra:
+                    dados_ra = ra.resumo_acoes_dados(caminho_ra, filtros_mon)
+                    partes_monitoramento = ra.montar_partes_html_monitoramento(caminho_ra, dados_ra)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                partes_monitoramento = None
+
         for i, (chave_v, rotulo_v, df_v) in enumerate(variantes):
             slides_v, css = _montar_html_variante(df_v, filtros, secoes, fichas_cartoes, comuns,
                                                   rotulo_v if chave_v != "todas" else "",
-                                                  chave_gestao=chave_v, metricas_saida=metricas)
+                                                  chave_gestao=chave_v, metricas_saida=metricas,
+                                                  partes_monitoramento=partes_monitoramento)
             slides_v = _sufixar_ids(slides_v, chave_v)
             if chave_v != "todas":
                 slides_v = slides_v.replace('<div class="base-atualizada">',
@@ -4141,14 +4278,63 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
             classe_botao = ' class="ativo"' if i == 0 else ""
             botoes.append(f'<button type="button" data-gestao="{chave_v}"{classe_botao} '
                           f'''onclick="trocarGestao('{chave_v}')">{_html_esc(rotulo_v)}</button>''')
+
+        # ---- Filtro de Secretaria (pedido do usuário em 15/11/2026, trocando
+        # o filtro de Executor feito antes pelo mesmo motivo): precisa
+        # repercutir na apresentação INTEIRA (todos os slides, não só
+        # Cláusulas Suspensivas/Execução do Objeto). Cada secretaria pertence
+        # a uma única gestão (ver SECRETARIA_LIMPA/GESTAO na base — a Federal
+        # inteira cai como uma "secretaria" só, "GESTÃO FEDERAL", mesma
+        # convenção já usada no resto do app), então em vez de cruzar os dois
+        # filtros (o que multiplicaria o tamanho do arquivo por gestão ×
+        # secretaria), o filtro de Secretaria troca a apresentação inteira
+        # por um recorte à parte, calculado uma vez só por secretaria a
+        # partir da base toda — ver trocarSecretaria()/variante() no JS.
+        serie_sec_html = (df["SECRETARIA_LIMPA"] if "SECRETARIA_LIMPA" in df.columns else df[pac.col_orgao]
+                         ).fillna("NÃO INFORMADO").astype(str).str.strip()
+        serie_sec_html = serie_sec_html.where(serie_sec_html != "", "NÃO INFORMADO")
+        nomes_sec_html = sorted(serie_sec_html.unique(), key=pac.remover_acentos)
+        blocos_sec, botoes_sec = [], []
+        if len(nomes_sec_html) > 1:
+            for nome_sec in nomes_sec_html:
+                sub_sec = df[serie_sec_html == nome_sec]
+                # a que gestão esta secretaria pertence (ex.: SESAB é só
+                # estadual) — pedido do usuário em 15/11/2026: "o filtro de
+                # gestão tem que repercutir também no filtro" (antes de
+                # executor, agora de secretaria), já que nem toda secretaria
+                # existe nas duas gestões. Usado pro JS esconder, no seletor
+                # de Secretaria, quem não existe na gestão escolhida (ver
+                # atualizarVisibilidadeSecretarias).
+                gestao_sec = ("federal" if "GESTAO" in sub_sec.columns
+                             and sub_sec["GESTAO"].astype(str).str.upper().str.contains("FEDERAL", na=False).any()
+                             else "estadual" if "GESTAO" in sub_sec.columns else "todas")
+                slides_sec, css = _montar_html_variante(
+                    sub_sec, filtros, secoes, fichas_cartoes, comuns,
+                    "", chave_gestao="todas", metricas_saida=None, secretaria=nome_sec,
+                    partes_monitoramento=partes_monitoramento)
+                sufixo_sec = "secr-" + re.sub(r"[^a-z0-9]+", "-", pac.remover_acentos(nome_sec).lower()).strip("-")
+                slides_sec = _sufixar_ids(slides_sec, sufixo_sec)
+                blocos_sec.append(f'<div class="variante-secretaria" data-secretaria="{_html_esc(nome_sec)}" '
+                                  f'data-gestao="{gestao_sec}">{slides_sec}</div>')
+                botoes_sec.append(f'<button type="button" data-secretaria="{_html_esc(nome_sec)}" '
+                                  f'data-gestao="{gestao_sec}" '
+                                  f'''onclick="trocarSecretaria('{_html_esc(nome_sec)}')">'''
+                                  f'{_html_esc(nome_sec)}</button>')
+
         cards_acoes_json = json.dumps(_dados_cards_acoes(metricas["todas"], fichas_cartoes),
                                       ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
         registro["gauge"] = True    # os cards da janela usam o mesmo velocímetro
     finally:
         _CTX_HTML.registro = None
     corpo = "".join(blocos)
+    corpo_sec = "".join(blocos_sec)
     seletor_html = (f'<div id="seletor-gestao" role="group" aria-label="Gestão">{"".join(botoes)}</div>'
                     if len(botoes) > 1 else "")
+    seletor_secretaria_html = (
+        f'<div id="seletor-secretaria" role="group" aria-label="Secretaria">'
+        f'<button type="button" data-secretaria="" class="ativo" onclick="trocarSecretaria(\'\')">'
+        f'Todas as secretarias</button>{"".join(botoes_sec)}</div>'
+        if botoes_sec else "")
     slides_comuns = "".join(h for lista in comuns.values() for h in lista)
     defs_html = _html_defs_compartilhadas(registro)
 
@@ -4179,25 +4365,42 @@ def montar_html_apresentacao(df, filtros=None, secoes=None):
         </div>
       </div>''' if fichas_cartoes else ""
 
+    # CSS/JS do Monitoramento isolados (.mon-ra, ver resumo_acoes._escopar_css)
+    # entram uma vez só aqui, fora de qualquer slide; o tooltip (#mon-dica)
+    # também — não pode ficar preso dentro de um slide que talvez não seja o
+    # ativo. O selo "AÇÕES EM MONITORAMENTO · ..." que ficava aqui foi
+    # removido a pedido do usuário em 15/11/2026 (atrapalhava a visualização);
+    # os seletores de Gestão/Secretaria continuam somendo na página MON_ACOES
+    # (ver atualizarSeletoresMonitoramento() no JS), só sem nada no lugar.
+    css_monitoramento = partes_monitoramento["css"] if partes_monitoramento else ""
+    js_monitoramento = (f"<script>{partes_monitoramento['js']}</script>"
+                        if partes_monitoramento else "")
+    dica_monitoramento_html = partes_monitoramento["dica_html"] if partes_monitoramento else ""
+    oc_monitoramento_html = partes_monitoramento["oc_html"] if partes_monitoramento else ""
+
     return _compactar_html(f'''<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <title>Apresentação CGAPE</title>
-<style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}{CSS_CARDS_OBJETO}</style>
+<style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}{CSS_CARDS_OBJETO}{css_monitoramento}</style>
 </head>
 <body>
 <button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()">Gerar PDF</button>
 <div id="nav-carrossel">
-  <button type="button" id="btn-slide-ant" title="Slide anterior (←)">‹</button>
   <span id="contador-slide"></span>
-  <button type="button" id="btn-slide-prox" title="Próximo slide (→)">›</button>
   <span>F: tela cheia</span>
 </div>
+<button type="button" id="btn-slide-ant" class="nav-seta nav-seta-esq" title="Slide anterior (←)">‹</button>
+<button type="button" id="btn-slide-prox" class="nav-seta nav-seta-dir" title="Próximo slide (→)">›</button>
+{seletor_secretaria_html}
 {seletor_html}
 {defs_html}
-{corpo}
+<div id="corpo-gestoes">{corpo}</div>
+<div id="corpo-secretarias">{corpo_sec}</div>
 <div id="slides-comuns">{slides_comuns}</div>
+{dica_monitoramento_html}
+{oc_monitoramento_html}
 {janela_ficha_html}
 <script type="application/json" id="oc-dados">{cards_acoes_json}</script>
 <div id="oc-fundo" onclick="if (event.target === this) ocFechar()">
@@ -4276,7 +4479,17 @@ function gerarPdfCompleto() {{
   var atual = 0;
   var contador = document.getElementById('contador-slide');
 
-  function variante() {{ return document.querySelector('.variante-gestao.ativa'); }}
+  // Filtro de Secretaria (pedido do usuário em 15/11/2026): quando uma
+  // secretaria está escolhida, a "variante" ativa passa a ser o bloco dela
+  // em #corpo-secretarias, em vez da gestão ativa em #corpo-gestoes — ver
+  // trocarSecretaria() abaixo.
+  function variante() {{
+    var botaoSecAtivo = document.querySelector('#seletor-secretaria button.ativo');
+    if (botaoSecAtivo && botaoSecAtivo.dataset.secretaria) {{
+      return document.querySelector('.variante-secretaria[data-secretaria="' + botaoSecAtivo.dataset.secretaria + '"]');
+    }}
+    return document.querySelector('.variante-gestao.ativa');
+  }}
   function montarSlides() {{
     var v = variante();
     if (!v) {{ slides = []; return; }}
@@ -4287,6 +4500,19 @@ function gerarPdfCompleto() {{
     slides = Array.prototype.slice.call(v.querySelectorAll('.slide'));
   }}
 
+  // Enquanto o slide ativo for do Monitoramento (ver classe "slide-
+  // monitoramento" em _slide_monitoramento), os seletores de Gestão/
+  // Secretaria (que são do PAC) somem, já que não fazem sentido pra essa
+  // página — pedido do usuário em 15/11/2026 (o selo que ficava no lugar
+  // deles foi removido a pedido do usuário, no mesmo dia).
+  function atualizarSeletoresMonitoramento(slideAtivo) {{
+    var ehMonitoramento = !!(slideAtivo && slideAtivo.classList.contains('slide-monitoramento'));
+    var seletorGestao = document.getElementById('seletor-gestao');
+    var seletorSecretaria = document.getElementById('seletor-secretaria');
+    if (seletorGestao) seletorGestao.style.display = ehMonitoramento ? 'none' : '';
+    if (seletorSecretaria) seletorSecretaria.style.display = ehMonitoramento ? 'none' : '';
+  }}
+
   function mostrar(indice) {{
     if (!slides.length) return;
     atual = Math.max(0, Math.min(slides.length - 1, indice));
@@ -4294,6 +4520,18 @@ function gerarPdfCompleto() {{
     slides[atual].classList.add('ativo');
     if (contador) contador.textContent = (atual + 1) + '/' + slides.length;
     history.replaceState(null, '', '#' + (atual + 1));
+    atualizarSeletoresMonitoramento(slides[atual]);
+  }}
+
+  // Esconde, no seletor de Secretaria, quem não existe na gestão escolhida
+  // (ex.: SESAB só existe na Estadual) — pedido do usuário em 15/11/2026: "o
+  // filtro de gestão tem que repercutir também no filtro" (de secretaria,
+  // trocado a partir do filtro de executor feito antes). O botão "Todas as
+  // secretarias" (sem data-gestao) sempre aparece.
+  function atualizarVisibilidadeSecretarias(chaveGestao) {{
+    document.querySelectorAll('#seletor-secretaria button[data-gestao]').forEach(function (b) {{
+      b.style.display = (chaveGestao === 'todas' || b.dataset.gestao === chaveGestao) ? '' : 'none';
+    }});
   }}
 
   window.trocarGestao = function (chave) {{
@@ -4303,9 +4541,55 @@ function gerarPdfCompleto() {{
     document.querySelectorAll('#seletor-gestao button').forEach(function (b) {{
       b.classList.toggle('ativo', b.dataset.gestao === chave);
     }});
-    montarSlides();
-    mostrar(atual);
+    atualizarVisibilidadeSecretarias(chave);
+    // trocar de gestão sempre volta pra "Todas as secretarias": o filtro de
+    // Secretaria não se cruza com o de Gestão (ver trocarSecretaria) —
+    // pedido do usuário em 15/11/2026.
+    trocarSecretaria('');
   }};
+
+  // Filtro de Secretaria (pedido do usuário em 15/11/2026): troca a
+  // apresentação inteira pelo recorte de uma secretaria, ou volta pra gestão
+  // ativa com '' (Todas as secretarias). #corpo-gestoes/#corpo-secretarias
+  // são mutuamente exclusivos — só um dos dois aparece por vez.
+  window.trocarSecretaria = function (nomeSecretaria) {{
+    var corpoGestoes = document.getElementById('corpo-gestoes');
+    var corpoSecretarias = document.getElementById('corpo-secretarias');
+    document.querySelectorAll('#seletor-secretaria button').forEach(function (b) {{
+      b.classList.toggle('ativo', b.dataset.secretaria === nomeSecretaria);
+    }});
+    if (nomeSecretaria) {{
+      document.querySelectorAll('.variante-secretaria').forEach(function (v) {{
+        v.classList.toggle('ativa', v.dataset.secretaria === nomeSecretaria);
+      }});
+      // mantém o seletor de Gestão coerente com a secretaria escolhida (e o
+      // estado real de .variante-gestao.ativa, mesmo ela ficando escondida
+      // enquanto uma secretaria está ativa) — senão, ao voltar pra "Todas as
+      // secretarias", a gestão mostrada poderia não bater com o botão
+      // destacado — pedido do usuário em 15/11/2026.
+      var botaoAtivoSec = document.querySelector('#seletor-secretaria button.ativo');
+      var gestaoDaSecretaria = botaoAtivoSec && botaoAtivoSec.dataset.gestao;
+      if (gestaoDaSecretaria && gestaoDaSecretaria !== 'todas') {{
+        document.querySelectorAll('.variante-gestao').forEach(function (v) {{
+          v.classList.toggle('ativa', v.dataset.gestao === gestaoDaSecretaria);
+        }});
+        document.querySelectorAll('#seletor-gestao button').forEach(function (b) {{
+          b.classList.toggle('ativo', b.dataset.gestao === gestaoDaSecretaria);
+        }});
+      }}
+      if (corpoGestoes) corpoGestoes.style.display = 'none';
+      if (corpoSecretarias) corpoSecretarias.style.display = 'block';
+    }} else {{
+      if (corpoSecretarias) corpoSecretarias.style.display = 'none';
+      if (corpoGestoes) corpoGestoes.style.display = 'block';
+    }}
+    montarSlides();
+    mostrar(0);
+  }};
+
+  // Visibilidade inicial das secretarias já bate com a gestão ativa de
+  // largada (normalmente "todas", que mostra todas).
+  atualizarVisibilidadeSecretarias((variante() && variante().dataset.gestao) || 'todas');
 
   montarSlides();
   if (!slides.length) return;
@@ -4332,12 +4616,53 @@ function gerarPdfCompleto() {{
     document.body.classList.toggle('tela-cheia', !!document.fullscreenElement);
   }});
 
-  var navTimer = null;
-  document.addEventListener('mousemove', function () {{
-    document.body.classList.add('mostra-nav');
-    clearTimeout(navTimer);
-    navTimer = setTimeout(function () {{ document.body.classList.remove('mostra-nav'); }}, 2500);
-  }});
+  // Painel de filtros (Gestão/Secretaria) e contador de página só aparecem
+  // perto da borda inferior da tela; as setas ‹/› só perto das bordas
+  // laterais — tanto na exibição normal quanto em tela cheia (pedido do
+  // usuário em 15/11/2026, no lugar do antigo "qualquer mexida no mouse
+  // revela e some sozinho depois de 2,5s" que só valia pra barra de
+  // navegação). Em tela sem mouse (toque), não existe "aproximar": um
+  // toque em qualquer lugar revela tudo por alguns segundos, e arrastar
+  // pro lado troca de slide (ver bloco "toque" abaixo).
+  var LIMIAR_RODAPE = 150, LIMIAR_LADO = 90;
+  var SEM_MOUSE = !!(window.matchMedia && window.matchMedia('(hover: none)').matches);
+  document.body.classList.toggle('toque', SEM_MOUSE);
+  if (SEM_MOUSE) {{
+    var toqueTimer = null;
+    function revelarToque() {{
+      document.body.classList.add('mostra-rodape', 'mostra-esq', 'mostra-dir');
+      clearTimeout(toqueTimer);
+      toqueTimer = setTimeout(function () {{
+        document.body.classList.remove('mostra-rodape', 'mostra-esq', 'mostra-dir');
+      }}, 3000);
+    }}
+    document.addEventListener('touchstart', revelarToque, {{passive: true}});
+    // Arrastar pra esquerda/direita troca de slide — só conta como
+    // arrasto horizontal (não interfere na rolagem vertical de um slide
+    // "contínuo" como o Panorama).
+    var toqueX = null, toqueY = null;
+    document.addEventListener('touchstart', function (e) {{
+      if (e.touches.length !== 1) return;
+      toqueX = e.touches[0].clientX; toqueY = e.touches[0].clientY;
+    }}, {{passive: true}});
+    document.addEventListener('touchend', function (e) {{
+      if (toqueX === null) return;
+      var fim = e.changedTouches[0], dx = fim.clientX - toqueX, dy = fim.clientY - toqueY;
+      toqueX = null;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {{
+        mostrar(atual + (dx < 0 ? 1 : -1));
+      }}
+    }}, {{passive: true}});
+  }} else {{
+    document.addEventListener('mousemove', function (e) {{
+      document.body.classList.toggle('mostra-rodape', e.clientY >= window.innerHeight - LIMIAR_RODAPE);
+      document.body.classList.toggle('mostra-esq', e.clientX <= LIMIAR_LADO);
+      document.body.classList.toggle('mostra-dir', e.clientX >= window.innerWidth - LIMIAR_LADO);
+    }});
+    document.addEventListener('mouseleave', function () {{
+      document.body.classList.remove('mostra-rodape', 'mostra-esq', 'mostra-dir');
+    }});
+  }}
 
   document.addEventListener('keydown', function (e) {{
     // Espaço/Enter ficam de fora de propósito (diferente do Relatório SSP):
@@ -4360,27 +4685,50 @@ function gerarPdfCompleto() {{
 </script>
 <script>{JS_CLAUSULAS}</script>
 <script>{JS_CARDS_OBJETO.replace("__ICONE__", json.dumps(_SVG_ICONE_LOCALIZACAO))}</script>
+{js_monitoramento}
 </body>
 </html>''')
 
 
 # Seletor de gestão (pedido do usuário em 13/11/2026): fixo embaixo, no
-# centro (os cantos têm a navegação e o número da página), some em tela cheia e na impressão; só a gestão ativa
-# aparece e é impressa. O selo no cabeçalho diz qual gestão está na tela.
+# centro (as laterais têm as setas de navegação); só a gestão ativa aparece e
+# é impressa. O selo no cabeçalho diz qual gestão está na tela. Igual ao
+# painel de Secretaria logo abaixo, só fica visível perto da borda inferior
+# da tela (gatilho único, body.mostra-rodape) — tanto na exibição normal
+# quanto em tela cheia (antes sumia de vez em tela cheia; agora segue a
+# mesma régua de proximidade dos dois modos) — pedido do usuário em
+# 15/11/2026.
 CSS_SELETOR_GESTAO = """
     .variante-gestao:not(.ativa), #slides-comuns { display:none; }
     #seletor-gestao { position:fixed; left:50%; transform:translateX(-50%); bottom:10px; z-index:1000; display:flex; gap:4px;
-      background:rgba(11,31,63,.92); padding:5px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.3); }
+      background:rgba(11,31,63,.92); padding:5px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.3);
+      opacity:0; pointer-events:none; transition:opacity .25s; }
+    body.mostra-rodape #seletor-gestao { opacity:1; pointer-events:auto; }
     #seletor-gestao button { background:transparent; color:#C9D6EA; border:none; border-radius:7px;
       padding:8px 14px; font:700 13px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px; cursor:pointer; }
     #seletor-gestao button:hover { background:rgba(255,255,255,.12); color:#fff; }
     #seletor-gestao button.ativo { background:#4FA3E0; color:#0B1F3F; }
-    body.tela-cheia #seletor-gestao { display:none; }
     .selo-gestao { display:inline-block; background:#4FA3E0; color:#0B1F3F; font-weight:700; font-size:11px;
       padding:1px 8px; border-radius:9px; margin-right:6px; letter-spacing:.3px; }
     @media print { #seletor-gestao { display:none !important; } }
+    /* Filtro de Secretaria (pedido do usuário em 15/11/2026, trocando o
+       filtro de Executor feito antes): troca a apresentação inteira — ver
+       trocarSecretaria() no JS. Não se cruza com o seletor de Gestão (cada
+       secretaria é de uma gestão só): escolher uma secretaria esconde
+       #corpo-gestoes e mostra #corpo-secretarias (e vice-versa ao escolher
+       Todas as secretarias/trocar de gestão). */
+    #corpo-secretarias, #corpo-secretarias .variante-secretaria:not(.ativa) { display:none; }
+    #seletor-secretaria { position:fixed; left:50%; transform:translateX(-50%); bottom:54px; z-index:1000;
+      display:flex; gap:4px; flex-wrap:wrap; justify-content:center; max-width:94vw;
+      background:rgba(11,31,63,.92); padding:5px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.3);
+      opacity:0; pointer-events:none; transition:opacity .25s; }
+    body.mostra-rodape #seletor-secretaria { opacity:1; pointer-events:auto; }
+    #seletor-secretaria button { background:transparent; color:#C9D6EA; border:none; border-radius:7px;
+      padding:7px 12px; font:700 12px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px; cursor:pointer; }
+    #seletor-secretaria button:hover { background:rgba(255,255,255,.12); color:#fff; }
+    #seletor-secretaria button.ativo { background:#E68A00; color:#fff; }
+    @media print { #seletor-secretaria { display:none !important; } }
 """
-
 
 # Janela de cards ao clicar num objeto/executor das tabelas de detalhamento
 # (pedido do usuário em 13/11/2026): mesmo card das possibilidades de
@@ -4593,10 +4941,12 @@ JS_CLAUSULAS = r"""
 """
 
 
-def gerar_html_bytes(df, filtros=None, secoes=None):
+def gerar_html_bytes(df, filtros=None, secoes=None, filtros_mon=None):
     # Mesmo padrão de gerar_pptx_bytes: monta tudo em memória, sem tocar o
     # disco — usado pelo botão "ANÁLISE FINANCEIRA (HTML)" do painel.
-    html_texto = montar_html_apresentacao(df, filtros, secoes)
+    # filtros_mon: filtros do overlay de Monitoramento (ver
+    # montar_html_apresentacao) — pedido do usuário em 15/11/2026.
+    html_texto = montar_html_apresentacao(df, filtros, secoes, filtros_mon)
     return html_texto.encode("utf-8")
 
 
@@ -4630,6 +4980,14 @@ SLIDES_APRESENTACAO = [
     {"chave": "MAIORES_ACOES", "titulo": "Maiores Ações com T.C. Não Firmado", "layout": "tabela"},
     {"chave": "PENDENCIAS", "titulo": "Pendências que Condicionam a Contratação", "layout": "cards_tabela"},
     {"chave": "SINTESE", "titulo": "Síntese e Pleito", "layout": "texto"},
+    # "Ações em Monitoramento" (resumo_acoes.py) incorporada como mais uma
+    # página, só no HTML (ver SLIDES_SO_NO_HTML) — base e filtros totalmente
+    # à parte dos do PAC, por isso fica no fim do catálogo, já marcada por
+    # padrão (o usuário pode reordenar/intercalar à vontade). Uma página só,
+    # com rolagem (cards + gráfico dos 30 maiores + cartões + quadros
+    # juntos, igual à página autônoma), não um grupo de 4 — pedido do
+    # usuário em 15/11/2026.
+    {"chave": "MON_ACOES", "titulo": "Ações em Monitoramento", "layout": "cards_tabela"},
 ]
 
 # Removidas da apresentação (HTML e PPTX) a pedido do usuário em 10/11/2026.
@@ -4645,8 +5003,9 @@ SLIDES_APRESENTACAO = [s for s in SLIDES_APRESENTACAO if s["chave"] not in SLIDE
 SLIDES_OCULTOS_NO_HTML = {"VISAO_GERAL", "COMP_FASE", "TABELA_RESUMO", "QUADRO_FASE", "DETALHE_EIXO",
                           "MAIORES_ACOES", "PENDENCIAS", "SINTESE"}
 # E o contrário: seções que só existem no HTML (cards de cláusula suspensiva,
-# pedido do usuário em 10/11/2026) — não entram no PPTX nem no seu catálogo.
-SLIDES_SO_NO_HTML = {"CLAUSULAS"}
+# pedido do usuário em 10/11/2026; e o Monitoramento, pedido do usuário em
+# 15/11/2026) — não entram no PPTX nem no seu catálogo.
+SLIDES_SO_NO_HTML = {"CLAUSULAS"} | CHAVES_MONITORAMENTO
 
 
 def _paginas_por_chave(m):
@@ -4686,7 +5045,12 @@ def _preparar_plano(m, secoes, contagem_paginas=None, manter_ordem=False, chaves
             if chave in validas and chave not in vistas:
                 escolhidas.append(chave)
                 vistas.add(chave)
-        escolhidas = escolhidas or [s["chave"] for s in SLIDES_APRESENTACAO]
+        # O "nada escolhido = tudo" também respeita `chaves_validas` — sem
+        # isto, uma chave inválida nesse momento (ex.: MON_* sem a planilha
+        # do Monitoramento disponível) voltaria à força nesse padrão, já
+        # que SLIDES_APRESENTACAO sozinho não sabe dessa indisponibilidade
+        # — bug encontrado na validação em 15/11/2026.
+        escolhidas = escolhidas or [s["chave"] for s in SLIDES_APRESENTACAO if s["chave"] in validas]
     else:
         pedidas = set(secoes or [])
         escolhidas = [s["chave"] for s in SLIDES_APRESENTACAO if s["chave"] in pedidas]
@@ -4700,6 +5064,26 @@ def _preparar_plano(m, secoes, contagem_paginas=None, manter_ordem=False, chaves
     return escolhidas
 
 
+def _modulo_resumo_acoes():
+    # "Ações em Monitoramento" (resumo_acoes.py), incorporada como páginas
+    # MON_* da Apresentação CGAPE — mesmo padrão de import adiado +
+    # configurar(pac) usado pra este próprio módulo em "CGAPE - BALANÇO
+    # PAC.py" (_modulo_apresentacao) — pedido do usuário em 15/11/2026.
+    import resumo_acoes
+    resumo_acoes.configurar(pac)
+    return resumo_acoes
+
+
+def _resumo_acoes_disponivel():
+    # True só quando a planilha "Ações do Cronograma" existe — sem ela, as
+    # páginas MON_* nem aparecem no catálogo (pedido do usuário em
+    # 15/11/2026: "não pode quebrar a apresentação do PAC").
+    try:
+        return bool(_modulo_resumo_acoes().caminho_planilha())
+    except Exception:
+        return False
+
+
 def listar_slides(df, formato=None):
     # "Visão Geral da Carteira" e "Composição por Fase" foram mescladas no
     # Panorama, e as páginas de tabela/listas que seguem (Tabela-Resumo,
@@ -4711,9 +5095,11 @@ def listar_slides(df, formato=None):
     # 08/11/2026.
     m = calcular_metricas(df)
     paginas = _paginas_por_chave_html(m) if formato == "html" else _paginas_por_chave(m)
+    tem_monitoramento = formato == "html" and _resumo_acoes_disponivel()
     catalogo = [s for s in SLIDES_APRESENTACAO
                 if not (formato == "html" and s["chave"] in SLIDES_OCULTOS_NO_HTML)
-                and not (formato != "html" and s["chave"] in SLIDES_SO_NO_HTML)]
+                and not (formato != "html" and s["chave"] in SLIDES_SO_NO_HTML)
+                and not (s["chave"] in CHAVES_MONITORAMENTO and not tem_monitoramento)]
     if formato == "html":
         # Uma página do catálogo por imagem do Canva disponível em
         # PASTA_SLIDES_CANVA — só existe no HTML (não dá pra desenhar numa
