@@ -1699,6 +1699,9 @@ def _montar_dados_ficha_acao(row):
             + float(row[col_contrapartida_ajustado])
             + float(row[col_complementar_ajustado])
         ),
+        # Nº DO TERMO DE COMP. (TC) / CT FINANCIAMENTO — pedido do usuário
+        # em 16/11/2026 (seção FINANCEIRO da ficha, no painel, no HTML e no PDF)
+        "termo_compromisso": campo(col_tc),
         "pendencia": campo(col_pendencia),
         "providencias": campo(col_providencias),
         "prazo_pendencia": campo(col_prazo_pendencia),
@@ -1738,6 +1741,7 @@ def _definicao_secoes_ficha():
         {"titulo": "FINANCEIRO", "campos": [
             ("valor_contratado", "Valor Contratado"), ("investimento_total",
                                                        "Investimento Total"),
+            ("termo_compromisso", "Nº do Termo de Comp. (TC) / CT Financiamento"),
         ]},
         # Dois detalhamentos diferentes do mesmo investimento, que NÃO podem
         # ficar misturados num bloco só: um é o que já foi efetivamente
@@ -9660,6 +9664,20 @@ body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE
   }}
   document.getElementById("home-pac").addEventListener("keydown", teclaAtivarHome);
   document.getElementById("home-monitoramento").addEventListener("keydown", teclaAtivarHome);
+  // Fecha o programa depois de 20 min sem uso também aqui na tela HOME
+  // (igual ao painel) — pedido do usuário em 16/11/2026: o .exe aberto e
+  // esquecido trava a atualização dele na pasta da rede.
+  var temporizadorHome = null;
+  function reiniciarInatividadeHome() {{
+    clearTimeout(temporizadorHome);
+    temporizadorHome = setTimeout(function () {{
+      if (pacApiDesktopDisponivel()) window.pywebview.api.fechar_por_inatividade();
+    }}, 20 * 60 * 1000);
+  }}
+  ["mousemove", "keydown", "click", "wheel"].forEach(function (ev) {{
+    document.addEventListener(ev, reiniciarInatividadeHome);
+  }});
+  reiniciarInatividadeHome();
 </script>
 </body>
 </html>"""
@@ -15635,6 +15653,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       { titulo: "Financeiro", campos: [
         { rotulo: "Valor Contratado", chave: "valor_contratado" },
         { rotulo: "Investimento Total", chave: "investimento_total" },
+        { rotulo: "Nº do Termo de Comp. (TC) / CT Financiamento", chave: "termo_compromisso" },
       ]},
       // Dois detalhamentos diferentes do mesmo investimento, em seções
       // separadas de propósito (ver comentário igual em
@@ -16079,8 +16098,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     });
   };
 
-  // --- Fechamento automático por inatividade (5 minutos) ---
-  const TEMPO_INATIVIDADE_MS = 15 * 60 * 1000;
+  // --- Fechamento automático por inatividade (20 minutos — pedido do
+  // usuário em 16/11/2026; mesmo tempo na tela HOME, ver montar_html_home) ---
+  const TEMPO_INATIVIDADE_MS = 20 * 60 * 1000;
   let temporizadorInatividade = null;
 
   function reiniciarTemporizadorInatividade() {
