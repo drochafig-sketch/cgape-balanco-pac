@@ -1,13 +1,9 @@
-# Dispara VIGIAR_SINCRONIZACAO.bat escondido (sem nenhuma janela de
-# console aparecendo), via WScript.Shell.Run com janela oculta (estilo 0).
+# Dispara VIGIAR_GITHUB.ps1 escondido (sem janela), a cada login do
+# Windows (chave Run criada por LIGAR_SINCRONIZACAO_AO_MUDAR.bat).
+# GitHub como referencia (16/11/2026) -- ver o cabecalho de VIGIAR_GITHUB.ps1.
 #
-# Nao usa um .vbs (como o padrao antigo de outros projetos): nesta
-# maquina, rodar arquivos .vbs pelo wscript.exe fica sem efeito (o
-# Windows Script Host esta bloqueado por politica), mas criar o mesmo
-# objeto COM (WScript.Shell) direto de dentro do PowerShell funciona
-# normalmente -- e o caminho usado aqui.
-#
-# $PSScriptRoot resolve sozinho para a pasta onde ESTE arquivo esta
-# salvo, nao precisa de caminho fixo.
+# Nao usa .vbs: nesta maquina o Windows Script Host esta bloqueado por
+# politica; o objeto COM WScript.Shell criado pelo PowerShell funciona.
+# $PSScriptRoot = pasta onde ESTE arquivo esta salvo.
 $shell = New-Object -ComObject "WScript.Shell"
-$null = $shell.Run("cmd.exe /c `"$PSScriptRoot\VIGIAR_SINCRONIZACAO.bat`"", 0, $false)
+$null = $shell.Run("powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSScriptRoot\VIGIAR_GITHUB.ps1`"", 0, $false)
