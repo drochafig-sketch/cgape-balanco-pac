@@ -4159,9 +4159,17 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             saida.append(f'<div class="slide-ref" data-ref="{chave}"></div>')
             continue
         numeradas = []
-        for html_slide in paginas:
+        for k, html_slide in enumerate(paginas):
             numero += 1
-            numeradas.append(html_slide.replace("§PAG§", str(numero)))
+            html_slide = html_slide.replace("§PAG§", str(numero))
+            # identidade do slide (seção + página dentro dela): ao trocar o
+            # filtro de Gestão/Secretaria, a apresentação volta pro MESMO
+            # slide na variante nova, em vez da capa — pedido do usuário em
+            # 16/11/2026 (ver posicaoEquivalente() no JS)
+            if not compartilhado:
+                html_slide = re.sub(r"^(\s*<(?:section|div))", rf'\1 data-chave="{chave}" data-pag="{k}"',
+                                    html_slide, count=1)
+            numeradas.append(html_slide)
         if compartilhado:
             comuns[chave] = [re.sub(r"^(\s*<(?:section|div))", rf'\1 data-ref-comum="{chave}"', h, count=1)
                              for h in numeradas]
@@ -4617,9 +4625,33 @@ function gerarPdfCompleto() {{
       if (corpoSecretarias) corpoSecretarias.style.display = 'none';
       if (corpoGestoes) corpoGestoes.style.display = 'block';
     }}
+    // continua no mesmo slide (não volta pra capa) — pedido do usuário em
+    // 16/11/2026
+    var anterior = slides[atual], indiceAnterior = atual;
     montarSlides();
-    mostrar(0);
+    mostrar(posicaoEquivalente(anterior, indiceAnterior));
   }};
+
+  // Posição, na lista de slides recém-montada, do slide equivalente ao que
+  // estava na tela: o mesmo elemento (slides comuns — Canva, organograma,
+  // Monitoramento — são movidos entre variantes), ou o de mesma seção e
+  // página (data-chave/data-pag); se a seção não existir no recorte novo,
+  // fica na mesma posição numérica.
+  function posicaoEquivalente(anterior, indiceAnterior) {{
+    if (!anterior) return 0;
+    var i = slides.indexOf(anterior);
+    if (i >= 0) return i;
+    var chave = anterior.dataset.chave, pag = anterior.dataset.pag;
+    if (chave) {{
+      for (var j = 0; j < slides.length; j++) {{
+        if (slides[j].dataset.chave === chave && slides[j].dataset.pag === pag) return j;
+      }}
+      for (var j2 = 0; j2 < slides.length; j2++) {{
+        if (slides[j2].dataset.chave === chave) return j2;
+      }}
+    }}
+    return Math.min(indiceAnterior, Math.max(0, slides.length - 1));
+  }}
 
   // Visibilidade inicial das secretarias já bate com a gestão ativa de
   // largada (normalmente "todas", que mostra todas).
