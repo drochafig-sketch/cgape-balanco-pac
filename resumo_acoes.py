@@ -1282,11 +1282,9 @@ def _svg_grafico_investimento_top30(itens, quebra, escala, vmax, mediana_per_cap
                 f'<text x="{x + largura_barra / 2:.1f}" y="{y - 6:.1f}" text-anchor="middle" '
                 'class="grafico-quebra">≈</text>'
             )
-        topo = y
         if it["populacao"] and mediana_per_capita:
             y_esperado = y_de(mediana_per_capita * it["populacao"])
             if y_esperado >= RA_GRAFICO_MARGEM_SUP:
-                topo = min(topo, y_esperado)
                 partes.append(
                     f'<line x1="{x - 2:.1f}" y1="{y_esperado:.1f}" x2="{x + largura_barra + 2:.1f}" '
                     f'y2="{y_esperado:.1f}" class="grafico-esperado"/>'
@@ -1294,11 +1292,10 @@ def _svg_grafico_investimento_top30(itens, quebra, escala, vmax, mediana_per_cap
         centro_x = x + largura_barra / 2
         # rótulo de dados só nas barras em destaque (Prioridade alta e
         # Atenção), em duas linhas (número / unidade) para caber na coluna,
-        # acima da barra ou do traço do esperado, o que for mais alto —
-        # pedido do usuário em 16/11/2026
+        # logo acima da própria barra — pedido do usuário em 16/11/2026
         if tem_acao and it["classe"] != "Adequado":
             numero, _, unidade = _ra_rs(it["valor"]).replace("R$ ", "").partition(" ")
-            y2 = max(24.0, topo - 5)
+            y2 = max(24.0, y - 4)
             partes.append(
                 f'<text x="{centro_x:.1f}" y="{y2 - 10:.1f}" text-anchor="middle" '
                 f'class="grafico-rotulo" fill="{cor}">{_esc(numero)}</text>'
@@ -1750,8 +1747,8 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .grafico-eixo-y{{fill:var(--cinza)}}
 .grafico-eixo-x{{fill:var(--navy);text-anchor:start}}
 .grafico-eixo-x.sem-acao{{fill:var(--cinza);font-style:italic}}
-.grafico-rotulo{{font-size:9.5px;font-weight:800;font-family:inherit}}
-.grafico-rotulo-un{{font-size:8px;font-weight:700;font-family:inherit}}
+.grafico-rotulo{{font-size:9.5px;font-weight:800;font-family:inherit;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}}
+.grafico-rotulo-un{{font-size:8px;font-weight:700;font-family:inherit;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}}
 .grafico-quebra{{font-size:13px;font-weight:700;fill:var(--navy);font-family:inherit}}
 .grafico-esperado{{stroke:var(--navy);stroke-width:1.6;stroke-dasharray:3 2;opacity:.55}}
 .barra-top30{{cursor:pointer;transition:opacity .1s}}
