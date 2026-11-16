@@ -1078,14 +1078,37 @@ def _svg_mapa_base(largura=640):
     cx = math.cos(math.radians((minlat + maxlat) / 2))
     esc_x = largura / ((maxlon - minlon) * cx)
     altura = (maxlat - minlat) * esc_x
+    def projetar(lon, lat):
+        return (lon - minlon) * cx * esc_x, (maxlat - lat) * esc_x
+
+    def centro(anel):
+        # centroide do polígono (fórmula da área); cai pra média dos pontos
+        # se a área for ~0
+        pts = [projetar(lon, lat) for lon, lat in anel]
+        a = sx = sy = 0.0
+        for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]):
+            c = x1 * y2 - x2 * y1
+            a += c
+            sx += (x1 + x2) * c
+            sy += (y1 + y2) * c
+        if abs(a) < 1e-9:
+            return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)), 0.0
+        return (sx / (3 * a), sy / (3 * a)), abs(a) / 2
+
     caminhos = []
     for f in feats:
         nome = str(f["properties"].get("name", ""))
+        aneis = [anel for pol in mon._poligonos(f) for anel in pol]
         d = "".join("M" + "L".join(
-            f"{(lon - minlon) * cx * esc_x:.1f},{(maxlat - lat) * esc_x:.1f}"
-            for lon, lat in anel) + "Z" for pol in mon._poligonos(f) for anel in pol)
+            "{:.1f},{:.1f}".format(*projetar(lon, lat)) for lon, lat in anel) + "Z" for anel in aneis)
+        # centro do maior anel: onde vai o rótulo do município (ver
+        # rotulosMapa no JS — só nos de Prioridade alta, pedido do usuário
+        # em 16/11/2026)
+        (px, py), _ = max((centro(anel) for anel in aneis if len(anel) > 2),
+                          key=lambda c: c[1], default=((0.0, 0.0), 0.0))
         caminhos.append(f'<path d="{d}" fill="{RA_COR_FORA_TOP30}" '
-                        f'data-k="{_chave_municipio(nome)}" data-n="{_esc(nome)}"/>')
+                        f'data-k="{_chave_municipio(nome)}" data-n="{_esc(nome)}" '
+                        f'data-cx="{px:.1f}" data-cy="{py:.1f}"/>')
     _ra_mapa_base_cache = (
         f'<svg class="mapa" viewBox="0 0 {largura:.0f} {altura:.0f}" role="img" '
         'aria-label="Mapa dos 30 maiores municípios pelo Índice de Necessidade">'
@@ -1714,6 +1737,7 @@ h2{{margin:0 0 14px;font-size:15px;letter-spacing:.6px;color:var(--navy)}}
 .mapa path{{stroke:#fff;stroke-width:.6;transition:opacity .1s}}
 .mapa path:hover{{stroke:var(--navy);stroke-width:1.6;opacity:.85}}
 .mapa path.top30{{cursor:pointer}}
+.mapa-rotulos text{{font-size:11px;font-weight:800;fill:#0B1F3F;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;pointer-events:none;font-family:inherit}}
 .legenda{{list-style:none;padding:0;margin:0 0 18px;font-size:13px}}
 .legenda li{{display:flex;align-items:center;gap:8px;margin:5px 0}}
 .legenda i{{width:16px;height:16px;border-radius:4px;flex:none}}
@@ -1866,16 +1890,24 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 #ra-oc-fundo .ra-oc-sub{{font-size:13px;color:var(--cinza);margin-top:4px}}
 #ra-oc-fundo .ra-oc-fechar{{background:none;border:none;font-size:26px;line-height:1;color:var(--cinza);cursor:pointer;padding:0 4px}}
 #ra-oc-fundo .ra-oc-fechar:hover{{color:var(--navy)}}
-#ra-oc-fundo .ra-oc-corpo{{padding:16px 24px 24px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}}
-#ra-oc-fundo .ra-oc-card{{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;box-shadow:0 2px 8px rgba(11,31,63,.06)}}
-#ra-oc-fundo .ra-oc-card-topo{{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}}
-#ra-oc-fundo .ra-oc-card-objeto{{font-size:15px;font-weight:800;color:var(--navy)}}
-#ra-oc-fundo .ra-oc-card-linha{{font-size:12.5px;color:var(--cinza);margin-top:3px}}
-#ra-oc-fundo .ra-oc-card-desc{{font-size:12.5px;color:#3A4456;line-height:1.4}}
-#ra-oc-fundo .ra-oc-card-rodape{{display:flex;gap:16px;margin-top:auto;padding-top:8px;border-top:1px solid var(--linha)}}
-#ra-oc-fundo .ra-oc-card-rotulo{{font-size:10px;color:var(--cinza);letter-spacing:.3px;text-transform:uppercase}}
-#ra-oc-fundo .ra-oc-card-valor{{font-size:14.5px;font-weight:800;color:var(--navy);white-space:nowrap}}
-#ra-oc-fundo .ra-oc-sem-gauge{{font-size:10px;color:var(--cinza);text-align:center;line-height:1.25;flex:none}}
+/* Cards no MESMO desenho dos cards de ação do HTML do PAC (.entrega-card
+   em gerar_pptx_pac.py): velocímetro de 76px que nunca encolhe (a descrição
+   não interfere mais no tamanho dele) e descrição em até 3 linhas — pedido
+   do usuário em 16/11/2026. */
+#ra-oc-fundo .ra-oc-corpo{{padding:16px 24px 24px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}}
+#ra-oc-fundo .ra-oc-card{{background:#fff;border:1px solid #D8DCE3;border-top:4px solid #0B5CAD;border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;height:100%}}
+#ra-oc-fundo .ra-oc-card-topo{{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}}
+#ra-oc-fundo .ra-oc-card-id{{min-width:0}}
+#ra-oc-fundo .ra-oc-card-objeto{{font-size:15px;font-weight:700;color:#0B1F3F;line-height:1.25}}
+#ra-oc-fundo .ra-oc-card-mun{{font-size:13px;color:#5B6576;margin-top:2px}}
+#ra-oc-fundo .ra-oc-card-ex{{font-size:12px;color:#8C8C8C;margin-top:3px}}
+#ra-oc-fundo .ra-oc-card-gauge{{flex-shrink:0;width:76px;height:76px}}
+#ra-oc-fundo .ra-oc-card-desc{{font-size:13px;color:#0B1F3F;line-height:1.35;margin-top:12px;margin-bottom:12px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
+#ra-oc-fundo .ra-oc-card-rodape{{display:flex;justify-content:space-between;gap:10px;margin-top:auto;border-top:1px solid #F0F2F6;padding-top:10px}}
+#ra-oc-fundo .ra-oc-card-rotulo{{font-size:10.5px;font-weight:700;color:#5B6576;text-transform:uppercase}}
+#ra-oc-fundo .ra-oc-card-valor{{font-size:14.5px;font-weight:700;color:#0B1F3F;margin-top:2px}}
+#ra-oc-fundo .ra-oc-card-inv{{font-size:18px;font-weight:900;color:#0B5CAD;white-space:nowrap}}
+#ra-oc-fundo .ra-oc-sem-gauge{{width:76px;height:76px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10.5px;font-weight:700;color:#8C8C8C;line-height:1.3}}
 #ra-oc-fundo .ra-oc-vazio{{font-size:13px;color:var(--cinza);padding:20px 4px}}
 @media print{{#ra-oc-fundo{{display:none!important}}.ra-obj-clic{{color:inherit;text-decoration:none}}}}
 """
@@ -1935,6 +1967,30 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
       if(d&&d[5])p.setAttribute("fill-opacity",d[5]);else p.removeAttribute("fill-opacity");
       p.classList.toggle("top30",!!d);
     }});
+    // nome do município no mapa só nos de Prioridade alta do recorte
+    // visível — pedido do usuário em 16/11/2026
+    var antigo=svg.querySelector(".mapa-rotulos");
+    if(antigo)antigo.parentNode.removeChild(antigo);
+    var NS="http://www.w3.org/2000/svg",g=document.createElementNS(NS,"g");
+    g.setAttribute("class","mapa-rotulos");
+    // caixas estimadas (largura ~6,2 por letra, 13 de altura): rótulo que
+    // bateria em outro já posto desce uma linha (municípios vizinhos, ex.:
+    // Candeias e Dias d'Ávila)
+    var postos=[];
+    todos(svg,"path").forEach(function(p){{
+      var d=mapaM[p.dataset.k];
+      if(!d||d[1]!=="Prioridade alta"||!p.dataset.cx)return;
+      var x=+p.dataset.cx,y=+p.dataset.cy,w=p.dataset.n.length*6.2,tent=0;
+      function bate(){{return postos.some(function(b){{return Math.abs(b.x-x)<(b.w+w)/2&&Math.abs(b.y-y)<13;}});}}
+      while(bate()&&tent<6){{y+=13;tent++;}}
+      postos.push({{x:x,y:y,w:w}});
+      var t=document.createElementNS(NS,"text");
+      t.setAttribute("x",x);t.setAttribute("y",y);
+      t.setAttribute("text-anchor","middle");t.setAttribute("dy","0.35em");
+      t.textContent=p.dataset.n;
+      g.appendChild(t);
+    }});
+    svg.appendChild(g);
     if(svg.dataset.ligado)return;
     svg.dataset.ligado="1";
     svg.addEventListener("mousemove",function(ev){{
@@ -2034,25 +2090,27 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     (D.campos||[]).forEach(function(k,i){{C[k]=i;}});
   }}
   function esc(t){{var d=document.createElement("div");d.textContent=t==null?"":String(t);return d.innerHTML;}}
+  // velocímetro igual ao do PAC (arco de 250°, 76px; ver #pac-gauge em
+  // gerar_pptx_pac.py), desenhado aqui mesmo (sem <use>)
+  var ARCO='M 11.74 56.39 A 32.06 32.06 0 1 1 64.26 56.39';
   function gauge(v){{
     if(v==null)return '<div class="ra-oc-sem-gauge">Avanço<br>não<br>informado</div>';
     v=Math.max(0,Math.min(100,v));
-    var r=26,c=2*Math.PI*r,cheio=(v/100*c).toFixed(1);
-    return '<svg width="64" height="64" viewBox="0 0 64 64">'
-      +'<circle cx="32" cy="32" r="'+r+'" fill="none" stroke="#E9ECF2" stroke-width="6"></circle>'
-      +(v>0.5?'<circle cx="32" cy="32" r="'+r+'" fill="none" stroke="#2E7D32" stroke-width="6" '
-        +'stroke-dasharray="'+cheio+' '+c.toFixed(1)+'" stroke-linecap="round" transform="rotate(-90 32 32)"></circle>':'')
-      +'<text x="32" y="37" text-anchor="middle" font-size="15" font-weight="900" fill="#0B1F3F">'+Math.round(v)+'%</text></svg>';
+    return '<svg width="76" height="76" viewBox="0 0 76 76" class="ra-oc-card-gauge">'
+      +'<path d="'+ARCO+'" fill="none" stroke="#E9ECF2" stroke-width="9.88" stroke-linecap="round" pathLength="100"></path>'
+      +(v>0.5?'<path d="'+ARCO+'" fill="none" stroke="#2E7D32" stroke-width="9.88" stroke-linecap="round" pathLength="100" stroke-dasharray="'+v.toFixed(1)+' 200"></path>':'')
+      +'<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="#0B1F3F">'+Math.round(v)+'%</text></svg>';
   }}
   function card(a){{
-    return '<div class="ra-oc-card"><div class="ra-oc-card-topo"><div>'
+    return '<div class="ra-oc-card"><div class="ra-oc-card-topo"><div class="ra-oc-card-id">'
       +'<div class="ra-oc-card-objeto">'+esc(a[C.nome])+'</div>'
-      +'<div class="ra-oc-card-linha">'+[a[C.mun],a[C.ex]].filter(Boolean).map(esc).join(" · ")+'</div>'
+      +'<div class="ra-oc-card-mun">'+esc(a[C.mun]||'Município não informado')+'</div>'
+      +(a[C.ex]?'<div class="ra-oc-card-ex">'+esc(a[C.ex])+'</div>':'')
       +'</div>'+gauge(a[C.av])+'</div>'
-      +(a[C.ds]?'<div class="ra-oc-card-desc">'+esc(a[C.ds])+'</div>':'')
+      +(a[C.ds]?'<div class="ra-oc-card-desc" title="'+esc(a[C.ds])+'">'+esc(a[C.ds])+'</div>':'')
       +'<div class="ra-oc-card-rodape">'
-      +'<div><div class="ra-oc-card-rotulo">Conclusão prevista</div><div class="ra-oc-card-valor">'+esc(a[C.pz])+'</div></div>'
-      +'<div><div class="ra-oc-card-rotulo">Investimento</div><div class="ra-oc-card-valor">'+esc(a[C.val])+'</div></div>'
+      +'<div><div class="ra-oc-card-rotulo">Conclusão prevista</div><div class="ra-oc-card-valor">'+esc(a[C.pz]||'A definir')+'</div></div>'
+      +'<div><div class="ra-oc-card-rotulo">Investimento</div><div class="ra-oc-card-inv">'+esc(a[C.val])+'</div></div>'
       +'</div></div>';
   }}
   window.raOcFechar=function(){{if(fundo)fundo.classList.remove("aberta");}};
