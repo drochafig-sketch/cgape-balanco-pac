@@ -10676,6 +10676,17 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     justify-content: center;
     z-index: 97;
   }
+  /* Texto da ficha selecionável (pra copiar nº do TC, providências etc.) —
+     pedido do usuário em 16/11/2026. A janela do programa (pywebview) desliga
+     a seleção de texto na página toda; aqui ela volta só dentro da ficha. */
+  #ficha-overlay, #ficha-overlay * {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+  }
+  #ficha-overlay button, #ficha-overlay button * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+  }
   #ficha-painel {
     width: 95vw;
     height: 92vh;

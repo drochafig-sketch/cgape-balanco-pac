@@ -43,6 +43,7 @@ import os
 import re
 import sys
 import threading
+import unicodedata
 from datetime import date
 
 import pandas as pd
@@ -107,22 +108,47 @@ LINK_CANVA = "https://sea-lion-m85670.my.canva.site/"
 # Não existe no catálogo do PPTX (SLIDES_APRESENTACAO) — pedido do usuário
 # em 08/11/2026.
 PASTA_SLIDES_CANVA = os.path.join(PASTA_BASE, "APRESENTAÇÃO - CGAPE")
-_RE_ARQUIVO_SLIDE_CANVA = re.compile(r"^(\d+)\.(jpe?g|png)$", re.IGNORECASE)
+_RE_ARQUIVO_SLIDE_CANVA = re.compile(r"^(.+)\.(jpe?g|png)$", re.IGNORECASE)
 
 
 def _chave_canva(numero):
     return f"CANVA_{numero}"
 
 
+def _id_pagina_canva(base_nome):
+    """Número da página (int) quando o arquivo se chama só com o número
+    ("12.png"); senão, o nome sem acento/espaços ("AEROPORTO_BARREIRAS") —
+    imagens com nome (ex.: "AEROPORTO BARREIRAS.PNG") também viram slide,
+    pedido do usuário em 16/11/2026."""
+    if base_nome.strip().isdigit():
+        return int(base_nome.strip())
+    s = unicodedata.normalize("NFKD", base_nome)
+    s = "".join(c for c in s if not unicodedata.combining(c)).upper()
+    return re.sub(r"[^A-Z0-9]+", "_", s).strip("_") or "SEM_NOME"
+
+
+def _titulo_canva(numero, nome_arquivo):
+    if isinstance(numero, int):
+        return f"Canva — página {numero}"
+    return os.path.splitext(nome_arquivo)[0].strip()
+
+
 def _paginas_canva_disponiveis():
+    """[(id, nome do arquivo)]: primeiro as páginas numeradas, em ordem de
+    número; depois as imagens com nome, em ordem alfabética."""
     if not os.path.isdir(PASTA_SLIDES_CANVA):
         return []
-    paginas = []
+    paginas, vistos = [], set()
     for nome in os.listdir(PASTA_SLIDES_CANVA):
         m = _RE_ARQUIVO_SLIDE_CANVA.match(nome)
-        if m:
-            paginas.append((int(m.group(1)), nome))
-    paginas.sort()
+        if not m:
+            continue
+        id_pagina = _id_pagina_canva(m.group(1))
+        if id_pagina in vistos:   # "12.jpg" e "12.png": fica só um
+            continue
+        vistos.add(id_pagina)
+        paginas.append((id_pagina, nome))
+    paginas.sort(key=lambda p: (0, p[0], "") if isinstance(p[0], int) else (1, 0, p[0]))
     return paginas
 
 
@@ -3842,6 +3868,9 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .cl-ficha-fundo.aberta { display:flex; }
     .cl-ficha-janela { background:#fff; border-radius:12px; width:min(1100px, 100%); max-height:100%;
       display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35); overflow:hidden; }
+    /* texto da ficha selecionável — pedido do usuário em 16/11/2026 */
+    .cl-ficha-janela, .cl-ficha-janela * { -webkit-user-select:text !important; user-select:text !important; }
+    .cl-ficha-janela button { -webkit-user-select:none !important; user-select:none !important; }
     .cl-ficha-topo { display:flex; justify-content:space-between; align-items:flex-start; gap:16px;
       padding:18px 22px; border-bottom:3px solid #E0AB45; background:#F7F8FA; }
     .cl-ficha-titulo { font-size:22px; font-weight:900; color:#0B1F3F; }
@@ -4116,7 +4145,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             continue
         uri = _data_uri_imagem(os.path.join(PASTA_SLIDES_CANVA, nome_arquivo))
         por_chave[chave] = [f'''<div class="slide slide-canva">
-      <img class="img-canva" src="{uri}" alt="Apresentação Canva — página {numero}">
+      <img class="img-canva" src="{uri}" alt="{_html_esc(_titulo_canva(numero, nome_arquivo))}">
     </div>''']
 
     # Slides iguais em toda gestão (institucionais e Canva) são gravados uma
@@ -5112,8 +5141,8 @@ def listar_slides(df, formato=None):
         # fim da lista por padrão, mas o painel deixa reordenar pra
         # intercalar com as seções do dash — pedido do usuário em
         # 08/11/2026.
-        canva = [{"chave": _chave_canva(numero), "titulo": f"Canva — página {numero}",
-                  "layout": "texto"} for numero, _ in _paginas_canva_disponiveis()]
+        canva = [{"chave": _chave_canva(numero), "titulo": _titulo_canva(numero, nome),
+                  "layout": "texto"} for numero, nome in _paginas_canva_disponiveis()]
         # A capa (página 1 do Canva) abre a apresentação, antes do bloco
         # Organograma/Fluxo; as páginas 2 e 3 do Canva (organograma e fluxo
         # antigos, em imagem) chegam desmarcadas — os slides novos as
