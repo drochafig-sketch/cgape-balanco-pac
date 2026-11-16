@@ -1571,16 +1571,20 @@ def _montar_blocos_monitoramento(caminho_base, dados):
         mapa_svg = _svg_mapa_base()
         cores_mapa, grupos = {}, {"Prioridade alta": [], "Atenção": [], "Adequado": []}
         sem_acao = []
-        for it in indicadores:
+        # último item = id do cartão do município (o mesmo data-alvo da
+        # coluna do gráfico): clicar no mapa faz o mesmo que clicar na
+        # coluna — pedido do usuário em 16/11/2026
+        for i, it in enumerate(indicadores):
             k = _chave_municipio(it["nome"])
             if not it["qtd"]:
-                cores_mapa[k] = [RA_COR_SEM_ACAO_TOP30, "sem ação no recorte", "", "", "", ""]
+                cores_mapa[k] = [RA_COR_SEM_ACAO_TOP30, "sem ação no recorte", "", "", "", "", ""]
                 sem_acao.append(it["nome"])
                 continue
             cores_mapa[k] = [it["cor_classe"], it["classe"],
                              _ra_rs(it["valor"]) + ("*" if it["orc"] else ""),
                              _ra_qtd(it["qtd"]), f'{it["indice"]:.0f}',
-                             "0.35" if it["classe"] == "Adequado" else ""]
+                             "0.35" if it["classe"] == "Adequado" else "",
+                             f"mun-card-{i}"]
             grupos[it["classe"]].append(it["nome"])
         cor_de = {"Prioridade alta": RA_COR_PRIORIDADE_ALTA, "Atenção": RA_COR_ATENCAO,
                   "Adequado": RA_COR_ADEQUADO}
@@ -1709,6 +1713,7 @@ h2{{margin:0 0 14px;font-size:15px;letter-spacing:.6px;color:var(--navy)}}
 .rk-linha.vazio{{opacity:.55}}
 .mapa path{{stroke:#fff;stroke-width:.6;transition:opacity .1s}}
 .mapa path:hover{{stroke:var(--navy);stroke-width:1.6;opacity:.85}}
+.mapa path.top30{{cursor:pointer}}
 .legenda{{list-style:none;padding:0;margin:0 0 18px;font-size:13px}}
 .legenda li{{display:flex;align-items:center;gap:8px;margin:5px 0}}
 .legenda i{{width:16px;height:16px;border-radius:4px;flex:none}}
@@ -1941,6 +1946,14 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
           :"sem ação no recorte"):"fora dos 30 maiores municípios"),ev);
     }});
     svg.addEventListener("mouseleave",function(){{dica.style.display="none";}});
+    // clique num dos 30 maiores = clique na coluna dele no gráfico (rola até
+    // o cartão do município e o abre)
+    svg.addEventListener("click",function(ev){{
+      var p=ev.target.closest("path"),d=p&&mapaM[p.dataset.k];
+      if(!d||!d[6])return;
+      var barra=document.querySelector('.barra-top30[data-alvo="'+d[6]+'"]');
+      if(barra){{dica.style.display="none";barra.dispatchEvent(new MouseEvent("click",{{bubbles:true}}));}}
+    }});
   }}
 
   function ligar(raiz){{
