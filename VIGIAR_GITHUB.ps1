@@ -48,7 +48,7 @@ function Registrar([string]$texto) {
 
 function G {
     # git dentro do repositorio; devolve a saida (texto) e deixa $LASTEXITCODE
-    $saida = & $Git -C $Repo @args 2>&1
+    $saida = & $Git -c safe.directory=* -C $Repo @args 2>&1
     return ($saida | ForEach-Object { "$_" }) -join "`n"
 }
 
@@ -151,8 +151,10 @@ function Espelhar {
         G worktree prune | Out-Null
         G worktree add -q --detach $Espelho origin/master | Out-Null
     } else {
-        & $Git -C $Espelho checkout -q -f --detach origin/master 2>&1 | Out-Null
-        & $Git -C $Espelho clean -fdxq 2>&1 | Out-Null
+        # safe.directory: a copia fica em C:, o repositorio em \\tuba -- sem
+        # isso o Git recusa ("dubious ownership")
+        & $Git -c safe.directory=* -C $Espelho checkout -q -f --detach origin/master 2>&1 | Out-Null
+        & $Git -c safe.directory=* -C $Espelho clean -fdxq 2>&1 | Out-Null
     }
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $Espelho ".git"))) { Registrar "ERRO ao preparar a copia do GitHub para o espelho."; return }
     if (Test-Path $exe) { Copy-Item $exe (Join-Path $Espelho $NomeExe) -Force }
