@@ -4257,7 +4257,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
                 caminho_ra = ra.caminho_planilha()
                 if caminho_ra:
                     dados_ra = ra.resumo_acoes_dados(caminho_ra, filtros_mon)
-                    partes_monitoramento = ra.montar_partes_html_monitoramento(caminho_ra, dados_ra)
+                    partes_monitoramento = ra.montar_partes_html_monitoramento(
+                        caminho_ra, dados_ra, filtros_mon or {})
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -4511,6 +4512,10 @@ function gerarPdfCompleto() {{
     var seletorSecretaria = document.getElementById('seletor-secretaria');
     if (seletorGestao) seletorGestao.style.display = ehMonitoramento ? 'none' : '';
     if (seletorSecretaria) seletorSecretaria.style.display = ehMonitoramento ? 'none' : '';
+    // e no lugar entram as barras Eixo x Secretaria/Executor do próprio
+    // Monitoramento (mesmo desenho — pedido do usuário em 16/11/2026)
+    var seletorMon = document.querySelector('.sel-recorte');
+    if (seletorMon) seletorMon.style.display = ehMonitoramento ? '' : 'none';
   }}
 
   function mostrar(indice) {{

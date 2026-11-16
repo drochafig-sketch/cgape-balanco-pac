@@ -9,6 +9,8 @@ pasta do programa); independe da planilha e dos filtros do PAC.
 Ligado ao módulo principal pelo mesmo padrão do gerar_pptx_pac:
 configurar(sys.modules[__name__]).
 """
+import base64
+import gzip
 import json
 import math
 import os
@@ -125,7 +127,9 @@ RA_TOP30_POP_CHAVE = {_chave_municipio(nome): pop for nome, pop in RA_TOP30_POP.
 # de vista (mas as funções continuam existindo, religáveis por aqui), e no
 # lugar entram um gráfico de colunas e uma avaliação quantitativa dos 30
 # maiores municípios por população, antes da grade de cards.
-RA_HTML_MOSTRAR_MAPA = False
+RA_HTML_MOSTRAR_MAPA = True   # religado em 16/11/2026, com as cores do índice
+RA_COR_SEM_ACAO_TOP30 = "#C3CAD5"   # 30 maiores sem ação no recorte
+RA_COR_FORA_TOP30 = "#F1F3F6"       # demais municípios do estado
 
 # Pesos do Índice de Necessidade de Investimento (0 a 100) — combinação
 # ponderada e normalizada (min-max entre os 30) de: investimento per capita
@@ -1052,48 +1056,41 @@ def _acoes_do_municipio(parte):
     return saida
 
 
-def _svg_mapa(por_mun, largura=640):
-    """Bahia em SVG (paths já projetados), cada município com os dados do
-    tooltip em data-*. Devolve (svg, nomes do recorte fora do geojson)."""
+_ra_mapa_base_cache = None
+
+
+def _svg_mapa_base(largura=640):
+    """Bahia em SVG só com o desenho: cada município com data-k (chave de
+    _chave_municipio) e data-n (nome), sem cor de dado — quem pinta é o JS
+    (ligarMapa), com as cores do recorte visível. O desenho não muda, então
+    fica guardado para as próximas páginas."""
+    global _ra_mapa_base_cache
+    if _ra_mapa_base_cache:
+        return _ra_mapa_base_cache
     import relatorio_monitoramento as mon
     geo = pac.carregar_geojson_municipios() if pac else None
     if not geo:
-        return '<div class="sem-mapa">Mapa indisponível: falta municipios_bahia.geojson</div>', []
+        return '<div class="sem-mapa">Mapa indisponível: falta municipios_bahia.geojson</div>'
     feats = geo["features"]
-    aneis = lambda f: mon._poligonos(f)   # noqa: E731
-    pts = [p for f in feats for pol in aneis(f) for anel in pol for p in anel]
+    pts = [p for f in feats for pol in mon._poligonos(f) for anel in pol for p in anel]
     minlon, maxlon = min(p[0] for p in pts), max(p[0] for p in pts)
     minlat, maxlat = min(p[1] for p in pts), max(p[1] for p in pts)
     cx = math.cos(math.radians((minlat + maxlat) / 2))
     esc_x = largura / ((maxlon - minlon) * cx)
     altura = (maxlat - minlat) * esc_x
-    caminhos, usados = [], set()
+    caminhos = []
     for f in feats:
         nome = str(f["properties"].get("name", ""))
-        k = mon.normalizar(nome)
-        info = por_mun.get(k)
-        usados.add(k)
-        d = []
-        for pol in aneis(f):
-            for anel in pol:
-                d.append("M" + "L".join(
-                    f"{(lon - minlon) * cx * esc_x:.1f},{(maxlat - lat) * esc_x:.1f}"
-                    for lon, lat in anel) + "Z")
-        if info:
-            eixos = "|".join(f"{_esc(e)}~{_ra_rs(v)}" for e, v in info["eixos"])
-            attrs = (f' data-n="{_esc(nome)}" data-v="{_ra_rs(info["valor"])}'
-                     f'{"*" if info["orc"] else ""}" data-q="{_ra_qtd(info["qtd"])}"'
-                     f' data-e="{eixos}"')
-            cor = _cor_faixa(info["valor"])
-        else:
-            attrs = f' data-n="{_esc(nome)}" data-v="" data-q="sem ações no recorte"'
-            cor = RA_COR_SEM_ACAO
-        caminhos.append(f'<path d="{"".join(d)}" fill="{cor}"{attrs}/>')
-    fora = sorted(info["nome"] for k, info in por_mun.items() if k not in usados)
-    svg = (f'<svg class="mapa" viewBox="0 0 {largura:.0f} {altura:.0f}" '
-           f'role="img" aria-label="Mapa de investimento por município">'
-           + "".join(caminhos) + "</svg>")
-    return svg, fora
+        d = "".join("M" + "L".join(
+            f"{(lon - minlon) * cx * esc_x:.1f},{(maxlat - lat) * esc_x:.1f}"
+            for lon, lat in anel) + "Z" for pol in mon._poligonos(f) for anel in pol)
+        caminhos.append(f'<path d="{d}" fill="{RA_COR_FORA_TOP30}" '
+                        f'data-k="{_chave_municipio(nome)}" data-n="{_esc(nome)}"/>')
+    _ra_mapa_base_cache = (
+        f'<svg class="mapa" viewBox="0 0 {largura:.0f} {altura:.0f}" role="img" '
+        'aria-label="Mapa dos 30 maiores municípios pelo Índice de Necessidade">'
+        + "".join(caminhos) + "</svg>")
+    return _ra_mapa_base_cache
 
 
 # ---- Avaliação da carteira dos 30 maiores municípios -----------------------
@@ -1224,7 +1221,7 @@ RA_GRAFICO_LARGURA = 920
 RA_GRAFICO_ALTURA = 260
 RA_GRAFICO_MARGEM_ESQ = 68
 RA_GRAFICO_MARGEM_DIR = 90
-RA_GRAFICO_MARGEM_SUP = 22
+RA_GRAFICO_MARGEM_SUP = 34   # espaço para o rótulo das barras em destaque
 RA_GRAFICO_MARGEM_INF = 108
 
 
@@ -1264,6 +1261,10 @@ def _svg_grafico_investimento_top30(itens, quebra, escala, vmax, mediana_per_cap
         y = y_de(it["valor"]) if tem_acao else base_y - 3
         altura_barra = max(0.0, base_y - y) if tem_acao else 3.0
         cor = it["cor_classe"] if tem_acao else "#D8DCE3"
+        # investimento adequado esmaecido, pra destacar quem precisa de
+        # atenção — pedido do usuário em 16/11/2026
+        esmaecer = (' fill-opacity="0.35"'
+                    if tem_acao and it["classe"] == "Adequado" else "")
         tip = (
             f'data-n="{_esc(it["nome"])}" data-pos="{it["pos_pop"]}" '
             f'data-v="{_esc(_ra_rs(it["valor"]) if tem_acao else "sem ação no recorte")}" '
@@ -1274,21 +1275,35 @@ def _svg_grafico_investimento_top30(itens, quebra, escala, vmax, mediana_per_cap
         partes.append(
             f'<rect class="barra-top30" tabindex="0" data-alvo="mun-card-{i}" '
             f'x="{x:.1f}" y="{y:.1f}" width="{largura_barra:.1f}" height="{altura_barra:.1f}" '
-            f'rx="3" fill="{cor}" {tip}><title>{_esc(it["nome"])}</title></rect>'
+            f'rx="3" fill="{cor}"{esmaecer} {tip}><title>{_esc(it["nome"])}</title></rect>'
         )
         if quebra and it["valor"] == vmax:
             partes.append(
                 f'<text x="{x + largura_barra / 2:.1f}" y="{y - 6:.1f}" text-anchor="middle" '
                 'class="grafico-quebra">≈</text>'
             )
+        topo = y
         if it["populacao"] and mediana_per_capita:
             y_esperado = y_de(mediana_per_capita * it["populacao"])
             if y_esperado >= RA_GRAFICO_MARGEM_SUP:
+                topo = min(topo, y_esperado)
                 partes.append(
                     f'<line x1="{x - 2:.1f}" y1="{y_esperado:.1f}" x2="{x + largura_barra + 2:.1f}" '
                     f'y2="{y_esperado:.1f}" class="grafico-esperado"/>'
                 )
         centro_x = x + largura_barra / 2
+        # rótulo de dados só nas barras em destaque (Prioridade alta e
+        # Atenção), em duas linhas (número / unidade) para caber na coluna,
+        # acima da barra ou do traço do esperado, o que for mais alto —
+        # pedido do usuário em 16/11/2026
+        if tem_acao and it["classe"] != "Adequado":
+            numero, _, unidade = _ra_rs(it["valor"]).replace("R$ ", "").partition(" ")
+            y2 = max(24.0, topo - 5)
+            partes.append(
+                f'<text x="{centro_x:.1f}" y="{y2 - 10:.1f}" text-anchor="middle" '
+                f'class="grafico-rotulo" fill="{cor}">{_esc(numero)}</text>'
+                + (f'<text x="{centro_x:.1f}" y="{y2:.1f}" text-anchor="middle" '
+                   f'class="grafico-rotulo-un" fill="{cor}">{_esc(unidade)}</text>' if unidade else ""))
         rotulo = it["nome"] if tem_acao else f'{it["nome"]} (sem ação)'
         partes.append(
             f'<text x="{centro_x:.1f}" y="{base_y + 14:.1f}" '
@@ -1389,15 +1404,15 @@ def _escopar_css(css, escopo, nao_escopar=()):
     return processar_bloco(css)
 
 
-def _sufixar_ids_monitoramento(html):
+def _sufixar_ids_monitoramento(html, sufixo="monra"):
     """Garante que os ids do bloco embutido na Apresentação CGAPE não
     colidam com os da própria apresentação (mesmo princípio do
     _sufixar_ids usado lá entre variantes de gestão/secretaria, ver
     gerar_pptx_pac.py) — pedido do usuário em 15/11/2026. Troca tanto a
     declaração ("id=") quanto toda referência a ela (aria-controls=,
     data-alvo=), já que o JS do Monitoramento lê esses atributos em vez de
-    guardar o id como texto fixo."""
-    sufixo = "monra"
+    guardar o id como texto fixo. Também usada pelas variantes por eixo da
+    página autônoma (sufixo = chave do eixo)."""
     for id_html in set(re.findall(r'\bid="([^"]+)"', html)):
         novo = f"{id_html}--{sufixo}"
         html = html.replace(f'"{id_html}"', f'"{novo}"').replace(f"'{id_html}'", f"'{novo}'")
@@ -1531,7 +1546,7 @@ def _montar_blocos_monitoramento(caminho_base, dados):
         '<div class="legenda-top30">'
         f'<span><i style="background:{RA_COR_PRIORIDADE_ALTA}"></i>Prioridade alta</span>'
         f'<span><i style="background:{RA_COR_ATENCAO}"></i>Atenção</span>'
-        f'<span><i style="background:{RA_COR_ADEQUADO}"></i>Adequado</span>'
+        f'<span><i style="background:{RA_COR_ADEQUADO};opacity:.35"></i>Adequado</span>'
         '<span><i class="legenda-esperado"></i>investimento esperado pela população '
         '(mediana per capita dos 30)</span></div>'
         f'<div class="rolagem-grafico">{grafico_top30}</div>'
@@ -1548,57 +1563,57 @@ def _montar_blocos_monitoramento(caminho_base, dados):
         f'<div class="mun-grade">{cartoes_mun}</div></section>'
     )
 
-    # Mapa de investimento por município — OCULTO a pedido do usuário em
-    # 15/11/2026 (RA_HTML_MOSTRAR_MAPA), mas a função continua existindo:
-    # só não é chamada (nem a legenda/lista antigas são montadas) quando a
-    # chave está desligada, pra não gastar tempo com o SVG geográfico à toa.
-    secao_mapa = ""
+    # Mapa dos 30 maiores municípios colorido pela classe do Índice de
+    # Necessidade (mesmas cores do gráfico; "Adequado" esmaecido) — religado
+    # a pedido do usuário em 16/11/2026. O desenho (SVG) é um só para a página
+    # toda (p["mapa_svg"], guardado em .ra-mapa-guarda): cada recorte só
+    # traz as cores/dicas em JSON (.ra-mapa-dados) e o JS (ligarMapa) move o
+    # SVG para o .mapa-slot do recorte visível e o pinta.
+    secao_mapa, mapa_svg = "", ""
     if RA_HTML_MOSTRAR_MAPA:
-        svg, fora = _svg_mapa(por_mun)
-        valores = [i["valor"] for i in por_mun.values() if i["valor"] > 0]
-        legenda = []
-        for minimo, maximo, cor in reversed(RA_FAIXAS_MAPA):
-            n = sum(1 for v in valores if v >= minimo and (maximo is None or v < maximo))
-            if not n:
+        mapa_svg = _svg_mapa_base()
+        cores_mapa, grupos = {}, {"Prioridade alta": [], "Atenção": [], "Adequado": []}
+        sem_acao = []
+        for it in indicadores:
+            k = _chave_municipio(it["nome"])
+            if not it["qtd"]:
+                cores_mapa[k] = [RA_COR_SEM_ACAO_TOP30, "sem ação no recorte", "", "", "", ""]
+                sem_acao.append(it["nome"])
                 continue
-            rot = (f"até {_ra_rs(maximo)}" if minimo == 0 else
-                   f"acima de {_ra_rs(minimo)}" if maximo is None else
-                   f"{_ra_rs(minimo)} a {_ra_rs(maximo)}")
-            legenda.append(f'<li><i style="background:{cor}"></i>{rot}'
-                           f'<b>{n} município{"s" if n > 1 else ""}</b></li>')
-        sem_valor = sum(1 for i in por_mun.values() if i["valor"] <= 0)
-        legenda.append(f'<li><i style="background:{RA_COR_SEM_ACAO}"></i>sem ação'
-                       + (f" ou sem valor ({sem_valor} com ação e R$ 0)" if sem_valor else "")
-                       + "</li>")
+            cores_mapa[k] = [it["cor_classe"], it["classe"],
+                             _ra_rs(it["valor"]) + ("*" if it["orc"] else ""),
+                             _ra_qtd(it["qtd"]), f'{it["indice"]:.0f}',
+                             "0.35" if it["classe"] == "Adequado" else ""]
+            grupos[it["classe"]].append(it["nome"])
+        cor_de = {"Prioridade alta": RA_COR_PRIORIDADE_ALTA, "Atenção": RA_COR_ATENCAO,
+                  "Adequado": RA_COR_ADEQUADO}
 
-        def linha_rank(i, m):
-            largura = (min(100, max(2, 100 * m["valor"] / escala)) if m["valor"] > 0 else 0)
-            botao = (f'<button type="button" class="det" aria-expanded="false" aria-controls="rk-det-{i}"'
-                     f' title="Ver detalhamento de {_esc(m["nome"])}">+</button>' if m["acoes"]
-                     else '<span></span>')
-            return (f'<li><div class="rk-linha{"" if m["qtd"] else " vazio"}"><span class="pos">{i + 1}</span>'
-                    f'<span class="nm">{_esc(m["nome"])}'
-                    f'<small>{_ra_qtd(m["qtd"]) if m["qtd"] else "sem ação no recorte"}</small></span>'
-                    f'<span class="barra{" quebra" if quebra and m["valor"] == vmax else ""}"><span style="width:'
-                    f'{largura:.1f}%;background:{_cor_faixa(m["valor"])}"></span></span>'
-                    f'<b>{_ra_rs(m["valor"]) if m["qtd"] else "–"}{"*" if m["orc"] else ""}</b>{botao}</div>'
-                    + (f'<div class="rk-det oculto" id="rk-det-{i}">{detalhe_rank(i, m)}</div>' if m["acoes"] else "")
-                    + "</li>")
+        def item_legenda(rotulo, cor, nomes, opacidade=""):
+            estilo = f"background:{cor}" + (f";opacity:{opacidade}" if opacidade else "")
+            n = len(nomes)
+            if not n:
+                return ""
+            return (f'<li><div class="leg-linha"><i style="{estilo}"></i>{_esc(rotulo)}'
+                    f'<b>{n} município{"s" if n != 1 else ""}</b></div>'
+                    + (f'<small>{_esc(", ".join(nomes))}</small>' if nomes else "") + "</li>")
 
-        linhas_rank = "".join(linha_rank(i, m) for i, m in enumerate(ranking))
-        nota_rank = ('<div class="nota-mapa">Em ordem de população (IBGE, estimativa 2026).'
-                     + (" Barra do maior investimento interrompida (≈) para não achatar as demais."
-                        if quebra else "") + "</div>")
-        total_mun = sum(1 for i in por_mun.values())
-        nota_mapa = (f"{total_mun} municípios com ação no recorte."
-                     + (f" Fora do mapa (nome não casa com o IBGE): {', '.join(fora)}." if fora else ""))
+        legenda = (item_legenda("Prioridade alta", cor_de["Prioridade alta"], grupos["Prioridade alta"])
+                   + item_legenda("Atenção", cor_de["Atenção"], grupos["Atenção"])
+                   + item_legenda("Adequado", cor_de["Adequado"], grupos["Adequado"], ".35")
+                   + (item_legenda("Sem ação no recorte", RA_COR_SEM_ACAO_TOP30, sem_acao)
+                      if sem_acao else "")
+                   + f'<li><div class="leg-linha"><i style="background:{RA_COR_FORA_TOP30};'
+                     'border:1px solid #D8DCE3"></i>Demais municípios (fora dos 30 maiores)</div></li>')
+        json_mapa = json.dumps(cores_mapa, ensure_ascii=False,
+                               separators=(",", ":")).replace("</", "<\\/")
         secao_mapa = (
-            '<section class="sec-mapa"><h2>MAPA DE INVESTIMENTO POR MUNICÍPIO</h2>'
-            f'<div class="mapa-grade"><div>{svg}<div class="nota-mapa">{_esc(nota_mapa)} '
-            'Passe o mouse sobre um município para ver o detalhe.</div></div>'
-            f'<div><h3>FAIXAS DE INVESTIMENTO</h3><ul class="legenda">{"".join(legenda)}</ul>'
-            f'<h3>30 MAIORES MUNICÍPIOS (POPULAÇÃO)</h3><ol class="ranking">{linhas_rank}</ol>'
-            f'{nota_rank}</div></div></section>'
+            '<section class="sec-mapa"><h2>MAPA DOS 30 MAIORES MUNICÍPIOS — ÍNDICE DE NECESSIDADE'
+            '<small>passe o mouse num município para ver o detalhe</small></h2>'
+            '<div class="mapa-grade"><div><div class="mapa-slot"></div>'
+            '<div class="nota-mapa">Cores pela classe do Índice de Necessidade de Investimento '
+            '(ver metodologia abaixo do gráfico), calculado entre os 30 maiores municípios por população.</div></div>'
+            f'<div><h3>CLASSIFICAÇÃO</h3><ul class="legenda legenda-prioridade">{legenda}</ul></div></div>'
+            f'<script type="application/json" class="ra-mapa-dados">{json_mapa}</script></section>'
         )
 
     cards_html = "".join(
@@ -1701,6 +1716,10 @@ h2{{margin:0 0 14px;font-size:15px;letter-spacing:.6px;color:var(--navy)}}
 .legenda li{{display:flex;align-items:center;gap:8px;margin:5px 0}}
 .legenda i{{width:16px;height:16px;border-radius:4px;flex:none}}
 .legenda b{{margin-left:auto;color:var(--cinza);font-weight:600}}
+.legenda-prioridade li{{display:block;margin:10px 0}}
+.leg-linha{{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--navy)}}
+.legenda-prioridade small{{display:block;margin:3px 0 0 24px;color:var(--cinza);font-size:12.5px;line-height:1.45}}
+.ra-mapa-guarda{{display:none}}
 h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .ranking{{list-style:none;padding:0;margin:0;font-size:14.5px}}
 .ranking li{{border-bottom:1px solid #EEF1F5}}
@@ -1731,6 +1750,8 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .grafico-eixo-y{{fill:var(--cinza)}}
 .grafico-eixo-x{{fill:var(--navy);text-anchor:start}}
 .grafico-eixo-x.sem-acao{{fill:var(--cinza);font-style:italic}}
+.grafico-rotulo{{font-size:9.5px;font-weight:800;font-family:inherit}}
+.grafico-rotulo-un{{font-size:8px;font-weight:700;font-family:inherit}}
 .grafico-quebra{{font-size:13px;font-weight:700;fill:var(--navy);font-family:inherit}}
 .grafico-esperado{{stroke:var(--navy);stroke-width:1.6;stroke-dasharray:3 2;opacity:.55}}
 .barra-top30{{cursor:pointer;transition:opacity .1s}}
@@ -1860,9 +1881,11 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     agora = datetime.now()
     titulo = "AÇÕES EM MONITORAMENTO"
     js_bruto = f"""(function(){{
-  // "+" / "–" de cada status/objeto — da lista de ranking do mapa (se
-  // religado) e dos cards dos 30 maiores municípios: abre/fecha o
-  // detalhamento no próprio lugar onde está.
+  // Tudo que liga eventos fica em ligar(raiz): a página autônoma troca o
+  // recorte (eixo/executor) trocando o HTML e chama window.raLigar de novo
+  // só no conteúdo novo — pedido do usuário em 16/11/2026.
+  function todos(raiz,sel){{return Array.prototype.slice.call(raiz.querySelectorAll(sel));}}
+  // "+" / "–" de cada status/objeto: abre/fecha o detalhamento no lugar.
   function alternar(b,abrir){{
     var alvo=document.getElementById(b.getAttribute("aria-controls"));
     if(abrir===undefined)abrir=alvo.classList.contains("oculto");
@@ -1871,57 +1894,8 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     b.setAttribute("aria-expanded",abrir?"true":"false");
     b.title=abrir?b.title.replace("Ver","Ocultar"):b.title.replace("Ocultar","Ver");
   }}
-  Array.prototype.slice.call(document.querySelectorAll(".det")).forEach(function(b){{
-    b.addEventListener("click",function(){{alternar(b);}});
-  }});
 
-  // Cartão de cada um dos 30 maiores municípios: clicar abre, logo abaixo
-  // dele (ocupando a largura toda da grade — ver .mun-det no CSS), o
-  // detalhamento por status; só um cartão aberto por vez — pedido do
-  // usuário em 15/11/2026.
-  var cartoes=Array.prototype.slice.call(document.querySelectorAll(".mun-card:not(.sem-acao)"));
-  function alternarCartao(cartao){{
-    var det=document.getElementById(cartao.getAttribute("aria-controls"));
-    var vaiAbrir=det.classList.contains("oculto");
-    cartoes.forEach(function(outro){{
-      document.getElementById(outro.getAttribute("aria-controls")).classList.add("oculto");
-      outro.classList.remove("aberto");
-      outro.setAttribute("aria-expanded","false");
-    }});
-    det.classList.toggle("oculto",!vaiAbrir);
-    cartao.classList.toggle("aberto",vaiAbrir);
-    cartao.setAttribute("aria-expanded",vaiAbrir?"true":"false");
-  }}
-  cartoes.forEach(function(cartao){{
-    cartao.addEventListener("click",function(){{alternarCartao(cartao);}});
-    cartao.addEventListener("keydown",function(ev){{
-      if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();alternarCartao(cartao);}}
-    }});
-  }});
-
-  // Clicar (ou "Enter"/espaço) numa coluna do gráfico rola até o cartão do
-  // município correspondente e o abre — pedido do usuário em 15/11/2026.
-  Array.prototype.slice.call(document.querySelectorAll(".barra-top30[data-alvo]")).forEach(function(barra){{
-    function irParaCartao(){{
-      var cartao=document.getElementById(barra.dataset.alvo);
-      if(!cartao||cartao.classList.contains("sem-acao"))return;
-      cartao.scrollIntoView({{behavior:"smooth",block:"center"}});
-      if(!cartao.classList.contains("aberto"))alternarCartao(cartao);
-    }}
-    barra.addEventListener("click",irParaCartao);
-    barra.addEventListener("keydown",function(ev){{
-      if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();irParaCartao();}}
-    }});
-  }});
-
-  // Imprimir/salvar em PDF: o CSS de @media print já força o gráfico, a
-  // avaliação e o detalhamento por status de cada cartão a aparecerem
-  // abertos (ver .mun-det.oculto{{display:block!important}}), então não
-  // precisa pré-abrir nada em JS antes de chamar window.print().
-  window.gerarPdf=function(){{window.print();}};
-
-  // Dica (tooltip) ao passar o mouse — reaproveitada tanto pelo mapa (se
-  // religado) quanto pelas colunas do gráfico dos 30 maiores municípios.
+  // Dica (tooltip) ao passar o mouse — mapa e colunas do gráfico.
   var dica=document.getElementById("dica");
   function mostrarDica(html,ev,elemento){{
     dica.innerHTML=html;
@@ -1941,37 +1915,114 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
   function linhaDica(rotulo,valor){{
     return valor?"<li><span>"+rotulo+"</span><span>"+valor+"</span></li>":"";
   }}
-  document.querySelectorAll(".mapa path").forEach(function(p){{
-    p.addEventListener("mousemove",function(ev){{
-      var e=p.dataset.e?p.dataset.e.split("|").map(function(x){{var a=x.split("~");return linhaDica(a[0],a[1]);}}).join(""):"";
-      mostrarDica("<b>"+p.dataset.n+"</b>"+(p.dataset.v?'<span class="v">'+p.dataset.v+"</span> · ":"")+p.dataset.q+(e?"<ul>"+e+"</ul>":""),ev);
+
+  // Mapa: um SVG só para a página (guardado em .ra-mapa-guarda); vai para o
+  // .mapa-slot do recorte visível e é pintado com as cores dele
+  // (.ra-mapa-dados: chave -> [cor, classe, investimento, ações, índice, opacidade]).
+  var mapaM={{}};
+  function ligarMapa(raiz){{
+    var slot=raiz.querySelector(".mapa-slot");
+    var svg=document.querySelector(".ra-mapa-guarda svg")||document.querySelector(".mapa-slot svg");
+    if(!slot||!svg)return;
+    if(svg.parentNode!==slot)slot.appendChild(svg);
+    var el=raiz.querySelector(".ra-mapa-dados");
+    mapaM=el?JSON.parse(el.textContent):{{}};
+    todos(svg,"path").forEach(function(p){{
+      var d=mapaM[p.dataset.k];
+      p.setAttribute("fill",d?d[0]:"{RA_COR_FORA_TOP30}");
+      if(d&&d[5])p.setAttribute("fill-opacity",d[5]);else p.removeAttribute("fill-opacity");
+      p.classList.toggle("top30",!!d);
     }});
-    p.addEventListener("mouseleave",function(){{dica.style.display="none";}});
-  }});
-  document.querySelectorAll(".barra-top30").forEach(function(b){{
-    function html(){{
-      return "<b>"+b.dataset.n+"</b><ul>"
-        +linhaDica("Posição (população)",b.dataset.pos+"º")
-        +linhaDica("Investimento",b.dataset.v)
-        +linhaDica("Ações",b.dataset.q)
-        +linhaDica("Per capita",b.dataset.pc)
-        +linhaDica("Índice de necessidade",b.dataset.idx+" ("+b.dataset.classe+")")
-        +"</ul>";
+    if(svg.dataset.ligado)return;
+    svg.dataset.ligado="1";
+    svg.addEventListener("mousemove",function(ev){{
+      var p=ev.target.closest("path");
+      if(!p){{dica.style.display="none";return;}}
+      var d=mapaM[p.dataset.k];
+      mostrarDica("<b>"+p.dataset.n+"</b>"+(d?(d[2]
+          ?"<ul>"+linhaDica("Classe",d[1])+linhaDica("Investimento",d[2])+linhaDica("Ações",d[3])+linhaDica("Índice de necessidade",d[4])+"</ul>"
+          :"sem ação no recorte"):"fora dos 30 maiores municípios"),ev);
+    }});
+    svg.addEventListener("mouseleave",function(){{dica.style.display="none";}});
+  }}
+
+  function ligar(raiz){{
+    todos(raiz,".det").forEach(function(b){{
+      b.addEventListener("click",function(){{alternar(b);}});
+    }});
+
+    // Cartão de cada um dos 30 maiores municípios: abre logo abaixo o
+    // detalhamento por status; só um cartão aberto por vez.
+    var cartoes=todos(raiz,".mun-card:not(.sem-acao)");
+    function alternarCartao(cartao){{
+      var det=document.getElementById(cartao.getAttribute("aria-controls"));
+      var vaiAbrir=det.classList.contains("oculto");
+      cartoes.forEach(function(outro){{
+        document.getElementById(outro.getAttribute("aria-controls")).classList.add("oculto");
+        outro.classList.remove("aberto");
+        outro.setAttribute("aria-expanded","false");
+      }});
+      det.classList.toggle("oculto",!vaiAbrir);
+      cartao.classList.toggle("aberto",vaiAbrir);
+      cartao.setAttribute("aria-expanded",vaiAbrir?"true":"false");
     }}
-    b.addEventListener("mousemove",function(ev){{mostrarDica(html(),ev);}});
-    b.addEventListener("mouseleave",function(){{dica.style.display="none";}});
-    b.addEventListener("focus",function(){{mostrarDica(html(),null,b);}});
-    b.addEventListener("blur",function(){{dica.style.display="none";}});
-  }});
+    cartoes.forEach(function(cartao){{
+      cartao.addEventListener("click",function(){{alternarCartao(cartao);}});
+      cartao.addEventListener("keydown",function(ev){{
+        if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();alternarCartao(cartao);}}
+      }});
+    }});
+
+    // Clicar numa coluna do gráfico rola até o cartão do município e o abre.
+    todos(raiz,".barra-top30[data-alvo]").forEach(function(barra){{
+      function irParaCartao(){{
+        var cartao=document.getElementById(barra.dataset.alvo);
+        if(!cartao||cartao.classList.contains("sem-acao"))return;
+        cartao.scrollIntoView({{behavior:"smooth",block:"center"}});
+        if(!cartao.classList.contains("aberto"))alternarCartao(cartao);
+      }}
+      barra.addEventListener("click",irParaCartao);
+      barra.addEventListener("keydown",function(ev){{
+        if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();irParaCartao();}}
+      }});
+    }});
+
+    todos(raiz,".barra-top30").forEach(function(b){{
+      function html(){{
+        return "<b>"+b.dataset.n+"</b><ul>"
+          +linhaDica("Posição (população)",b.dataset.pos+"º")
+          +linhaDica("Investimento",b.dataset.v)
+          +linhaDica("Ações",b.dataset.q)
+          +linhaDica("Per capita",b.dataset.pc)
+          +linhaDica("Índice de necessidade",b.dataset.idx+" ("+b.dataset.classe+")")
+          +"</ul>";
+      }}
+      b.addEventListener("mousemove",function(ev){{mostrarDica(html(),ev);}});
+      b.addEventListener("mouseleave",function(){{dica.style.display="none";}});
+      b.addEventListener("focus",function(){{mostrarDica(html(),null,b);}});
+      b.addEventListener("blur",function(){{dica.style.display="none";}});
+    }});
+    ligarMapa(raiz);
+  }}
+  window.raLigar=ligar;
+  ligar(document);
+
+  // Imprimir/salvar em PDF: o CSS de @media print já abre o que precisa.
+  window.gerarPdf=function(){{window.print();}};
 }})();
 // Janela de cards ao clicar num objeto da grade de município (ver
 // detalhe_rank/_dados_cards_acoes_top30) — pedido do usuário em 15/11/2026.
 (function(){{
-  var dadosEl=document.getElementById("ra-oc-dados");
-  if(!dadosEl)return;
-  var D=JSON.parse(dadosEl.textContent),C={{}};
-  (D.campos||[]).forEach(function(k,i){{C[k]=i;}});
+  // Dados das ações: o bloco JSON "ra-oc-dados" do recorte visível (ou o
+  // indicado em data-oc pelo contêiner).
   var fundo=document.getElementById("ra-oc-fundo");
+  if(!fundo)return;
+  var D=null,C={{}};
+  function carregar(id){{
+    var el=document.getElementById(id);
+    D=el?JSON.parse(el.textContent):{{campos:[],acoes:[]}};C={{}};
+    (D.campos||[]).forEach(function(k,i){{C[k]=i;}});
+  }}
   function esc(t){{var d=document.createElement("div");d.textContent=t==null?"":String(t);return d.innerHTML;}}
   function gauge(v){{
     if(v==null)return '<div class="ra-oc-sem-gauge">Avanço<br>não<br>informado</div>';
@@ -1998,6 +2049,8 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
   document.addEventListener("click",function(ev){{
     var alvo=ev.target.closest(".ra-obj-clic");
     if(!alvo)return;
+    var var_el=alvo.closest("[data-oc]");
+    carregar(var_el?var_el.dataset.oc:"ra-oc-dados");
     var mun=alvo.dataset.mun,status=alvo.dataset.status,objeto=alvo.dataset.objeto;
     var lista=D.acoes.filter(function(a){{
       return a[C.mu]===mun&&a[C.st]===status&&a[C.ob]===objeto;
@@ -2037,6 +2090,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
         "aviso_cards_html": aviso_cards_html,
         "filtros_html": filtros_html,
         "secao_mapa": secao_mapa,
+        "mapa_svg": mapa_svg,
         "secao_top30_grafico": secao_top30_grafico,
         "secao_cartoes": secao_cartoes,
         "quadro_status_eixo_html": quadro_status_eixo_html,
@@ -2050,99 +2104,249 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     }
 
 
-def gerar_html_resumo_acoes(caminho_base, dados):
-    """Página única (abre sem internet) com cards, o gráfico/avaliação dos
-    30 maiores municípios por população (mapa oculto — RA_HTML_MOSTRAR_MAPA)
-    e o quadro Status × Eixo do recorte atual."""
-    p = _montar_blocos_monitoramento(caminho_base, dados)
+CSS_SELETOR_RECORTE = """
+.sel-recorte{position:fixed;left:50%;transform:translateX(-50%);bottom:10px;z-index:1000;display:flex;flex-direction:column;align-items:center;gap:6px;width:max-content;max-width:94vw;opacity:0;pointer-events:none;transition:opacity .25s}
+body.mostra-rodape .sel-recorte{opacity:1;pointer-events:auto}
+@media (hover:none){.sel-recorte{opacity:1;pointer-events:auto}}
+.sel-barra{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;background:rgba(11,31,63,.92);padding:5px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.sel-barra button{background:transparent;color:#C9D6EA;border:none;border-radius:7px;padding:7px 12px;font:700 12px 'Roboto','Segoe UI',Arial,sans-serif;letter-spacing:.3px;cursor:pointer}
+.sel-barra button:hover{background:rgba(255,255,255,.12);color:#fff}
+.sel-barra button.oculto{display:none}
+.sel-barra-eixo button{padding:8px 14px;font-size:13px}
+.sel-barra-eixo button.ativo{background:#4FA3E0;color:#0B1F3F}
+.sel-barra-sec button.ativo{background:#E68A00;color:#fff}
+@media print{.sel-recorte{display:none!important}}
+"""
+
+JS_SELETOR_RECORTE = """
+(function(){
+  // Seletor EIXO x SECRETARIA/EXECUTOR (pedido do usuário em 16/11/2026),
+  // no mesmo desenho dos seletores de Gestão/Secretaria do PAC: barras
+  // flutuantes no rodapé, que aparecem com o mouse perto da borda de baixo
+  // (body.mostra-rodape). Cada combinação com ação é o conteúdo inteiro já
+  // calculado, guardado compactado (gzip + base64) num <script class="ra-v"
+  // data-k="E|X">; ao escolher, é descompactado, posto no lugar e os
+  // eventos ligados de novo (window.raLigar).
+  function bytes(s){var b=atob(s),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
+  function esconderDica(){["dica","mon-dica"].forEach(function(id){var d=document.getElementById(id);if(d)d.style.display="none";});}
+  var raiz=document.querySelector(".ra-sel-raiz"),barra=document.querySelector(".sel-recorte");
+  if(!raiz||!barra)return;
+  var lista=raiz.querySelector(".ra-v-lista");
+  if(!lista)return;
+  var V=JSON.parse(lista.textContent),cache={},atual="0|0",e=0,x=0;
+  var cont=raiz.querySelector(".ra-recorte");
+  var bEixo=Array.prototype.slice.call(barra.querySelectorAll(".sel-eixo-btn"));
+  var bSec=Array.prototype.slice.call(barra.querySelectorAll(".sel-sec-btn"));
+  // página autônoma: mesma régua de proximidade do rodapé da apresentação
+  // (lá o próprio carrossel já liga/desliga body.mostra-rodape)
+  if(!document.getElementById("nav-carrossel")){
+    document.addEventListener("mousemove",function(ev){document.body.classList.toggle("mostra-rodape",ev.clientY>=window.innerHeight-150);});
+    document.addEventListener("mouseleave",function(){document.body.classList.remove("mostra-rodape");});
+  }
+  function abrir(k){
+    if(cache[k])return Promise.resolve(cache[k]);
+    var el=raiz.querySelector('.ra-v[data-k="'+k+'"]');
+    var fluxo=new Blob([bytes(el.textContent.trim())]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return new Response(fluxo).text().then(function(h){cache[k]=h;return h;});
+  }
+  function controles(){
+    bEixo.forEach(function(b){b.classList.toggle("ativo",+b.dataset.e===e);});
+    // secretaria sem ação no eixo escolhido some da barra (igual ao PAC)
+    bSec.forEach(function(b){
+      var i=+b.dataset.x;
+      b.classList.toggle("ativo",i===x);
+      b.classList.toggle("oculto",i!==0&&V.indexOf(e+"|"+i)<0);
+    });
+  }
+  function mostrar(ne,nx){
+    if(V.indexOf(ne+"|"+nx)<0)nx=0;
+    var k=ne+"|"+nx;
+    e=ne;x=nx;controles();
+    if(k===atual)return;
+    if(!window.DecompressionStream){alert("Este navegador não consegue abrir os recortes. Use o Edge ou o Chrome atualizados.");return;}
+    document.body.style.cursor="progress";
+    abrir(k).then(function(h){
+      var svg=cont.querySelector(".mapa-slot svg"),guarda=document.querySelector(".ra-mapa-guarda");
+      if(svg&&guarda)guarda.appendChild(svg);
+      cont.innerHTML=h;atual=k;
+      window.raLigar(cont);
+      esconderDica();
+      document.body.style.cursor="";
+    }).catch(function(err){document.body.style.cursor="";alert("Não consegui abrir o recorte: "+err);});
+  }
+  bEixo.forEach(function(b){b.addEventListener("click",function(){mostrar(+b.dataset.e,x);});});
+  bSec.forEach(function(b){b.addEventListener("click",function(){mostrar(e,+b.dataset.x);});});
+  controles();
+})();
+"""
+
+
+def _variantes_recorte(caminho_base, dados, filtros):
+    """Combinações EIXO x SECRETARIA/EXECUTOR do recorte para o seletor —
+    pedido do usuário em 16/11/2026. Devolve (eixos, executores,
+    combinações) com eixos = ["TODOS OS EIXOS", ...], executores =
+    ["TODAS AS SECRETARIAS / EXECUTORES", ...] e combinações = [(i_eixo,
+    i_executor, filtros)] só das que têm ação; o índice 0 é sempre "todos"."""
+    eixos = ["TODOS OS EIXOS"]
+    executores = ["TODOS"]
+    if filtros is None:
+        return eixos, executores, [(0, 0, None)]
+    base = _ra_base(caminho_base)
+    linhas = base.iloc[dados["ids"]]
+    if "_f_executor" not in linhas.columns:
+        linhas = linhas.assign(_f_executor="")
+    eixos += [e for e, c in zip(dados["eixos"], dados["total"]["celulas"]) if c]
+    executores += sorted(set(linhas["_f_executor"]) - {""}, key=_ra_ordem)
+    pares = set(zip(linhas["_eixo"], linhas["_f_executor"]))
+    eixos_com = {e for e, _ in pares}
+    execs_com = {x for _, x in pares}
+    combos = []
+    for ie, e in enumerate(eixos):
+        for ix, x in enumerate(executores):
+            if (ie and e not in eixos_com) or (ix and x not in execs_com):
+                continue
+            if ie and ix and (e, x) not in pares:
+                continue
+            f = dict(filtros)
+            if ie:
+                f["eixo"] = [e]
+            if ix:
+                f["executor"] = [x]
+            combos.append((ie, ix, f))
+    if len(eixos) < 3 and len(executores) < 3:
+        return eixos, executores, [(0, 0, None)]
+    return eixos, executores, combos
+
+
+def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
+    """(html, seletor, p) — conteúdo do recorte inicial + as demais
+    combinações compactadas (dentro de .ra-sel-raiz), as barras flutuantes
+    EIXO x SECRETARIA/EXECUTOR (.sel-recorte, fora do conteúdo: ficam
+    fixas no rodapé — ver JS_SELETOR_RECORTE) e p = peças do recorte
+    inicial (CSS/JS/janela/mapa). `sufixo`: ids de cada recorte sufixados (página
+    embutida na Apresentação CGAPE — ver _sufixar_ids_monitoramento)."""
+    eixos, executores, combos = _variantes_recorte(caminho_base, dados, filtros)
+    p, inicial, guardados, chaves = None, "", [], []
+    for ie, ix, f in combos:
+        dv = dados if (ie, ix) == (0, 0) else resumo_acoes_dados(caminho_base, f)
+        if dv["vazio"]:
+            continue
+        pv = _montar_blocos_monitoramento(caminho_base, dv)
+        if p is None:
+            p = pv
+        json_oc, _, _ = pv["oc_html"].partition('<div id="ra-oc-fundo">')
+        corpo = (
+            f'<div class="filtros">{pv["filtros_html"]}'
+            + (f'Gerado em {pv["agora"]:%d/%m/%Y às %Hh%M}.' if not sufixo else "") + '</div>'
+            f'{pv["aviso_cards_html"]}'
+            f'<div class="cards">{pv["cards_html"]}</div>'
+            f'{pv["secao_mapa"]}{pv["secao_top30_grafico"]}{pv["secao_cartoes"]}'
+            f'{pv["quadro_status_eixo_html"]}{pv["quadro_status_objeto_html"]}{json_oc}')
+        if sufixo:
+            corpo = _sufixar_ids_monitoramento(corpo, sufixo)
+        if (ie, ix) == (0, 0):
+            inicial = corpo
+        if len(combos) > 1:
+            chaves.append(f"{ie}|{ix}")
+            dado = base64.b64encode(gzip.compress(corpo.encode("utf-8"), 9)).decode("ascii")
+            guardados.append(f'<script type="application/octet-stream" class="ra-v" data-k="{ie}|{ix}">{dado}</script>')
+    data_oc = "ra-oc-dados" + (f"--{sufixo}" if sufixo else "")
+    seletor = ""
+    if len(combos) > 1:
+        b_eixo = "".join(
+            f'<button type="button" class="sel-eixo-btn{" ativo" if i == 0 else ""}" data-e="{i}">'
+            f'{_esc(e)}</button>' for i, e in enumerate(eixos))
+        b_sec = "".join(
+            f'<button type="button" class="sel-sec-btn{" ativo" if i == 0 else ""}" data-x="{i}">'
+            f'{_esc("Todas as secretarias" if i == 0 else x)}</button>'
+            for i, x in enumerate(executores))
+        seletor = ('<div class="sel-recorte" role="group" aria-label="Eixo e secretaria/executor">'
+                   f'<div class="sel-barra sel-barra-sec">{b_sec}</div>'
+                   f'<div class="sel-barra sel-barra-eixo">{b_eixo}</div></div>')
+        guardados.append('<script type="application/json" class="ra-v-lista">'
+                         + json.dumps(chaves) + "</script>")
+    html = (f'<div class="ra-sel-raiz">'
+            f'<div class="ra-recorte" data-oc="{data_oc}">{inicial}</div>'
+            f'{"".join(guardados)}</div>')
+    return html, seletor, p
+
+
+def gerar_html_resumo_acoes(caminho_base, dados, filtros=None):
+    """Página única (abre sem internet) com cards, mapa e gráfico/avaliação
+    dos 30 maiores municípios por população, cartões por município e os
+    quadros Status × Eixo/Objeto do recorte atual. Com `filtros`, ganha no
+    topo o seletor EIXO (botões) x SECRETARIA/EXECUTOR (lista)."""
+    html_recortes, seletor, p = _montar_recortes(caminho_base, dados, filtros)
+    fundo_oc = '<div id="ra-oc-fundo">' + p["oc_html"].partition('<div id="ra-oc-fundo">')[2]
+    guarda_mapa = f'<div class="ra-mapa-guarda">{p["mapa_svg"]}</div>' if p.get("mapa_svg") else ""
     return f"""<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ações em Monitoramento</title>
 <style>
-{p["css_bruto"]}
+{p["css_bruto"]}{CSS_SELETOR_RECORTE}
 </style></head><body>
-<button type="button" class="btn-pdf" onclick="gerarPdf()" title="Imprime/salva em PDF com o gráfico, a avaliação e o detalhamento por status de cada município já abertos">Gerar PDF</button>
+<button type="button" class="btn-pdf" onclick="gerarPdf()" title="Imprime/salva em PDF o recorte selecionado, com o mapa, o gráfico, a avaliação e o detalhamento por status de cada município já abertos">Gerar PDF</button>
 <header><div><h1>{p["titulo"]}</h1><p>COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</p></div>
 <div class="gov">GOVERNO DO ESTADO DA BAHIA<br>CASA CIVIL</div></header>
 <main>
-<div class="filtros">{p["filtros_html"]}Gerado em {p["agora"]:%d/%m/%Y às %Hh%M}.</div>
-{p["aviso_cards_html"]}
-<div class="cards">{p["cards_html"]}</div>
-{p["secao_mapa"]}
-{p["secao_top30_grafico"]}
-{p["secao_cartoes"]}
-{p["quadro_status_eixo_html"]}
-{p["quadro_status_objeto_html"]}
+{html_recortes}
 </main>
 <footer>CGAPE · Casa Civil · Base Ações do Cronograma</footer>
+{seletor}
 <div id="dica"></div>
-{p["oc_html"]}
+{guarda_mapa}
+{fundo_oc}
 <script>
-{p["js_bruto"]}
+{p["js_bruto"]}{JS_SELETOR_RECORTE}
 </script>
 </body></html>"""
 
 
-def montar_partes_html_monitoramento(caminho_base, dados):
+def montar_partes_html_monitoramento(caminho_base, dados, filtros=None):
     """Pedaços do HTML "Ações em Monitoramento", já isolados (CSS sob
     .mon-ra, ids sufixados, tooltip em #mon-dica) prontos para entrar como a
-    página MON_ACOES da Apresentação CGAPE (ver gerar_pptx_pac.py), ao lado
-    das páginas do PAC na mesma janela de seleção — pedido do usuário em
-    15/11/2026. Uma única página, com rolagem, juntando cards + gráfico dos
-    30 maiores + cartões por município + quadros, na mesma ordem e estrutura
-    da página autônoma (gerar_html_resumo_acoes) — pedido do usuário em
-    15/11/2026, pra não fatiar o Monitoramento em vários slides. Base e
-    filtros do Monitoramento são completamente independentes dos do PAC (os
-    `dados` já vêm de resumo_acoes_dados, com os filtros do próprio
-    Monitoramento); CSS e ids isolados garantem que o visual de um não vaza
-    pro outro, inclusive quando a apresentação troca de gestão/secretaria —
-    a página MON_ACOES fica de fora dessas variantes (ver
-    montar_html_apresentacao: renderizada uma única vez, nunca recalculada
-    por gestão/secretaria)."""
-    p = _montar_blocos_monitoramento(caminho_base, dados)
+    página MON_ACOES da Apresentação CGAPE (ver gerar_pptx_pac.py) — pedido
+    do usuário em 15/11/2026. Mesma estrutura da página autônoma
+    (gerar_html_resumo_acoes), inclusive o seletor EIXO x
+    SECRETARIA/EXECUTOR (pedido do usuário em 16/11/2026: os seletores de
+    Gestão/Secretaria da apresentação, que são do PAC, somem nesta página).
+    Base e filtros do Monitoramento são independentes dos do PAC; a página
+    MON_ACOES é renderizada uma única vez, fora das variantes de
+    gestão/secretaria do PAC."""
+    html_recortes, seletor, p = _montar_recortes(caminho_base, dados,
+                                                 {} if filtros is None else filtros, sufixo="monra")
+    guarda = f'<div class="ra-mapa-guarda">{p["mapa_svg"]}</div>' if p.get("mapa_svg") else ""
+    secoes = {"MON_ACOES": f'<div class="mon-ra">{html_recortes}{guarda}</div>'}
 
-    def envolver(html_interno):
-        return _sufixar_ids_monitoramento(f'<div class="mon-ra">{html_interno}</div>')
-
-    secoes = {
-        "MON_ACOES": envolver(
-            f'<div class="filtros">{p["filtros_html"]}</div>'
-            f'{p["aviso_cards_html"]}'
-            f'<div class="cards">{p["cards_html"]}</div>'
-            f'{p["secao_mapa"]}'
-            f'{p["secao_top30_grafico"]}'
-            f'{p["secao_cartoes"]}'
-            f'{p["quadro_status_eixo_html"]}'
-            f'{p["quadro_status_objeto_html"]}'
-        ),
-    }
-
-    # O tooltip (#dica) e o botão "Gerar PDF" (window.gerarPdf) da página
-    # autônoma viram, no embutido, #mon-dica — fora de qualquer .mon-ra,
-    # pra não sumir se o slide que o contém não for o ativo (ver
-    # "dica_html" abaixo, colocado fora de qualquer slide por quem monta a
-    # apresentação) — e window.monRaGerarPdf, sem botão próprio: a
-    # apresentação já tem o seu, que imprime a página inteira.
-    css_renomeado = p["css_bruto"].replace("#dica", "#mon-dica")
+    # O tooltip (#dica) da página autônoma vira, no embutido, #mon-dica —
+    # fora de qualquer .mon-ra, pra não sumir se o slide que o contém não
+    # for o ativo — e window.gerarPdf vira window.monRaGerarPdf, sem botão
+    # próprio: a apresentação já tem o seu, que imprime a página inteira.
+    css_renomeado = (p["css_bruto"] + CSS_SELETOR_RECORTE).replace("#dica", "#mon-dica")
     css_isolado = _escopar_css(css_renomeado, ".mon-ra",
-                               nao_escopar=("#mon-dica", "#ra-oc-fundo"))
+                               nao_escopar=("#mon-dica", "#ra-oc-fundo", ".sel-recorte",
+                                            ".sel-barra", ".sel-barra-eixo", ".sel-barra-sec",
+                                            "body.mostra-rodape"))
     js_isolado = (
         p["js_bruto"]
         .replace('getElementById("dica")', 'getElementById("mon-dica")')
         .replace("window.gerarPdf=", "window.monRaGerarPdf=")
+        + JS_SELETOR_RECORTE
     )
-
+    fundo_oc = '<div id="ra-oc-fundo">' + p["oc_html"].partition('<div id="ra-oc-fundo">')[2]
     return {
         "css": css_isolado,
         "secoes": secoes,
         "js": js_isolado,
-        "dica_html": '<div id="mon-dica"></div>',
-        # Janela de cards ao clicar num objeto (ver .ra-obj-clic): mesmo
-        # motivo do #mon-dica acima, fica fora de qualquer .mon-ra/slide —
-        # ids já únicos (ra-oc-*), não colidem com a janela "oc-*" que o
-        # próprio PAC usa pro clique em objeto/executor das suas tabelas.
-        "oc_html": p["oc_html"],
+        # barras EIXO x SECRETARIA/EXECUTOR: fora de qualquer slide (fixas no
+        # rodapé), visíveis só na página do Monitoramento — ver
+        # atualizarSeletoresMonitoramento() em gerar_pptx_pac.py
+        "dica_html": '<div id="mon-dica"></div>' + seletor,
+        # Janela de cards ao clicar num objeto (ver .ra-obj-clic): fica fora
+        # de qualquer .mon-ra/slide; os dados de cada recorte vêm do
+        # "ra-oc-dados--monra" do recorte visível (data-oc).
+        "oc_html": fundo_oc,
         "recorte": p["recorte_txt"],
     }
 
@@ -2248,7 +2452,7 @@ def api_html(filtros=None, devolver_conteudo=False):
         if dados["vazio"]:
             return {"ok": False, "mensagem": "Nenhuma ação com os filtros "
                                              "escolhidos: HTML não gerado."}
-        html = gerar_html_resumo_acoes(caminho_base, dados)
+        html = gerar_html_resumo_acoes(caminho_base, dados, filtros or {})
         if devolver_conteudo:
             return {"ok": True, "html": html,
                     "mensagem": "HTML aberto em uma nova aba."}
