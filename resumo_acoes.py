@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import sys
 import unicodedata
 from datetime import datetime
 
@@ -2507,6 +2508,34 @@ def api_base():
         return {"ok": False, "mensagem": f"Erro ao ler '{RA_PLANILHA}': {exc}"}
 
 
+def api_atualizar_conder():
+    """Botão "ATUALIZAR DA CONDER" (pedido do usuário em 17/11/2026): baixa
+    a planilha do serviço público da CONDER (importar_cronograma.py, mesmo
+    conteúdo do botão "Exportar para planilha" do site) e grava por cima da
+    da pasta do programa — só troca se o conteúdo mudou."""
+    global _ra_cache
+    try:
+        import importar_cronograma as ic
+        caminho = pac.caminho_recurso(RA_PLANILHA) if pac else RA_PLANILHA
+        r = ic.atualizar_se_mudou(caminho)
+    except PermissionError:
+        return {"ok": False, "mensagem": f"Não consegui gravar '{RA_PLANILHA}': ela está aberta "
+                                         "em outro programa (Excel?). Feche e tente de novo."}
+    except Exception as exc:
+        return {"ok": False, "mensagem": f"Não consegui baixar do serviço da CONDER: {exc}"}
+    _ra_cache = None
+    # o MONITORAMENTO (relatorio_monitoramento.py) guarda a base lida uma vez
+    rm = sys.modules.get("relatorio_monitoramento")
+    if rm is not None and hasattr(rm, "_BASE"):
+        with rm._TRAVA_BASE:
+            rm._BASE = None
+    qtd = f"{r['acoes']:,}".replace(",", ".")
+    return {"ok": True, "mudou": r["mudou"],
+            "mensagem": (f"Base atualizada pelo serviço da CONDER: {qtd} ações."
+                         if r["mudou"] else
+                         f"A base já estava igual à da CONDER ({qtd} ações).")}
+
+
 def _caminho_livre(caminho):
     """Arquivo aberto (PowerPoint/Excel): grava com outro nome."""
     if os.path.exists(caminho):
@@ -2609,6 +2638,7 @@ HTML_JANELA = r"""
         <small>base Ações do Cronograma</small></h2>
       <div class="ra-botoes">
         <button type="button" class="ra-inicio" id="raInicio" title="Voltar à tela inicial">← Início</button>
+        <button type="button" id="raConder" title="Baixa agora a planilha Ações do Cronograma do serviço da CONDER (o mesmo conteúdo do botão Exportar para planilha do site app.conder.ba.gov.br/cronogramaacoes)">ATUALIZAR DA CONDER</button>
         <button type="button" id="raHtml" title="Gera uma página HTML com o gráfico de investimento dos 30 maiores municípios por população, a avaliação da carteira e o quadro Status × Eixo do recorte atual">GERAR HTML</button>
         <button type="button" id="raIncluirApresentacao" title="Abre a Apresentação CGAPE (HTML) já com as páginas do Monitoramento marcadas — você escolhe quais páginas do PAC entram junto">INCLUIR NA APRESENTAÇÃO</button>
         <button type="button" id="raGerar" title="Lê de novo a planilha Ações do Cronograma e gera o slide em Downloads">GERAR APRESENTAÇÃO</button>
@@ -2656,7 +2686,7 @@ HTML_JANELA = r"""
     border-color:var(--cor-acento-teal); font-weight:700; }
   #raGerar:hover, #raXlsx:hover { background:var(--cor-acento-teal-hover);
     color:#fff; }
-  #raGerar:disabled, #raXlsx:disabled, #raHtml:disabled { opacity:.6; cursor:default; }
+  #raGerar:disabled, #raXlsx:disabled, #raHtml:disabled, #raConder:disabled { opacity:.6; cursor:default; }
   .ra-corpo { flex:1; overflow:auto; padding:14px 18px 40px; }
   .ra-msg { font-size:13px; color:var(--cor-texto-secundario); min-height:18px;
     margin-bottom:10px; }
@@ -3356,6 +3386,22 @@ HTML_JANELA = r"""
   document.getElementById("raFechar").onclick = fechar;
   document.getElementById("raGerar").onclick = raGerar;
   document.getElementById("raHtml").onclick = raHtml;
+  // "ATUALIZAR DA CONDER" (pedido do usuário em 17/11/2026): baixa a base
+  // do serviço da CONDER e relê tudo (a tabela recarrega pela versão nova)
+  document.getElementById("raConder").onclick = function () {
+    var msg = document.getElementById("raMsg");
+    var botao = document.getElementById("raConder");
+    botao.disabled = true;
+    msg.textContent = "Baixando a planilha do serviço da CONDER (leva uns 30 segundos)…";
+    api("resumo_acoes_atualizar_conder").then(function (r) {
+      if (!r.ok) { msg.textContent = r.mensagem; return; }
+      raBase = null; raBaseVersao = null;
+      raConsultar();
+      setTimeout(function () { msg.textContent = r.mensagem; }, 1500);
+    }).catch(function (e) {
+      msg.textContent = "Erro ao atualizar pela CONDER: " + e;
+    }).finally(function () { botao.disabled = false; });
+  };
   // "INCLUIR NA APRESENTAÇÃO" — abre a mesma janela de seleção de slides
   // da Apresentação CGAPE (definida no script do painel, injetado nesta
   // mesma página — ver window.abrirApresentacaoComMonitoramento em "CGAPE

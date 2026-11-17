@@ -22,6 +22,11 @@
 #      OneDrive nao sao apagados no GitHub (voltam no proximo espelho). A
 #      planilha PAC e o .exe nao sao recolhidos (a planilha tem fonte propria,
 #      a pasta "2026"; o .exe e gerado).
+#   1b) ACOES DO CRONOGRAMA (pedido do usuario em 17/11/2026): a cada hora
+#      baixa a planilha do servico publico da CONDER (importar_cronograma.py,
+#      mesmo conteudo do botao "Exportar para planilha" do site
+#      app.conder.ba.gov.br/cronogramaacoes) e, se o conteudo mudou, faz
+#      commit SO dela e envia ao GitHub. Nao e recolhida do OneDrive.
 #   4) GITHUB -> ONEDRIVE e COAHS: os destinos recebem EXATAMENTE o que esta
 #      no GitHub (origin/master) + o .exe. Alteracoes locais ainda nao
 #      enviadas ao GitHub NAO vao para la. Espelho (/MIR): o que nao estiver
@@ -54,6 +59,12 @@ $ExcluirPastas = @("Lib", "Scripts", "Include", "share", "build", "dist", "__pyc
 $ExcluirArquivos = @(".git", "Thumbs.db", "pyvenv.cfg", "desktop.ini", "_sync_onedrive.log", "_sync_coam.log", "_vigia_sincronizacao.log", $NomeAviso)
 $IntervaloGithub = 300   # segundos entre consultas ao GitHub (e conferencias do OneDrive)
 $IntervaloLaco = 5
+# "Acoes do Cronograma.xlsx" baixada do servico da CONDER (importar_cronograma.py)
+# a cada hora -- pedido do usuario em 17/11/2026. Nome montado com [char]
+# porque o PowerShell 5.1 le este arquivo sem BOM como ANSI.
+$NomeCronograma = "A" + [char]0x00E7 + [char]0x00F5 + "es do Cronograma.xlsx"
+$IntervaloCronograma = 3600
+$EsperaFalhaCronograma = 600
 
 $Git = Join-Path $env:LOCALAPPDATA "Programs\PortableGit\cmd\git.exe"
 if (-not (Test-Path $Git)) { $Git = "git" }
@@ -149,11 +160,41 @@ function Enviar-Pendentes {
     $atras = [int](G rev-list --count "HEAD..origin/master")
     if ($frente -gt 0 -and $atras -eq 0) {
         $ultimo = G log -1 --format=%s
-        if ($ultimo -like "Planilha PAC atualizada (vigia*" -or $ultimo -like "Alteracoes feitas no OneDrive (vigia*") {
+        if ($ultimo -like "Planilha PAC atualizada (vigia*" -or $ultimo -like "Alteracoes feitas no OneDrive (vigia*" -or
+            $ultimo -like "Acoes do Cronograma atualizada (vigia*") {
             G push -q origin HEAD:master | Out-Null
             if ($LASTEXITCODE -eq 0) { Registrar "Commit pendente do vigia enviado ao GitHub." }
         }
     }
+}
+
+# ---- 1b) Acoes do Cronograma: servico da CONDER -> GitHub (a cada hora) -----
+$script:ProximoCronograma = [datetime]::MinValue
+function Importar-Cronograma {
+    if ((Get-Date) -lt $script:ProximoCronograma) { return }
+    $script:ProximoCronograma = (Get-Date).AddSeconds($IntervaloCronograma)
+    $script_ = Join-Path $Repo "importar_cronograma.py"
+    if (-not (Test-Path $Python) -or -not (Test-Path $script_)) { return }
+    Atualizar-DoGithub
+    $arq = Join-Path $Repo $NomeCronograma
+    $saida = (& $Python $script_ --se-mudou $arq 2>$null) -join " "
+    $codigo = $LASTEXITCODE
+    if ($codigo -ne 0 -and $codigo -ne 3) {
+        # sem rede, servico fora do ar ou planilha aberta no Excel: tenta de novo em 10 min
+        $script:ProximoCronograma = (Get-Date).AddSeconds($EsperaFalhaCronograma)
+        Registrar "Acoes do Cronograma: nao consegui atualizar pelo servico da CONDER (tenta de novo em 10 min): $saida"
+        return
+    }
+    # sem mudanca no servico, mas a copia daqui pode estar diferente do GitHub
+    # (ex.: baixada a mao pelo site) -- nos dois casos o GitHub fica com a daqui
+    $sujo = G status --porcelain -- $NomeCronograma
+    if (-not $sujo) { return }
+    G add -- $NomeCronograma | Out-Null
+    G commit -q -m "Acoes do Cronograma atualizada (vigia, servico CONDER)" -- $NomeCronograma | Out-Null
+    if ($LASTEXITCODE -ne 0) { return }
+    $msg = G push -q origin HEAD:master
+    if ($LASTEXITCODE -eq 0) { Registrar "Acoes do Cronograma atualizada pelo servico da CONDER e enviada ao GitHub ($saida)." }
+    else { Registrar "Acoes do Cronograma commitada, mas o envio ao GitHub falhou (tenta de novo no proximo ciclo): $msg" }
 }
 
 # ---- 3) OneDrive -> GitHub ------------------------------------------------------
@@ -169,7 +210,8 @@ function Listar-Arquivos([string]$pasta, [string]$raiz, $desde) {
             continue
         }
         if ($ExcluirArquivos -contains $i.Name) { continue }
-        if ($i.Name -like "~$*" -or $i.Name -like "*.tmp" -or $i.Name -eq $NomeExe -or $i.Name -like $PadraoPlanilha) { continue }
+        if ($i.Name -like "~$*" -or $i.Name -like "*.tmp" -or $i.Name -eq $NomeExe -or $i.Name -like $PadraoPlanilha -or
+            $i.Name -eq $NomeCronograma) { continue }   # o cronograma tem fonte propria (servico da CONDER)
         if ($desde -and $i.LastWriteTimeUtc -le $desde) { continue }
         $saida += [pscustomobject]@{ Arquivo = $i.FullName; Rel = $i.FullName.Substring($raiz.Length).TrimStart("\").Replace("\", "/") }
     }
@@ -364,6 +406,7 @@ while ($true) {
             $ultimaConsulta = Get-Date
         }
         Enviar-Planilha
+        Importar-Cronograma
         if ($script:PrecisaExe) { Gerar-Exe }
         if ($script:ExePendente) { Copiar-Exe }
         Espelhar

@@ -2138,7 +2138,32 @@ def _html_grafico_fase(m, grafico, rotulo_secao=ROTULO_GRAFICO_FASE, legenda=Non
                if _linha_com_valor(c, a))}'''
 
 
-def _html_card_fase(grafico, id_detalhe=None):
+def _html_card_composicao(titulo, subtitulo, id_conteudo):
+    """Card de uma das composições do Panorama (Fase, Eixo/Executor,
+    Executor/Objeto): abre/fecha a composição logo abaixo, uma por vez —
+    mesmo mecanismo dos cards de fase (faseCardAlternar) — pedido do usuário
+    em 17/11/2026."""
+    rotulo = titulo.lower()
+    return f'''<div class="fase-card clicavel comp-card" role="button" tabindex="0" aria-expanded="false"
+          aria-controls="{id_conteudo}" data-detalhe="{id_conteudo}" title="Ver {_html_esc(rotulo)}">
+        <div class="fc-topo"><span class="fc-nome">{_html_esc(titulo)}</span>
+          <span class="fc-seta" aria-hidden="true">▾</span></div>
+        <div class="cc-sub">{_html_esc(subtitulo)}</div>
+      </div>'''
+
+
+def _html_grade_cards(cards, detalhes, max_colunas=4):
+    """Linha(s) de cards (_html_card_fase) + os detalhamentos que eles abrem,
+    logo abaixo — Composição por Eixo/Executor e Executor/Objeto (pedido do
+    usuário em 17/11/2026). Até max_colunas por linha."""
+    return (f'<div class="fase-cards" style="--n-fases:{max(1, min(max_colunas, len(cards)))}">'
+            f'{"".join(cards)}</div>{"".join(detalhes)}')
+
+
+def _html_card_fase(grafico, id_detalhe=None, detalhe_txt="objeto"):
+    # detalhe_txt: "objeto" (fase, executor) ou "executor" (eixo) — os cards
+    # também servem às composições por Eixo/Executor e Executor/Objeto
+    # (pedido do usuário em 17/11/2026)
     # Card de uma fase da Composição por Fase (só HTML) — pedido do usuário
     # em 17/11/2026: os cards ficam lado a lado e o clique no card abre o
     # detalhamento por objeto da fase (id_detalhe; None = fase sem objetos,
@@ -2153,15 +2178,13 @@ def _html_card_fase(grafico, id_detalhe=None):
             <span style="color:#{LARANJA}">{_html_esc(abreviar_moeda(a))}</span></div>
         </div>''' for r, c, a, _, _ in fontes if _linha_com_valor(c, a))
     atributos = (f' role="button" tabindex="0" aria-expanded="false" aria-controls="{id_detalhe}" '
-                 f'data-detalhe="{id_detalhe}" title="Ver detalhamento por objeto — {_html_esc(rotulo)}"'
+                 f'data-detalhe="{id_detalhe}" title="Ver detalhamento por {detalhe_txt} — {_html_esc(rotulo)}"'
                  if id_detalhe else "")
     return f'''<div class="fase-card{" clicavel" if id_detalhe else ""}"{atributos}>
         <div class="fc-topo"><span class="fc-nome">{_html_esc(rotulo)}</span>
           {'<span class="fc-seta" aria-hidden="true">▾</span>' if id_detalhe else ""}</div>
         <div class="fc-total">{_html_esc(abreviar_moeda(c_val + a_val))}</div>
         <div class="fc-fontes">{linhas}</div>
-        <div class="fc-legenda"><span><i style="background:#{VERDE}"></i>T.C. firmado</span>
-          <span><i style="background:#{LARANJA}"></i>T.C. não firmado</span></div>
       </div>'''
 
 
@@ -3283,7 +3306,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     # fonte, e atrás do botão as tabelas dos executores do eixo (T.C. não
     # firmado e firmado, fontes em colunas). Eixos do maior pro menor.
     chaves_fonte = [k for _, k, *_ in _fontes_por_fase(m)]
-    blocos_eixos_html = []
+    blocos_eixos_html, detalhes_eixos_html = [], []
     for idx_eixo, e in enumerate(m["eixos_ordem"], 1):
         fontes_e = [(ROTULOS_CURTOS_FONTE[k], *m["fonte_eixo"][k][e], cheia, clara)
                     for _, k, cheia, clara, _, _ in _fontes_por_fase(m)]
@@ -3302,31 +3325,26 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             nota = _nota_nao_discriminado(m)
             if any(f["nao_discriminado"][0] <= -0.5 for f in m["eixo_executor"][e].values()):
                 nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
+        # cards lado a lado, como a Composição por Fase (pedido do usuário
+        # em 17/11/2026): o clique no card do eixo abre os executores dele
         id_detalhe = f"detalhe-eixo-executor-{idx_eixo}"
-        detalhamento_html = ""
         if blocos:
-            detalhamento_html = f'''
-        <button type="button" class="btn-detalhamento"
-                onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por executor ▾</button>
-        <div class="detalhamento-fase oculto" id="{id_detalhe}">
+            detalhes_eixos_html.append(f'''
+        <div class="composicao-fase detalhamento-fase fase-detalhe oculto" id="{id_detalhe}">
+          <div class="fase-detalhe-titulo">{_html_esc(e)} — detalhamento por executor</div>
           {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
                                 clique=(dict(filtro_gestao, e=e), "x", 1 if cor == LARANJA else 0))
                    for cab, linhas, cor in blocos)}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
-        </div>'''
-        separador = '<hr class="separador-fase">' if blocos_eixos_html else ""
-        blocos_eixos_html.append(f'''
-      <div class="composicao-fase">
-        {separador}
-        <div class="grafico-fase-bloco gf-ordem-tc">{_html_grafico_fase(m, (e.upper(), c_e, a_e, fontes_e), rotulo_secao="")}</div>
-        {detalhamento_html}
-      </div>''')
-    composicao_eixo_html = "".join(blocos_eixos_html)
+        </div>''')
+        blocos_eixos_html.append(_html_card_fase((e, c_e, a_e, fontes_e), id_detalhe if blocos else None,
+                                                 detalhe_txt="executor"))
+    composicao_eixo_html = _html_grade_cards(blocos_eixos_html, detalhes_eixos_html)
 
     # --- Composição por Executor/Objeto (pedido do usuário em 11/11/2026):
     # mesmo desenho — um gráfico por executor, aberto por fonte, e atrás do
     # botão as tabelas dos objetos do executor.
-    blocos_executores_html = []
+    blocos_executores_html, detalhes_executores_html = [], []
     for idx_ex, x in enumerate(m["executores_ordem"], 1):
         grupos_x = m["executor_objeto"][x]
         qtd_x = m["executor_objeto_qtd"][x]
@@ -3347,26 +3365,31 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             nota = _nota_nao_discriminado(m)
             if any(f["nao_discriminado"][0] <= -0.5 for f in grupos_x.values()):
                 nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
+        # cards lado a lado (pedido do usuário em 17/11/2026): o clique no
+        # card do executor abre os objetos dele
         id_detalhe = f"detalhe-executor-objeto-{idx_ex}"
-        detalhamento_html = ""
         if blocos:
-            detalhamento_html = f'''
-        <button type="button" class="btn-detalhamento"
-                onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por objeto ▾</button>
-        <div class="detalhamento-fase oculto" id="{id_detalhe}">
+            detalhes_executores_html.append(f'''
+        <div class="composicao-fase detalhamento-fase fase-detalhe oculto" id="{id_detalhe}">
+          <div class="fase-detalhe-titulo">{_html_esc(x)} — detalhamento por objeto</div>
           {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
                                 clique=(dict(filtro_gestao, x=x), "o", 1 if cor == LARANJA else 0))
                    for cab, linhas, cor in blocos)}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
-        </div>'''
-        separador = '<hr class="separador-fase">' if blocos_executores_html else ""
-        blocos_executores_html.append(f'''
-      <div class="composicao-fase">
-        {separador}
-        <div class="grafico-fase-bloco gf-ordem-tc">{_html_grafico_fase(m, (x.upper(), c_x, a_x, fontes_x), rotulo_secao="")}</div>
-        {detalhamento_html}
-      </div>''')
-    composicao_executor_html = "".join(blocos_executores_html)
+        </div>''')
+        blocos_executores_html.append(_html_card_fase((x, c_x, a_x, fontes_x), id_detalhe if blocos else None))
+    composicao_executor_html = _html_grade_cards(blocos_executores_html, detalhes_executores_html)
+
+    # As três composições viram cards lado a lado no Panorama; o clique abre
+    # a escolhida logo abaixo, uma por vez (pedido do usuário em 17/11/2026)
+    def _qtd(n, um, varios):
+        return f"{n} {um if n == 1 else varios}"
+    composicoes = [
+        ("COMPOSIÇÃO POR FASE", _qtd(len(cards_fases_html), "fase", "fases"), "detalhe-composicao-fase"),
+        ("COMPOSIÇÃO POR EIXO/EXECUTOR", _qtd(len(blocos_eixos_html), "eixo", "eixos"), "detalhe-composicao-eixo"),
+        ("COMPOSIÇÃO POR EXECUTOR/OBJETO", _qtd(len(blocos_executores_html), "executor", "executores"),
+         "detalhe-composicao-executor"),
+    ]
 
     # --- slide 4 (novo): status por fase e origem do recurso ---
     blocos_fase = []
@@ -3635,35 +3658,12 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         </div>''' if m["total_a_contratar"] > 0 else "",
       ] if seg)}</div>
       {cartoes_status_html}
-      <div style="margin-top:40px">
-        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
-          <span>COMPOSIÇÃO POR FASE</span>
-          <button type="button" class="btn-icone-detalhamento" title="Ocultar composição por fase"
-                  onclick="alternarDetalhamento(this, 'detalhe-composicao-fase')">–</button>
-        </div>
-        <div id="detalhe-composicao-fase">
-          {composicao_fase_html}
-        </div>
-      </div>
-      <div style="margin-top:40px">
-        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
-          <span>COMPOSIÇÃO POR EIXO/EXECUTOR</span>
-          <button type="button" class="btn-icone-detalhamento" title="Ver composição por eixo/executor"
-                  onclick="alternarDetalhamento(this, 'detalhe-composicao-eixo')">+</button>
-        </div>
-        <div class="oculto" id="detalhe-composicao-eixo">
-          {composicao_eixo_html}
-        </div>
-      </div>
-      <div style="margin-top:40px">
-        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
-          <span>COMPOSIÇÃO POR EXECUTOR/OBJETO</span>
-          <button type="button" class="btn-icone-detalhamento" title="Ver composição por executor/objeto"
-                  onclick="alternarDetalhamento(this, 'detalhe-composicao-executor')">+</button>
-        </div>
-        <div class="oculto" id="detalhe-composicao-executor">
-          {composicao_executor_html}
-        </div>
+      <div class="comp-secoes" style="margin-top:40px">
+        <div class="fase-cards comp-cards" style="--n-fases:3">{"".join(_html_card_composicao(t, sub, id_c) for t, sub, id_c in composicoes)}</div>
+        {"".join(f"""<div class="oculto comp-conteudo" id="{id_c}">
+          <div class="rotulo-secao so-impressao">{_html_esc(t)}</div>
+          {conteudo}
+        </div>""" for (t, _s, id_c), conteudo in zip(composicoes, (composicao_fase_html, composicao_eixo_html, composicao_executor_html)))}
       </div>
     </div>'''
     # slide-continua: a página tem conteúdo variável (botões de detalhamento),
@@ -3941,10 +3941,10 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .fc-total { font-size:30px; font-weight:900; color:#0B1F3F; line-height:1.1; margin-top:-4px; }
     .fc-fontes { display:flex; flex-direction:column; gap:10px; border-top:1px solid #F0F2F6; padding-top:10px; }
     .fc-fonte-cab { display:flex; justify-content:space-between; gap:8px; font-size:14px; }
-    .fc-fonte-nome { font-weight:700; color:#0B1F3F; }
-    .fc-fonte-total { font-weight:700; color:#0B1F3F; white-space:nowrap; }
+    .fc-fonte-nome { font-weight:400; color:#0B1F3F; }
+    .fc-fonte-total { font-weight:400; color:#0B1F3F; white-space:nowrap; }
     .fc-fonte .barra-trilho { flex:none; height:13px; margin:4px 0 3px; }
-    .fc-fonte-valores { display:flex; justify-content:space-between; gap:8px; font-size:13px; font-weight:700; }
+    .fc-fonte-valores { display:flex; justify-content:space-between; gap:8px; font-size:13px; font-weight:400; }
     .fc-legenda { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:#5B6576; margin-top:auto;
       border-top:1px solid #F0F2F6; padding-top:8px; }
     .fc-legenda i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
@@ -3952,6 +3952,15 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
       padding:14px 18px 18px; }
     .fase-detalhe-titulo { font-size:16px; font-weight:700; color:#0B1F3F; }
     @media print { .fase-card { break-inside:avoid; } .fc-seta { display:none; } }
+    /* As três composições do Panorama em cards (pedido do usuário em
+       17/11/2026): o card só abre/fecha a composição; no PDF saem todas,
+       cada uma com o seu título, e a linha de cards some. */
+    .comp-card { gap:6px; justify-content:center; }
+    .comp-card .fc-nome { font-size:17px; letter-spacing:.3px; }
+    .cc-sub { font-size:14px; color:#5B6576; }
+    .comp-conteudo { margin-top:26px; }
+    .so-impressao { display:none; }
+    @media print { .comp-cards { display:none; } .so-impressao { display:block; margin:28px 0 14px; } }
 
     /* Panorama + Visão Geral: botões de detalhamento (em ícone) do valor de
        T.C. não firmado por fonte e da tabela de investimento por fase —
@@ -4546,6 +4555,10 @@ function faseCardAlternar(card) {{
     if (seta) seta.textContent = abrir ? '▴' : '▾';
     c.title = c.title.replace(abrir ? 'Ver' : 'Ocultar', abrir ? 'Ocultar' : 'Ver');
   }});
+  // com várias linhas de cards (eixos, executores) o detalhamento fica
+  // longe do card clicado: rola até ele
+  var aberto = vaiAbrir && document.getElementById(card.dataset.detalhe);
+  if (aberto && aberto.scrollIntoView) aberto.scrollIntoView({{behavior: 'smooth', block: 'nearest'}});
 }}
 document.addEventListener('click', function (ev) {{
   var card = ev.target.closest('.fase-card.clicavel');

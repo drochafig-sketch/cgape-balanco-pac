@@ -16815,6 +16815,14 @@ def _api_resumo_acoes_xlsx(filtros=None):
     return _modulo_resumo_acoes().api_xlsx(filtros)
 
 
+def _api_resumo_acoes_atualizar_conder():
+    # botão "ATUALIZAR DA CONDER" da tela Ações em Monitoramento (pedido do
+    # usuário em 17/11/2026) — ver importar_cronograma.py
+    if MODO_WEB:
+        return {"ok": False, "mensagem": "A base é atualizada pelo programa desktop."}
+    return _modulo_resumo_acoes().api_atualizar_conder()
+
+
 def _api_resumo_acoes_html(filtros=None):
     # Desktop grava em Downloads e abre; web devolve o HTML para uma aba.
     return _modulo_resumo_acoes().api_html(filtros, devolver_conteudo=MODO_WEB)
@@ -17087,6 +17095,9 @@ def abrir_interface_filtros(df_base):
 
         def resumo_acoes_html(self, filtros=None):
             return _api_resumo_acoes_html(filtros)
+
+        def resumo_acoes_atualizar_conder(self):
+            return _api_resumo_acoes_atualizar_conder()
 
         def escolher_local_e_gerar(self, filtros, secoes=None):
             # Segunda etapa: reaplica os mesmos filtros (barato — é só
