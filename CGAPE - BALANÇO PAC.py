@@ -6812,7 +6812,8 @@ def _dados_pre_visualizacao(df):
             for _, o in resumo_objetos_prazo.iterrows()
         ]
         prazo.append({"rotulo": trimestre_nome, "qtd": int(
-            r["QTD"]), "objetos": objetos_prazo})
+            r["QTD"]), "objetos": objetos_prazo,
+            "recorte": {"PRAZO_TRIMESTRE": trimestre_nome}})
 
     # --- Resumo financeiro ---
     financeiro_bruto = [
@@ -6863,7 +6864,8 @@ def _dados_pre_visualizacao(df):
         ]
         panorama.append(
             {"rotulo": fase_nome, "qtd": int(r["QTD"]), "valor": float(
-                r["VALOR"]), "objetos": objetos_fase}
+                r["VALOR"]), "objetos": objetos_fase,
+             "recorte": {"FASE_TEXTO": fase_nome}}
         )
 
     # --- Situação do termo de compromisso ---
@@ -6900,6 +6902,7 @@ def _dados_pre_visualizacao(df):
                 "qtd": int(r["QTD"]),
                 "valor": float(r["VALOR"]),
                 "objetos": objetos_tc,
+                "recorte": {"SINALIZACAO_TC": situacao},
             }
         )
 
@@ -7159,6 +7162,9 @@ def _dados_panorama_secretaria(df):
                         "qtd": int(r["QTD"]),
                         "valor": float(r["VALOR"]),
                         "objetos": objetos_lista,
+                        # clique abre os cards das ações (ver _api_cards_acoes)
+                        "recorte": {"GESTAO": gestao, "SECRETARIA_LIMPA": sec,
+                                    "EXECUTOR": exe, "FASE_TEXTO": fase_nome},
                     }
                 )
 
@@ -7167,6 +7173,7 @@ def _dados_panorama_secretaria(df):
                     "secretaria": sec,
                     "executor": exe,
                     "fases": fases_lista,
+                    "recorte": {"GESTAO": gestao, "SECRETARIA_LIMPA": sec, "EXECUTOR": exe},
                 }
             )
         if cartoes:
@@ -7264,6 +7271,7 @@ def _dados_mapa_municipios(df, largura_mapa=760):
                 poligono["qtd"] = dado[0]
                 poligono["valor"] = dado[1]
                 poligono["objetos"] = dado[2]
+                poligono["recorte"] = {"municipio": nome_municipio}
             poligonos.append(poligono)
 
     legenda = []
@@ -11667,6 +11675,51 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     white-space: nowrap;
   }
 
+  /* Janela de cards das ações ao clicar num elemento com tooltip de objetos
+     (pedido do usuário em 17/11/2026) — mesmo card da Apresentação HTML do
+     PAC, nas cores do tema do dash. Fica abaixo da Ficha Cadastral (z 97). */
+  .abre-cards-acoes { cursor: pointer; }
+  #cards-acoes-fundo { display: none; position: fixed; inset: 0; z-index: 96;
+    background: rgba(0,0,0,0.6); align-items: center; justify-content: center; padding: 24px; }
+  #cards-acoes-fundo.aberta { display: flex; }
+  .cards-acoes-janela { width: min(1240px, 100%); max-height: 100%; display: flex; flex-direction: column;
+    background: var(--cor-fundo); color: var(--cor-texto-primario); border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.45); overflow: hidden; }
+  .cards-acoes-cabecalho { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+    padding: 16px 22px 12px; border-bottom: 2px solid var(--cor-acento-teal); background: var(--cor-card); }
+  .cards-acoes-titulo { font-size: 17px; font-weight: 700; }
+  .cards-acoes-sub { font-size: 12.5px; color: var(--cor-texto-secundario); margin-top: 3px; }
+  .cards-acoes-fechar { background: none; border: none; color: var(--cor-texto-secundario); font-size: 26px;
+    line-height: 1; cursor: pointer; padding: 0 4px; }
+  .cards-acoes-fechar:hover { color: var(--cor-texto-primario); }
+  .cards-acoes-corpo { overflow-y: auto; padding: 18px 22px 22px; display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); align-content: start; }
+  .cards-vazio { color: var(--cor-texto-secundario); font-size: 13px; }
+  .cards-acao { background: var(--cor-card); border: 1px solid var(--cor-card-elevado);
+    border-top: 4px solid var(--cor-acento-teal); border-radius: 10px; padding: 16px 18px; cursor: pointer;
+    display: flex; flex-direction: column; gap: 12px; transition: box-shadow .15s, border-color .15s; }
+  .cards-acao:hover, .cards-acao:focus { border-color: var(--cor-texto-secundario);
+    box-shadow: 0 4px 14px rgba(0,0,0,.25); outline: none; }
+  .cards-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .cards-identificacao { min-width: 0; }
+  .cards-objeto { font-size: 15px; font-weight: 700; line-height: 1.25; }
+  .cards-municipio-linha { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .cards-municipio { font-size: 13px; color: var(--cor-texto-secundario); }
+  .cards-icone-local { display: inline-flex; color: var(--cor-acento-teal-texto); flex-shrink: 0; }
+  .cards-executor { font-size: 12px; color: var(--cor-texto-terciario); margin-top: 3px; }
+  .cards-descricao { font-size: 13px; line-height: 1.35; display: -webkit-box;
+    -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .cards-gauge { flex-shrink: 0; color: var(--cor-texto-primario); }
+  .cards-sem-gauge { width: 76px; height: 76px; display: flex; align-items: center; justify-content: center;
+    text-align: center; font-size: 10.5px; font-weight: 700; color: var(--cor-texto-terciario); line-height: 1.3; }
+  .cards-rodape { display: flex; justify-content: space-between; gap: 10px; margin-top: auto;
+    border-top: 1px solid var(--cor-card-elevado); padding-top: 10px; }
+  .cards-destaque-rotulo { font-size: 10.5px; font-weight: 700; color: var(--cor-texto-secundario);
+    text-transform: uppercase; }
+  .cards-destaque-valor { font-size: 14.5px; font-weight: 700; margin-top: 2px; }
+  .cards-destaque-investimento { font-size: 18px; font-weight: 900; color: var(--cor-acento-teal-texto);
+    white-space: nowrap; }
+
   /* Gráfico de barras via flex — sem nenhuma lib externa */
   .grafico-barras {
     display: flex;
@@ -13972,6 +14025,117 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     return elementoTooltipObjetos;
   }
 
+  // --- Janela de cards das ações (pedido do usuário em 17/11/2026): todo
+  // elemento com tooltip de objetos, ao ser clicado, abre uma janela com as
+  // ações daquele recorte em cards — o mesmo card da Apresentação HTML do
+  // PAC (JS_CARDS_OBJETO em gerar_pptx_pac.py). O recorte vem pronto nos
+  // dados do gráfico (item.recorte) e soma com os filtros do painel; o
+  // clique no card abre a Ficha Cadastral (por cima desta janela).
+  var _cardsFundo = null, _cardsPedido = 0;
+  var _GAUGE_ARCO = "M 11.74 56.39 A 32.06 32.06 0 1 1 64.26 56.39";
+  var _ICONE_LOCAL = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>';
+  function _escCards(t) { var d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+  function _gaugeCards(v) {
+    if (v == null) return '<div class="cards-sem-gauge">Avanço<br>não<br>informado</div>';
+    v = Math.max(0, Math.min(100, v));
+    return '<svg width="76" height="76" viewBox="0 0 76 76">'
+      + '<path d="' + _GAUGE_ARCO + '" fill="none" stroke="var(--cor-card-elevado)" stroke-width="9.88" stroke-linecap="round" pathLength="100"></path>'
+      + (v > 0.5 ? '<path d="' + _GAUGE_ARCO + '" fill="none" stroke="#2E7D32" stroke-width="9.88" stroke-linecap="round" pathLength="100" stroke-dasharray="' + v.toFixed(1) + ' 200"></path>' : '')
+      + '<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="currentColor">'
+      + Math.round(v) + '%</text></svg>';
+  }
+  function _cardAcao(a, i) {
+    var local = a.lk ? '<a href="' + _escCards(a.lk) + '" target="_blank" rel="noopener" class="cards-icone-local" title="Ver localização">' + _ICONE_LOCAL + '</a>' : '';
+    return '<div class="cards-acao" role="button" tabindex="0" data-i="' + i + '" title="Clique para ver a ficha cadastral da ação">'
+      + '<div class="cards-topo"><div class="cards-identificacao">'
+      + '<div class="cards-objeto">' + _escCards(a.o) + '</div>'
+      + '<div class="cards-municipio-linha"><span class="cards-municipio">' + _escCards(a.mu || "Município não informado") + '</span>' + local + '</div>'
+      + (a.ex ? '<div class="cards-executor">' + _escCards(a.ex) + '</div>' : '')
+      + '</div><div class="cards-gauge">' + _gaugeCards(a.av) + '</div></div>'
+      + (a.ds ? '<div class="cards-descricao">' + _escCards(a.ds) + '</div>' : '')
+      + '<div class="cards-rodape"><div><div class="cards-destaque-rotulo">Conclusão prevista (' + (a.fase ? 'fase' : 'atual') + ')</div>'
+      + '<div class="cards-destaque-valor">' + _escCards(a.dt) + '</div></div>'
+      + '<div><div class="cards-destaque-rotulo">Investimento</div>'
+      + '<div class="cards-destaque-valor cards-destaque-investimento">' + _escCards(formatarMiBi(a.v)) + '</div></div></div></div>';
+  }
+  function _obterJanelaCards() {
+    if (_cardsFundo) return _cardsFundo;
+    _cardsFundo = document.createElement("div");
+    _cardsFundo.id = "cards-acoes-fundo";
+    _cardsFundo.innerHTML = '<div class="cards-acoes-janela" role="dialog" aria-modal="true">'
+      + '<div class="cards-acoes-cabecalho"><div class="cards-acoes-textos"><div class="cards-acoes-titulo"></div>'
+      + '<div class="cards-acoes-sub"></div></div>'
+      + '<button type="button" class="cards-acoes-fechar" title="Fechar (Esc)">×</button></div>'
+      + '<div class="cards-acoes-corpo"></div></div>';
+    document.body.appendChild(_cardsFundo);
+    _cardsFundo.addEventListener("click", function (ev) {
+      if (ev.target === _cardsFundo || ev.target.closest(".cards-acoes-fechar")) { fecharCardsAcoes(); return; }
+      if (ev.target.closest(".cards-icone-local")) return;   // link abre sozinho
+      var c = ev.target.closest(".cards-acao");
+      if (c && _cardsFundo._acoes) abrirFicha(_cardsFundo._acoes[+c.dataset.i].ficha || {});
+    });
+    _cardsFundo.addEventListener("keydown", function (ev) {
+      var c = ev.target.closest && ev.target.closest(".cards-acao");
+      if (c && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); abrirFicha(_cardsFundo._acoes[+c.dataset.i].ficha || {}); }
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Escape" || !_cardsFundo.classList.contains("aberta")) return;
+      // Esc fecha primeiro a ficha aberta por um card; o segundo, a janela
+      if (document.getElementById("ficha-overlay").style.display === "flex") fecharFicha();
+      else fecharCardsAcoes();
+    });
+    return _cardsFundo;
+  }
+  function fecharCardsAcoes() {
+    if (_cardsFundo) _cardsFundo.classList.remove("aberta");
+    _cardsPedido++;
+  }
+  function _tituloCards(item) {
+    var r = item.recorte || {}, partes = [];
+    if (r.SECRETARIA_LIMPA) partes.push(r.SECRETARIA_LIMPA + " | " + r.EXECUTOR);
+    if (r.FASE_TEXTO) partes.push(r.FASE_TEXTO);
+    if (r.PRAZO_TRIMESTRE) partes.push("Conclusão prevista: " + r.PRAZO_TRIMESTRE);
+    if (r.SINALIZACAO_TC) partes.push(item.rotulo);
+    if (r.municipio) partes.push(r.municipio);
+    return partes.join(" · ") || item.rotulo || "Ações";
+  }
+  async function abrirCardsAcoes(item) {
+    var fundo = _obterJanelaCards(), pedido = ++_cardsPedido;
+    fundo.querySelector(".cards-acoes-titulo").textContent = _tituloCards(item);
+    fundo.querySelector(".cards-acoes-sub").textContent = "Carregando as ações…";
+    fundo.querySelector(".cards-acoes-corpo").innerHTML = "";
+    fundo._acoes = null;
+    fundo.classList.add("aberta");
+    var r;
+    try { r = await chamarAPI("cards_acoes", montarFiltrosAtuais(), item.recorte); }
+    catch (e) { r = { ok: false, erro: String(e) }; }
+    if (pedido !== _cardsPedido) return;   // fechada ou trocada enquanto carregava
+    if (!r || !r.ok) {
+      fundo.querySelector(".cards-acoes-sub").textContent = "Não foi possível carregar as ações: " + ((r && r.erro) || "erro desconhecido");
+      return;
+    }
+    var total = r.acoes.reduce(function (s, a) { return s + a.v; }, 0);
+    fundo._acoes = r.acoes;
+    fundo.querySelector(".cards-acoes-sub").textContent = r.acoes.length + (r.acoes.length === 1 ? " ação" : " ações")
+      + " · " + formatarMiBi(total) + " · clique num card para ver a ficha cadastral";
+    fundo.querySelector(".cards-acoes-corpo").innerHTML = r.acoes.map(_cardAcao).join("")
+      || '<div class="cards-vazio">Nenhuma ação encontrada.</div>';
+  }
+  function habilitarCliqueCards(elementoGatilho, item) {
+    if (!item || !item.recorte) return;
+    elementoGatilho.classList.add("abre-cards-acoes");
+    // no mapa, arrastar (pan) não pode virar clique
+    var origem = null;
+    elementoGatilho.addEventListener("mousedown", function (ev) { origem = [ev.clientX, ev.clientY]; });
+    elementoGatilho.addEventListener("click", function (ev) {
+      if (origem && Math.abs(ev.clientX - origem[0]) + Math.abs(ev.clientY - origem[1]) > 6) return;
+      ev.stopPropagation();
+      var tooltip = obterTooltipObjetos();
+      tooltip.classList.remove("visivel");
+      abrirCardsAcoes(item);
+    });
+  }
+
   function construirConteudoTooltipCard(item) {
     var corpo = "";
     item.fases.forEach(function (fase) {
@@ -13989,6 +14153,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   }
 
   function ativarTooltipCard(elementoGatilho, item) {
+    habilitarCliqueCards(elementoGatilho, item);
     elementoGatilho.addEventListener("mouseenter", function () {
       var tooltip = obterTooltipObjetos();
       tooltip.innerHTML = construirConteudoTooltipCard(item);
@@ -14046,6 +14211,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   }
 
   function ativarTooltipMunicipio(elementoGatilho, item) {
+    habilitarCliqueCards(elementoGatilho, item);
     elementoGatilho.addEventListener("mouseenter", function () {
       var tooltip = obterTooltipObjetos();
       tooltip.innerHTML = construirConteudoTooltipMunicipio(item);
@@ -14089,6 +14255,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   }
 
   function ativarTooltipPrazo(elementoGatilho, item) {
+    habilitarCliqueCards(elementoGatilho, item);
     elementoGatilho.addEventListener("mouseenter", function () {
       var tooltip = obterTooltipObjetos();
       tooltip.innerHTML = construirConteudoTooltipPrazo(item);
@@ -16534,6 +16701,55 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 # saber se está falando com uma janela nativa ou com um servidor HTTP.
 # =====================================================
 
+def _api_cards_acoes(filtros, recorte):
+    # Janela de cards do dash (pedido do usuário em 17/11/2026): todo
+    # elemento com tooltip de objetos (barra de prazo, legenda de fase/termo,
+    # ícone e legenda dos mini-cards Secretaria | Executor, município do
+    # mapa), ao ser clicado, mostra as ações daquele recorte em cards — o
+    # mesmo card da Apresentação HTML (ver JS_CARDS_OBJETO em
+    # gerar_pptx_pac.py), e o clique no card abre a Ficha Cadastral.
+    # recorte = {coluna: valor} vindo dos próprios dados do gráfico
+    # (_dados_pre_visualizacao); "municipio" casa sem acento/maiúsculas.
+    try:
+        df = _filtrar_dataframe(filtros)
+        for coluna, valor in (recorte or {}).items():
+            if coluna == "municipio":
+                alvo = remover_acentos(str(valor)).strip().upper()
+                df = df[df[col_municipio].apply(lambda x: remover_acentos(x).strip().upper()) == alvo]
+            elif coluna in df.columns:
+                df = df[df[coluna].astype(str) == str(valor)]
+            else:
+                return {"ok": False, "erro": f"Recorte desconhecido: {coluna}"}
+        investimento = _serie_investimento_ajustado(df)
+        acoes = []
+        for idx, r in df.iterrows():
+            try:
+                ficha = _montar_dados_ficha_acao(r)
+            except Exception:
+                ficha = {}
+            na_exec = remover_acentos(str(r.get("FASE_TEXTO", ""))).upper() == "EXECUCAO DO OBJETO"
+            data = pd.to_datetime(r[col_prazo] if na_exec else r[col_prazo_atual], errors="coerce")
+            avanco = pd.to_numeric(r.get(col_avanco), errors="coerce")
+            acoes.append({
+                "o": str(r[col_objeto]) if pd.notna(r[col_objeto]) else "",
+                "mu": str(r[col_municipio]) if pd.notna(r[col_municipio]) else "",
+                "ex": ficha.get("executor") or "",
+                "ds": ficha.get("descricao") or "",
+                "lk": ficha.get("link_localizacao") or "",
+                "av": round(float(avanco), 1) if pd.notna(avanco) else None,
+                "dt": data.strftime("%d/%m/%Y") if pd.notna(data) else "A definir",
+                "fase": 1 if na_exec else 0,
+                "v": round(float(investimento.loc[idx]), 2),
+                "ficha": ficha,
+            })
+        acoes.sort(key=lambda a: -a["v"])
+        return {"ok": True, "acoes": acoes}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
 def _api_pre_visualizar(filtros):
     # Filtra os dados e devolve os números já agregados (sem gerar nenhum
     # PDF) para o JS desenhar os mesmos 4 gráficos do Painel Geral em CSS —
@@ -17098,6 +17314,9 @@ def abrir_interface_filtros(df_base):
 
         def resumo_acoes_atualizar_conder(self):
             return _api_resumo_acoes_atualizar_conder()
+
+        def cards_acoes(self, filtros, recorte):
+            return _api_cards_acoes(filtros, recorte)
 
         def escolher_local_e_gerar(self, filtros, secoes=None):
             # Segunda etapa: reaplica os mesmos filtros (barato — é só
