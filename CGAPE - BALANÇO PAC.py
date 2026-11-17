@@ -9640,7 +9640,7 @@ html[data-tema="escuro"] .home-cartao-rotulo {{ color:#EAF0F7; }}
 html[data-tema="escuro"] .home-cartao-sub, html[data-tema="escuro"] .home-cartao-data {{ color:#AEBBCD; }}
 html[data-tema="escuro"] .home-cartao-icone {{ color:#7DBBF3; }}
 </style>
-<script>try{{if(localStorage.getItem("cgapeTema")==="escuro")document.documentElement.setAttribute("data-tema","escuro");}}catch(e){{}}</script>
+<script>(function(){{var t="escuro";try{{t=localStorage.getItem("cgapeTemaV2")||"escuro";}}catch(e){{}}if(t==="escuro")document.documentElement.setAttribute("data-tema","escuro");}})();</script>
 </head>
 <body>
 <div class="ivp-cabecalho">
@@ -9910,9 +9910,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
      realmente entrarem em vigor no celular, em vez de nunca disparar. -->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CGAPE - BALANÇO PAC</title>
-<!-- Tema escolhido (claro/escuro) aplicado ANTES do primeiro paint, sem
-     piscar o claro — pedido do usuário em 17/11/2026. Ver alternarTema(). -->
-<script>try{if(localStorage.getItem("cgapeTema")==="escuro")document.documentElement.setAttribute("data-tema","escuro");}catch(e){}</script>
+<!-- Tema aplicado ANTES do primeiro paint, sem piscar — pedido do usuário em
+     17/11/2026. O ESCURO é o padrão (pedido do usuário no mesmo dia: "inicie
+     a execução já no modo dark"); a escolha do botão sol/lua fica salva em
+     "cgapeTemaV2" (chave nova, para quem já tinha "claro" salvo na chave
+     antiga também abrir no escuro). Ver alternarTema(). -->
+<script>(function(){var t="escuro";try{t=localStorage.getItem("cgapeTemaV2")||"escuro";}catch(e){}if(t==="escuro")document.documentElement.setAttribute("data-tema","escuro");})();</script>
 <style>
   :root {
     /* Identidade visual única do projeto (ver identidade_visual.py) —
@@ -14097,7 +14100,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     else raizHtml.removeAttribute("data-tema");
     void raizHtml.offsetHeight;
     setTimeout(function () { raizHtml.classList.remove("tema-trocando"); }, 50);
-    try { localStorage.setItem("cgapeTema", novo); } catch (e) { /* sem localStorage: vale só nesta sessão */ }
+    try { localStorage.setItem("cgapeTemaV2", novo); } catch (e) { /* sem localStorage: vale só nesta sessão */ }
     aplicarCoresGraficosTema();
     sincronizarBotoesTema();
     // gráficos são desenhados com cores calculadas: redesenha com as novas
@@ -17802,7 +17805,9 @@ def abrir_interface_filtros(df_base):
         width=1600,
         height=900,
         maximized=True,
-        background_color="#EDEFF3",
+        # fundo do tema escuro (o padrão desde 17/11/2026), para a janela
+        # não abrir num branco antes da página carregar
+        background_color="#0A1628",
     )
     # No Windows, o pywebview usa o WebView2 (motor do Edge) por padrão,
     # já presente de fábrica no Windows 10/11 — não exige instalar nada
