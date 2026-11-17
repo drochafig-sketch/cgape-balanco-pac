@@ -43,6 +43,7 @@ import os
 import re
 import sys
 import threading
+import unicodedata
 from datetime import date
 
 import pandas as pd
@@ -70,6 +71,8 @@ if getattr(sys, "frozen", False):
     PASTA_BASE = os.path.dirname(os.path.abspath(sys.executable))
 else:
     PASTA_BASE = os.path.dirname(os.path.abspath(__file__))
+if os.path.isdir(os.environ.get("CGAPE_PASTA") or ""):  # ver "ABRIR CGAPE - BALANCO PAC.vbs"
+    PASTA_BASE = os.environ["CGAPE_PASTA"]
 pac = None
 
 
@@ -107,22 +110,47 @@ LINK_CANVA = "https://sea-lion-m85670.my.canva.site/"
 # Não existe no catálogo do PPTX (SLIDES_APRESENTACAO) — pedido do usuário
 # em 08/11/2026.
 PASTA_SLIDES_CANVA = os.path.join(PASTA_BASE, "APRESENTAÇÃO - CGAPE")
-_RE_ARQUIVO_SLIDE_CANVA = re.compile(r"^(\d+)\.(jpe?g|png)$", re.IGNORECASE)
+_RE_ARQUIVO_SLIDE_CANVA = re.compile(r"^(.+)\.(jpe?g|png)$", re.IGNORECASE)
 
 
 def _chave_canva(numero):
     return f"CANVA_{numero}"
 
 
+def _id_pagina_canva(base_nome):
+    """Número da página (int) quando o arquivo se chama só com o número
+    ("12.png"); senão, o nome sem acento/espaços ("AEROPORTO_BARREIRAS") —
+    imagens com nome (ex.: "AEROPORTO BARREIRAS.PNG") também viram slide,
+    pedido do usuário em 16/11/2026."""
+    if base_nome.strip().isdigit():
+        return int(base_nome.strip())
+    s = unicodedata.normalize("NFKD", base_nome)
+    s = "".join(c for c in s if not unicodedata.combining(c)).upper()
+    return re.sub(r"[^A-Z0-9]+", "_", s).strip("_") or "SEM_NOME"
+
+
+def _titulo_canva(numero, nome_arquivo):
+    if isinstance(numero, int):
+        return f"Canva — página {numero}"
+    return os.path.splitext(nome_arquivo)[0].strip()
+
+
 def _paginas_canva_disponiveis():
+    """[(id, nome do arquivo)]: primeiro as páginas numeradas, em ordem de
+    número; depois as imagens com nome, em ordem alfabética."""
     if not os.path.isdir(PASTA_SLIDES_CANVA):
         return []
-    paginas = []
+    paginas, vistos = [], set()
     for nome in os.listdir(PASTA_SLIDES_CANVA):
         m = _RE_ARQUIVO_SLIDE_CANVA.match(nome)
-        if m:
-            paginas.append((int(m.group(1)), nome))
-    paginas.sort()
+        if not m:
+            continue
+        id_pagina = _id_pagina_canva(m.group(1))
+        if id_pagina in vistos:   # "12.jpg" e "12.png": fica só um
+            continue
+        vistos.add(id_pagina)
+        paginas.append((id_pagina, nome))
+    paginas.sort(key=lambda p: (0, p[0], "") if isinstance(p[0], int) else (1, 0, p[0]))
     return paginas
 
 
@@ -2112,6 +2140,56 @@ def _html_grafico_fase(m, grafico, rotulo_secao=ROTULO_GRAFICO_FASE, legenda=Non
                if _linha_com_valor(c, a))}'''
 
 
+def _html_card_composicao(titulo, subtitulo, id_conteudo):
+    """Card de uma das composições do Panorama (Fase, Eixo/Executor,
+    Executor/Objeto): abre/fecha a composição logo abaixo, uma por vez —
+    mesmo mecanismo dos cards de fase (faseCardAlternar) — pedido do usuário
+    em 17/11/2026."""
+    rotulo = titulo.lower()
+    return f'''<div class="fase-card clicavel comp-card" role="button" tabindex="0" aria-expanded="false"
+          aria-controls="{id_conteudo}" data-detalhe="{id_conteudo}" title="Ver {_html_esc(rotulo)}">
+        <div class="fc-topo"><span class="fc-nome">{_html_esc(titulo)}</span>
+          <span class="fc-seta" aria-hidden="true">▾</span></div>
+        <div class="cc-sub">{_html_esc(subtitulo)}</div>
+      </div>'''
+
+
+def _html_grade_cards(cards, detalhes, max_colunas=4):
+    """Linha(s) de cards (_html_card_fase) + os detalhamentos que eles abrem,
+    logo abaixo — Composição por Eixo/Executor e Executor/Objeto (pedido do
+    usuário em 17/11/2026). Até max_colunas por linha."""
+    return (f'<div class="fase-cards" style="--n-fases:{max(1, min(max_colunas, len(cards)))}">'
+            f'{"".join(cards)}</div>{"".join(detalhes)}')
+
+
+def _html_card_fase(grafico, id_detalhe=None, detalhe_txt="objeto"):
+    # detalhe_txt: "objeto" (fase, executor) ou "executor" (eixo) — os cards
+    # também servem às composições por Eixo/Executor e Executor/Objeto
+    # (pedido do usuário em 17/11/2026)
+    # Card de uma fase da Composição por Fase (só HTML) — pedido do usuário
+    # em 17/11/2026: os cards ficam lado a lado e o clique no card abre o
+    # detalhamento por objeto da fase (id_detalhe; None = fase sem objetos,
+    # card não clicável). Mesmos dados, cores, escala das barras (fonte
+    # sobre o total da fase) e formatação de _html_grafico_fase.
+    rotulo, c_val, a_val, fontes = grafico
+    linhas = "".join(f'''<div class="fc-fonte">
+          <div class="fc-fonte-cab"><span class="fc-fonte-nome">{_html_esc(r)}</span>
+            <span class="fc-fonte-total">{_html_esc(abreviar_moeda(c + a))}</span></div>
+          <div class="barra-trilho">{_html_segmentos_barra(c, a, c_val + a_val, VERDE, LARANJA)}</div>
+          <div class="fc-fonte-valores"><span style="color:#{VERDE}">{_html_esc(abreviar_moeda(c))}</span>
+            <span style="color:#{LARANJA}">{_html_esc(abreviar_moeda(a))}</span></div>
+        </div>''' for r, c, a, _, _ in fontes if _linha_com_valor(c, a))
+    atributos = (f' role="button" tabindex="0" aria-expanded="false" aria-controls="{id_detalhe}" '
+                 f'data-detalhe="{id_detalhe}" title="Ver detalhamento por {detalhe_txt} — {_html_esc(rotulo)}"'
+                 if id_detalhe else "")
+    return f'''<div class="fase-card{" clicavel" if id_detalhe else ""}"{atributos}>
+        <div class="fc-topo"><span class="fc-nome">{_html_esc(rotulo)}</span>
+          {'<span class="fc-seta" aria-hidden="true">▾</span>' if id_detalhe else ""}</div>
+        <div class="fc-total">{_html_esc(abreviar_moeda(c_val + a_val))}</div>
+        <div class="fc-fontes">{linhas}</div>
+      </div>'''
+
+
 def _html_cabecalho_tabela():
     return ('<div class="barra-linha cabecalho-tabela"><div class="barra-rotulo" style="width:340px"></div>'
             '<div class="barra-col-valor col-contratado">T.C. FIRMADO</div>'
@@ -2139,14 +2217,20 @@ def _html_tabela(cabecalho, linhas, linhas_bold=(), cor_cabecalho=None, clique=N
     return f'<table class="pac-tabela"><thead><tr>{ths}</tr></thead><tbody>{"".join(trs)}</tbody></table>'
 
 
-def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, recorte="", classe_extra="", id_html=""):
+def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, recorte="", classe_extra="", id_html="",
+                                chips=("gestao", "secretaria")):
+    # chips de filtro ao lado do título, na ordem dada (preenchidos por
+    # atualizarChipsFiltro no JS): PAC = gestão/secretaria; Monitoramento =
+    # eixo/secretaria — pedido do usuário em 17/11/2026
+    html_chips = "".join(f'<span class="chip-filtro chip-{c}" hidden></span>' for c in chips)
     nome_planilha = os.path.basename(pac.CAMINHO_PLANILHA) if hasattr(pac, "CAMINHO_PLANILHA") else \
         "PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026"
     posicao = pac.ultima_atualizacao.strftime("%m/%Y") if hasattr(pac, "ultima_atualizacao") else date.today().strftime("%m/%Y")
     atributo_id = f' id="{id_html}"' if id_html else ""
     return f'''<section class="slide{(" " + classe_extra) if classe_extra else ""}"{atributo_id}>
       <div class="cabecalho">
-        <div class="titulo">PAC - {_html_esc(tema)}</div>
+        <div class="titulo-linha"><div class="titulo">PAC - {_html_esc(tema)}</div>
+          <span class="chips-filtro">{html_chips}</span></div>
         <div class="subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
         <div class="base-atualizada">{_html_esc(texto_base_atualizada())}</div>
         <div class="governo"><div>GOVERNO DO ESTADO DA BAHIA</div><div>CASA CIVIL</div></div>
@@ -3127,7 +3211,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             return []
         html = _html_cabecalho_rodape_base(
             titulo, "§PAG§", m["total_slides"], partes_monitoramento["secoes"][chave],
-            recorte=partes_monitoramento["recorte"], classe_extra="slide-continua slide-monitoramento")
+            recorte=partes_monitoramento["recorte"], classe_extra="slide-continua slide-monitoramento",
+            chips=("eixo", "secretaria"))
         # "PAC + ..." em vez do "PAC - ..." padrão (pedido do usuário em
         # 15/11/2026): só nesta página, que soma o Monitoramento ao PAC em
         # vez de ser uma seção interna dele.
@@ -3183,12 +3268,12 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
       apresentação — a base não distingue dívida do Estado com aval federal de financiamento federal direto.</div>
     ''')
 
-    # --- Composição por Fase: as 4 fases juntas, atrás de um único botão de
-    # detalhamento na página do Panorama (mesma lógica do botão de
-    # "Investimento por Fase e Fonte") — pedido do usuário em 08/11/2026.
-    # Antes era 1 slide por fase (07/11/2026), depois virou página própria
-    # com as 4 juntas; agora é mais um bloco dentro do Panorama.
-    blocos_fases_html = []
+    # --- Composição por Fase: um card por fase, lado a lado, e o clique no
+    # card abre o detalhamento por objeto da fase logo abaixo da linha de
+    # cards (só um aberto por vez — ver faseCardAlternar no JS) — pedido do
+    # usuário em 17/11/2026. Antes (08/11/2026) eram as fases empilhadas,
+    # cada uma com o botão "Ver detalhamento por objeto".
+    cards_fases_html, detalhes_fases_html = [], []
     for idx_fase, (fase, (rotulo_f, c_f, a_f, fontes_f)) in enumerate(zip(m["fases_ordem"], _fases_por_fonte(m)), 1):
         grafico = (rotulo_f, c_f, a_f, fontes_f)
         blocos = []
@@ -3199,35 +3284,31 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         blocos = _blocos_alinhados(blocos)
         nota = _nota_objetos(m, fase, [cab for cab, _, _ in blocos])
         id_detalhe = f"detalhe-fase-{idx_fase}"
-        detalhamento_html = ""
         if blocos:
             tabelas_html = "".join(
                 _html_tabela(cabecalho, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
                              clique=(dict(filtro_gestao, f=fase), "o", 1 if cor == LARANJA else 0))
                 for cabecalho, linhas, cor in blocos
             )
-            detalhamento_html = f'''
-        <button type="button" class="btn-detalhamento"
-                onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por objeto ▾</button>
-        <div class="detalhamento-fase oculto" id="{id_detalhe}">
+            detalhes_fases_html.append(f'''
+        <div class="composicao-fase detalhamento-fase fase-detalhe oculto" id="{id_detalhe}">
+          <div class="fase-detalhe-titulo">{_html_esc(rotulo_f)} — detalhamento por objeto</div>
           {tabelas_html}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
-        </div>'''
-        separador = '<hr class="separador-fase">' if idx_fase > 1 else ""
-        blocos_fases_html.append(f'''
-      <div class="composicao-fase">
-        {separador}
-        <div class="grafico-fase-bloco gf-ordem-tc">{_html_grafico_fase(m, grafico, rotulo_secao="")}</div>
-        {detalhamento_html}
-      </div>''')
-    composicao_fase_html = "".join(blocos_fases_html)
+        </div>''')
+        cards_fases_html.append(_html_card_fase(grafico, id_detalhe if blocos else None))
+    # uma coluna por fase (hoje 4: Selecionada, Licitação, Execução do Objeto
+    # e Concluída), todas na mesma linha; 1 coluna em tela estreita (CSS)
+    composicao_fase_html = (f'<div class="fase-cards" style="--n-fases:{max(1, len(cards_fases_html))}">'
+                            f'{"".join(cards_fases_html)}</div>'
+                            f'{"".join(detalhes_fases_html)}')
 
     # --- Composição por Eixo/Executor (pedido do usuário em 11/11/2026):
     # mesmo desenho da Composição por Fase — um gráfico por eixo, aberto por
     # fonte, e atrás do botão as tabelas dos executores do eixo (T.C. não
     # firmado e firmado, fontes em colunas). Eixos do maior pro menor.
     chaves_fonte = [k for _, k, *_ in _fontes_por_fase(m)]
-    blocos_eixos_html = []
+    blocos_eixos_html, detalhes_eixos_html = [], []
     for idx_eixo, e in enumerate(m["eixos_ordem"], 1):
         fontes_e = [(ROTULOS_CURTOS_FONTE[k], *m["fonte_eixo"][k][e], cheia, clara)
                     for _, k, cheia, clara, _, _ in _fontes_por_fase(m)]
@@ -3246,31 +3327,26 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             nota = _nota_nao_discriminado(m)
             if any(f["nao_discriminado"][0] <= -0.5 for f in m["eixo_executor"][e].values()):
                 nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
+        # cards lado a lado, como a Composição por Fase (pedido do usuário
+        # em 17/11/2026): o clique no card do eixo abre os executores dele
         id_detalhe = f"detalhe-eixo-executor-{idx_eixo}"
-        detalhamento_html = ""
         if blocos:
-            detalhamento_html = f'''
-        <button type="button" class="btn-detalhamento"
-                onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por executor ▾</button>
-        <div class="detalhamento-fase oculto" id="{id_detalhe}">
+            detalhes_eixos_html.append(f'''
+        <div class="composicao-fase detalhamento-fase fase-detalhe oculto" id="{id_detalhe}">
+          <div class="fase-detalhe-titulo">{_html_esc(e)} — detalhamento por executor</div>
           {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
                                 clique=(dict(filtro_gestao, e=e), "x", 1 if cor == LARANJA else 0))
                    for cab, linhas, cor in blocos)}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
-        </div>'''
-        separador = '<hr class="separador-fase">' if blocos_eixos_html else ""
-        blocos_eixos_html.append(f'''
-      <div class="composicao-fase">
-        {separador}
-        <div class="grafico-fase-bloco gf-ordem-tc">{_html_grafico_fase(m, (e.upper(), c_e, a_e, fontes_e), rotulo_secao="")}</div>
-        {detalhamento_html}
-      </div>''')
-    composicao_eixo_html = "".join(blocos_eixos_html)
+        </div>''')
+        blocos_eixos_html.append(_html_card_fase((e, c_e, a_e, fontes_e), id_detalhe if blocos else None,
+                                                 detalhe_txt="executor"))
+    composicao_eixo_html = _html_grade_cards(blocos_eixos_html, detalhes_eixos_html)
 
     # --- Composição por Executor/Objeto (pedido do usuário em 11/11/2026):
     # mesmo desenho — um gráfico por executor, aberto por fonte, e atrás do
     # botão as tabelas dos objetos do executor.
-    blocos_executores_html = []
+    blocos_executores_html, detalhes_executores_html = [], []
     for idx_ex, x in enumerate(m["executores_ordem"], 1):
         grupos_x = m["executor_objeto"][x]
         qtd_x = m["executor_objeto_qtd"][x]
@@ -3291,26 +3367,31 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             nota = _nota_nao_discriminado(m)
             if any(f["nao_discriminado"][0] <= -0.5 for f in grupos_x.values()):
                 nota += " Valor negativo: detalhamento por fonte maior que o Valor Contratado na base."
+        # cards lado a lado (pedido do usuário em 17/11/2026): o clique no
+        # card do executor abre os objetos dele
         id_detalhe = f"detalhe-executor-objeto-{idx_ex}"
-        detalhamento_html = ""
         if blocos:
-            detalhamento_html = f'''
-        <button type="button" class="btn-detalhamento"
-                onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por objeto ▾</button>
-        <div class="detalhamento-fase oculto" id="{id_detalhe}">
+            detalhes_executores_html.append(f'''
+        <div class="composicao-fase detalhamento-fase fase-detalhe oculto" id="{id_detalhe}">
+          <div class="fase-detalhe-titulo">{_html_esc(x)} — detalhamento por objeto</div>
           {"".join(_html_tabela(cab, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
                                 clique=(dict(filtro_gestao, x=x), "o", 1 if cor == LARANJA else 0))
                    for cab, linhas, cor in blocos)}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
-        </div>'''
-        separador = '<hr class="separador-fase">' if blocos_executores_html else ""
-        blocos_executores_html.append(f'''
-      <div class="composicao-fase">
-        {separador}
-        <div class="grafico-fase-bloco gf-ordem-tc">{_html_grafico_fase(m, (x.upper(), c_x, a_x, fontes_x), rotulo_secao="")}</div>
-        {detalhamento_html}
-      </div>''')
-    composicao_executor_html = "".join(blocos_executores_html)
+        </div>''')
+        blocos_executores_html.append(_html_card_fase((x, c_x, a_x, fontes_x), id_detalhe if blocos else None))
+    composicao_executor_html = _html_grade_cards(blocos_executores_html, detalhes_executores_html)
+
+    # As três composições viram cards lado a lado no Panorama; o clique abre
+    # a escolhida logo abaixo, uma por vez (pedido do usuário em 17/11/2026)
+    def _qtd(n, um, varios):
+        return f"{n} {um if n == 1 else varios}"
+    composicoes = [
+        ("COMPOSIÇÃO POR FASE", _qtd(len(cards_fases_html), "fase", "fases"), "detalhe-composicao-fase"),
+        ("COMPOSIÇÃO POR EIXO/EXECUTOR", _qtd(len(blocos_eixos_html), "eixo", "eixos"), "detalhe-composicao-eixo"),
+        ("COMPOSIÇÃO POR EXECUTOR/OBJETO", _qtd(len(blocos_executores_html), "executor", "executores"),
+         "detalhe-composicao-executor"),
+    ]
 
     # --- slide 4 (novo): status por fase e origem do recurso ---
     blocos_fase = []
@@ -3533,9 +3614,6 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
       Clique num card para ver todas as informações da ação.</div>
     ''', classe_extra="slide-continua")
 
-    cabecalho_quadro, linhas_quadro = _sem_colunas_zeradas(CABECALHO_QUADRO_RESUMO,
-                                                           _linhas_quadro_resumo(m, _mi_bi_2_casas))
-
     # --- panorama + visão geral: página única (pedido do usuário em
     # 08/11/2026; antes eram 2 páginas com investimento total, barra e cards
     # duplicados — agora o valor de T.C. não firmado por fonte e a tabela de
@@ -3582,48 +3660,12 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         </div>''' if m["total_a_contratar"] > 0 else "",
       ] if seg)}</div>
       {cartoes_status_html}
-      <div style="margin-top:40px">
-        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
-          <span>INVESTIMENTO POR FASE E FONTE</span>
-          <button type="button" class="btn-icone-detalhamento" title="Ver tabela de investimento por fase"
-                  onclick="alternarDetalhamento(this, 'detalhe-tabela-fase')">+</button>
-        </div>
-        <div class="oculto" id="detalhe-tabela-fase">
-          {_html_tabela([c + "*" if c == "NÃO DISCRIMINADO" else c for c in cabecalho_quadro],
-                        linhas_quadro, linhas_bold={len(linhas_quadro) - 1})}
-          {f'<div class="nota-rodape">{_html_esc(_nota_nao_discriminado(m, com_remissao=False))}</div>'
-           if "NÃO DISCRIMINADO" in cabecalho_quadro else ""}
-        </div>
-      </div>
-      <div style="margin-top:40px">
-        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
-          <span>COMPOSIÇÃO POR FASE</span>
-          <button type="button" class="btn-icone-detalhamento" title="Ver composição por fase"
-                  onclick="alternarDetalhamento(this, 'detalhe-composicao-fase')">+</button>
-        </div>
-        <div class="oculto" id="detalhe-composicao-fase">
-          {composicao_fase_html}
-        </div>
-      </div>
-      <div style="margin-top:40px">
-        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
-          <span>COMPOSIÇÃO POR EIXO/EXECUTOR</span>
-          <button type="button" class="btn-icone-detalhamento" title="Ver composição por eixo/executor"
-                  onclick="alternarDetalhamento(this, 'detalhe-composicao-eixo')">+</button>
-        </div>
-        <div class="oculto" id="detalhe-composicao-eixo">
-          {composicao_eixo_html}
-        </div>
-      </div>
-      <div style="margin-top:40px">
-        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
-          <span>COMPOSIÇÃO POR EXECUTOR/OBJETO</span>
-          <button type="button" class="btn-icone-detalhamento" title="Ver composição por executor/objeto"
-                  onclick="alternarDetalhamento(this, 'detalhe-composicao-executor')">+</button>
-        </div>
-        <div class="oculto" id="detalhe-composicao-executor">
-          {composicao_executor_html}
-        </div>
+      <div class="comp-secoes" style="margin-top:40px">
+        <div class="fase-cards comp-cards" style="--n-fases:3">{"".join(_html_card_composicao(t, sub, id_c) for t, sub, id_c in composicoes)}</div>
+        {"".join(f"""<div class="oculto comp-conteudo" id="{id_c}">
+          <div class="rotulo-secao so-impressao">{_html_esc(t)}</div>
+          {conteudo}
+        </div>""" for (t, _s, id_c), conteudo in zip(composicoes, (composicao_fase_html, composicao_eixo_html, composicao_executor_html)))}
       </div>
     </div>'''
     # slide-continua: a página tem conteúdo variável (botões de detalhamento),
@@ -3657,6 +3699,18 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
        pedido do usuário em 09/11/2026. */
     .cabecalho { background:#0B1F3F; color:#fff; padding:14px 40px 8px; position:relative; }
     .cabecalho .titulo { font-size:30px; font-weight:700; }
+    /* título + chips de filtro na mesma linha, centralizados na vertical;
+       a reserva à direita (padding) é o espaço do bloco "GOVERNO DO
+       ESTADO / CASA CIVIL" — em tela estreita os chips quebram pra linha de
+       baixo em vez de passar por cima dele (pedido do usuário em 17/11/2026) */
+    .cabecalho .titulo-linha { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; padding-right:var(--reserva-governo, 300px); }
+    /* até ~1700px o slide ocupa a tela toda e o botão flutuante "Gerar PDF"
+       (fixo no canto) caía em cima do "GOVERNO DO ESTADO / CASA CIVIL":
+       o bloco recua pra esquerda do botão (só na tela, não na impressão) */
+    @media screen and (max-width:1700px) {
+      body:not(.tela-cheia) .cabecalho .governo { right:160px; }
+      body:not(.tela-cheia) .cabecalho .titulo-linha { --reserva-governo:420px; }
+    }
     .cabecalho .subtitulo { font-size:14px; font-weight:700; color:#C9D6EA; margin-top:4px; }
     .cabecalho .base-atualizada { font-size:12px; line-height:1.3; color:#C9D6EA; margin-top:3px; }
     .cabecalho .governo { position:absolute; top:14px; right:40px; text-align:right; font-weight:700;
@@ -3842,6 +3896,9 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .cl-ficha-fundo.aberta { display:flex; }
     .cl-ficha-janela { background:#fff; border-radius:12px; width:min(1100px, 100%); max-height:100%;
       display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35); overflow:hidden; }
+    /* texto da ficha selecionável — pedido do usuário em 16/11/2026 */
+    .cl-ficha-janela, .cl-ficha-janela * { -webkit-user-select:text !important; user-select:text !important; }
+    .cl-ficha-janela button { -webkit-user-select:none !important; user-select:none !important; }
     .cl-ficha-topo { display:flex; justify-content:space-between; align-items:flex-start; gap:16px;
       padding:18px 22px; border-bottom:3px solid #E0AB45; background:#F7F8FA; }
     .cl-ficha-titulo { font-size:22px; font-weight:900; color:#0B1F3F; }
@@ -3868,6 +3925,44 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .btn-detalhamento:hover { background:#E6E9EE; }
     .detalhamento-fase { margin-top:18px; }
     .separador-fase { border:none; border-top:1px solid #D8DCE3; margin:28px 0 24px; }
+    /* Composição por Fase em cards lado a lado; clique no card abre o
+       detalhamento por objeto da fase em largura total, logo abaixo —
+       pedido do usuário em 17/11/2026 (ver _html_card_fase e faseCardAlternar). */
+    .fase-cards { display:grid; grid-template-columns:repeat(var(--n-fases, 3), minmax(0, 1fr)); gap:18px; }
+    @media (max-width:900px) { .fase-cards { grid-template-columns:1fr; } }
+    .fase-card { background:#fff; border:1px solid #D8DCE3; border-top:4px solid #0B5CAD; border-radius:10px;
+      padding:16px 18px; display:flex; flex-direction:column; gap:10px; transition:box-shadow .15s, border-color .15s; }
+    .fase-card.clicavel { cursor:pointer; }
+    .fase-card.clicavel:hover, .fase-card.clicavel:focus-visible { border-color:#0B1F3F; box-shadow:0 4px 14px rgba(11,31,63,.15);
+      outline:none; }
+    .fase-card.aberto { border-color:#0B1F3F; border-top-color:#0B1F3F; box-shadow:0 4px 14px rgba(11,31,63,.18); }
+    .fc-topo { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+    .fc-nome { font-size:19px; font-weight:700; color:#0B1F3F; }
+    .fc-seta { font-size:16px; color:#5B6576; }
+    .fase-card.aberto .fc-seta { color:#0B1F3F; }
+    .fc-total { font-size:30px; font-weight:900; color:#0B1F3F; line-height:1.1; margin-top:-4px; }
+    .fc-fontes { display:flex; flex-direction:column; gap:10px; border-top:1px solid #F0F2F6; padding-top:10px; }
+    .fc-fonte-cab { display:flex; justify-content:space-between; gap:8px; font-size:14px; }
+    .fc-fonte-nome { font-weight:400; color:#0B1F3F; }
+    .fc-fonte-total { font-weight:400; color:#0B1F3F; white-space:nowrap; }
+    .fc-fonte .barra-trilho { flex:none; height:13px; margin:4px 0 3px; }
+    .fc-fonte-valores { display:flex; justify-content:space-between; gap:8px; font-size:13px; font-weight:400; }
+    .fc-legenda { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:#5B6576; margin-top:auto;
+      border-top:1px solid #F0F2F6; padding-top:8px; }
+    .fc-legenda i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+    .fase-detalhe { margin-top:18px; border:1px solid #D8DCE3; border-top:4px solid #0B1F3F; border-radius:10px;
+      padding:14px 18px 18px; }
+    .fase-detalhe-titulo { font-size:16px; font-weight:700; color:#0B1F3F; }
+    @media print { .fase-card { break-inside:avoid; } .fc-seta { display:none; } }
+    /* As três composições do Panorama em cards (pedido do usuário em
+       17/11/2026): o card só abre/fecha a composição; no PDF saem todas,
+       cada uma com o seu título, e a linha de cards some. */
+    .comp-card { gap:6px; justify-content:center; }
+    .comp-card .fc-nome { font-size:17px; letter-spacing:.3px; }
+    .cc-sub { font-size:14px; color:#5B6576; }
+    .comp-conteudo { margin-top:26px; }
+    .so-impressao { display:none; }
+    @media print { .comp-cards { display:none; } .so-impressao { display:block; margin:28px 0 14px; } }
 
     /* Panorama + Visão Geral: botões de detalhamento (em ícone) do valor de
        T.C. não firmado por fonte e da tabela de investimento por fase —
@@ -3925,6 +4020,19 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
       .nav-seta { width:56px; }
       #seletor-gestao button, #seletor-secretaria button { padding-top:11px; padding-bottom:11px; }
     }
+
+    /* Botão flutuante que liga/desliga o painel de filtros (Gestão/
+       Secretaria no PAC; Eixo/Secretaria no Monitoramento) — pedido do
+       usuário em 17/11/2026, no lugar de "mostra perto da borda inferior":
+       fica sempre visível (acompanha a rolagem por ser position:fixed) e
+       só abre com um clique (ver body.filtros-abertos). */
+    .btn-filtros { position:fixed; right:16px; bottom:14px; z-index:1001; width:44px; height:44px;
+      border-radius:50%; border:none; background:rgba(11,31,63,.85); color:#C9D6EA; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; padding:0; box-shadow:0 4px 16px rgba(0,0,0,.3);
+      transition:background .2s, color .2s; }
+    .btn-filtros svg { width:20px; height:20px; }
+    .btn-filtros:hover { background:rgba(11,31,63,1); color:#fff; }
+    .btn-filtros.ativo { background:#4FA3E0; color:#0B1F3F; }
 
     /* Página do Canva (imagem exportada) — pedido do usuário em 08/11/2026.
        Sem cabeçalho/rodapé do dash; a imagem já vem na mesma proporção
@@ -4048,7 +4156,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         break-after:page; page-break-after:always; break-inside:avoid; page-break-inside:avoid; }
       .slide:last-of-type { break-after:auto; page-break-after:auto; }
       .slide-continua.ativo { overflow:visible !important; }
-      #nav-carrossel, .nav-seta { display:none !important; }
+      #nav-carrossel, .nav-seta, .btn-filtros { display:none !important; }
       /* Slides de altura variável (Panorama e Composição por Fase) podem
          ficar maiores que uma folha quando os detalhamentos são expandidos
          pelo botão "Gerar PDF" — sem isso, break-inside:avoid força o
@@ -4116,7 +4224,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             continue
         uri = _data_uri_imagem(os.path.join(PASTA_SLIDES_CANVA, nome_arquivo))
         por_chave[chave] = [f'''<div class="slide slide-canva">
-      <img class="img-canva" src="{uri}" alt="Apresentação Canva — página {numero}">
+      <img class="img-canva" src="{uri}" alt="{_html_esc(_titulo_canva(numero, nome_arquivo))}">
     </div>''']
 
     # Slides iguais em toda gestão (institucionais e Canva) são gravados uma
@@ -4130,9 +4238,17 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             saida.append(f'<div class="slide-ref" data-ref="{chave}"></div>')
             continue
         numeradas = []
-        for html_slide in paginas:
+        for k, html_slide in enumerate(paginas):
             numero += 1
-            numeradas.append(html_slide.replace("§PAG§", str(numero)))
+            html_slide = html_slide.replace("§PAG§", str(numero))
+            # identidade do slide (seção + página dentro dela): ao trocar o
+            # filtro de Gestão/Secretaria, a apresentação volta pro MESMO
+            # slide na variante nova, em vez da capa — pedido do usuário em
+            # 16/11/2026 (ver posicaoEquivalente() no JS)
+            if not compartilhado:
+                html_slide = re.sub(r"^(\s*<(?:section|div))", rf'\1 data-chave="{chave}" data-pag="{k}"',
+                                    html_slide, count=1)
+            numeradas.append(html_slide)
         if compartilhado:
             comuns[chave] = [re.sub(r"^(\s*<(?:section|div))", rf'\1 data-ref-comum="{chave}"', h, count=1)
                              for h in numeradas]
@@ -4212,7 +4328,11 @@ def _sufixar_ids(html, sufixo):
     que apontam para ele ('x' em onclick) acompanham."""
     for id_html in set(re.findall(r'\sid="([^"]+)"', html)):
         html = (html.replace(f'id="{id_html}"', f'id="{id_html}--{sufixo}"')
-                .replace(f"'{id_html}'", f"'{id_html}--{sufixo}'"))
+                .replace(f"'{id_html}'", f"'{id_html}--{sufixo}'")
+                # cards da Composição por Fase apontam o detalhamento por
+                # atributo (ver _html_card_fase)
+                .replace(f'aria-controls="{id_html}"', f'aria-controls="{id_html}--{sufixo}"')
+                .replace(f'data-detalhe="{id_html}"', f'data-detalhe="{id_html}--{sufixo}"'))
     return html
 
 
@@ -4257,7 +4377,8 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
                 caminho_ra = ra.caminho_planilha()
                 if caminho_ra:
                     dados_ra = ra.resumo_acoes_dados(caminho_ra, filtros_mon)
-                    partes_monitoramento = ra.montar_partes_html_monitoramento(caminho_ra, dados_ra)
+                    partes_monitoramento = ra.montar_partes_html_monitoramento(
+                        caminho_ra, dados_ra, filtros_mon or {})
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -4269,10 +4390,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
                                                   chave_gestao=chave_v, metricas_saida=metricas,
                                                   partes_monitoramento=partes_monitoramento)
             slides_v = _sufixar_ids(slides_v, chave_v)
-            if chave_v != "todas":
-                slides_v = slides_v.replace('<div class="base-atualizada">',
-                                            f'<div class="base-atualizada"><span class="selo-gestao">'
-                                            f'{_html_esc(rotulo_v)}</span> ')
+            # o selo de gestão que ficava aqui (fixo, abaixo do subtítulo)
+            # virou o chip ao lado do título, atualizado pelo JS dos
+            # seletores (atualizarChipsFiltro) — pedido do usuário em 17/11/2026
             blocos.append(f'<div class="variante-gestao{" ativa" if i == 0 else ""}" data-gestao="{chave_v}">'
                           f'{slides_v}</div>')
             classe_botao = ' class="ativo"' if i == 0 else ""
@@ -4393,6 +4513,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
 </div>
 <button type="button" id="btn-slide-ant" class="nav-seta nav-seta-esq" title="Slide anterior (←)">‹</button>
 <button type="button" id="btn-slide-prox" class="nav-seta nav-seta-dir" title="Próximo slide (→)">›</button>
+<button type="button" id="btn-filtros" class="btn-filtros" title="Mostrar/ocultar filtros" aria-expanded="false">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="4 4 20 4 14 12 14 19 10 21 10 12 4 4"></polygon></svg>
+</button>
 {seletor_secretaria_html}
 {seletor_html}
 {defs_html}
@@ -4433,11 +4556,46 @@ function textoBotaoDetalhamento(texto, aberto) {{
                 : texto.replace(/^Ocultar/, 'Ver').replace('▴', '▾');
 }}
 
+// Composição por Fase (pedido do usuário em 17/11/2026): clicar no card da
+// fase abre/fecha o detalhamento por objeto dela, logo abaixo dos cards; só
+// um aberto por vez (os cards de cada variante de gestão/secretaria são
+// independentes — a busca é sempre dentro da mesma linha de cards).
+function faseCardAlternar(card) {{
+  var grade = card.parentNode;
+  var vaiAbrir = card.getAttribute('aria-expanded') !== 'true';
+  grade.querySelectorAll('.fase-card.clicavel').forEach(function (c) {{
+    var alvo = document.getElementById(c.dataset.detalhe);
+    var abrir = vaiAbrir && c === card;
+    if (alvo) alvo.classList.toggle('oculto', !abrir);
+    c.classList.toggle('aberto', abrir);
+    c.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+    var seta = c.querySelector('.fc-seta');
+    if (seta) seta.textContent = abrir ? '▴' : '▾';
+    c.title = c.title.replace(abrir ? 'Ver' : 'Ocultar', abrir ? 'Ocultar' : 'Ver');
+  }});
+  // com várias linhas de cards (eixos, executores) o detalhamento fica
+  // longe do card clicado: rola até ele
+  var aberto = vaiAbrir && document.getElementById(card.dataset.detalhe);
+  if (aberto && aberto.scrollIntoView) aberto.scrollIntoView({{behavior: 'smooth', block: 'nearest'}});
+}}
+document.addEventListener('click', function (ev) {{
+  var card = ev.target.closest('.fase-card.clicavel');
+  if (card) faseCardAlternar(card);
+}});
+document.addEventListener('keydown', function (ev) {{
+  var card = ev.target.closest && ev.target.closest('.fase-card.clicavel');
+  if (card && (ev.key === 'Enter' || ev.key === ' ')) {{ ev.preventDefault(); ev.stopPropagation(); faseCardAlternar(card); }}
+}}, true);
+
 function gerarPdfCompleto() {{
   // Expande todo detalhamento oculto para sair no PDF e devolve ao estado
   // anterior depois que a caixa de impressão do navegador é fechada.
   var ocultos = Array.prototype.slice.call(document.querySelectorAll('.oculto'));
   ocultos.forEach(function (el) {{ el.classList.remove('oculto'); }});
+  // ícones "+/–" voltam exatamente como estavam (a Composição por Fase já
+  // abre expandida — não pode voltar como "+" depois da impressão)
+  var icones = Array.prototype.slice.call(document.querySelectorAll('.btn-icone-detalhamento'))
+    .map(function (b) {{ return [b, b.textContent, b.title]; }});
   document.querySelectorAll('.btn-detalhamento').forEach(function (b) {{
     b.textContent = textoBotaoDetalhamento(b.textContent, true);
   }});
@@ -4451,10 +4609,7 @@ function gerarPdfCompleto() {{
     document.querySelectorAll('.btn-detalhamento').forEach(function (b) {{
       b.textContent = textoBotaoDetalhamento(b.textContent, false);
     }});
-    document.querySelectorAll('.btn-icone-detalhamento').forEach(function (b) {{
-      b.textContent = '+';
-      if (b.title.indexOf('Ocultar') === 0) b.title = b.title.replace('Ocultar', 'Ver');
-    }});
+    icones.forEach(function (x) {{ x[0].textContent = x[1]; x[0].title = x[2]; }});
     window.removeEventListener('afterprint', restaurar);
   }}
   window.addEventListener('afterprint', restaurar);
@@ -4511,6 +4666,10 @@ function gerarPdfCompleto() {{
     var seletorSecretaria = document.getElementById('seletor-secretaria');
     if (seletorGestao) seletorGestao.style.display = ehMonitoramento ? 'none' : '';
     if (seletorSecretaria) seletorSecretaria.style.display = ehMonitoramento ? 'none' : '';
+    // e no lugar entram as barras Eixo x Secretaria/Executor do próprio
+    // Monitoramento (mesmo desenho — pedido do usuário em 16/11/2026)
+    var seletorMon = document.querySelector('.sel-recorte');
+    if (seletorMon) seletorMon.style.display = ehMonitoramento ? '' : 'none';
   }}
 
   function mostrar(indice) {{
@@ -4583,13 +4742,73 @@ function gerarPdfCompleto() {{
       if (corpoSecretarias) corpoSecretarias.style.display = 'none';
       if (corpoGestoes) corpoGestoes.style.display = 'block';
     }}
+    // continua no mesmo slide (não volta pra capa) — pedido do usuário em
+    // 16/11/2026
+    var anterior = slides[atual], indiceAnterior = atual;
     montarSlides();
-    mostrar(0);
+    mostrar(posicaoEquivalente(anterior, indiceAnterior));
+    atualizarChipsFiltro();
   }};
+
+  // Chips de gestão/secretaria ao lado do título de cada slide (pedido do
+  // usuário em 17/11/2026): leem o MESMO estado dos seletores (botão
+  // .ativo de #seletor-gestao/#seletor-secretaria) — trocarGestao passa
+  // por trocarSecretaria, então os dois cliques chegam aqui. "Todas" = chip
+  // escondido.
+  // Vale também para o slide do Monitoramento (pedido do usuário em
+  // 17/11/2026): lá os chips são eixo/secretaria e leem o botão .ativo da
+  // barra .sel-recorte (índice 0 = "Todos/Todas" = sem chip). As duas
+  // secretarias são filtros independentes (PAC x base de Ações).
+  function atualizarChipsFiltro() {{
+    function preencher(seletorChip, texto, rotulo) {{
+      document.querySelectorAll(seletorChip).forEach(function (c) {{
+        c.textContent = texto; c.hidden = !texto; c.title = texto ? rotulo + ': ' + texto : '';
+      }});
+    }}
+    var bGestao = document.querySelector('#seletor-gestao button.ativo');
+    var bSec = document.querySelector('#seletor-secretaria button.ativo');
+    var gestao = bGestao && bGestao.dataset.gestao !== 'todas' ? bGestao.textContent.trim() : '';
+    var sec = bSec && bSec.dataset.secretaria ? bSec.dataset.secretaria : '';
+    preencher('.slide:not(.slide-monitoramento) .chip-gestao', gestao, 'Gestão');
+    preencher('.slide:not(.slide-monitoramento) .chip-secretaria', sec, 'Secretaria');
+    var bEixoMon = document.querySelector('.sel-recorte .sel-eixo-btn.ativo');
+    var bSecMon = document.querySelector('.sel-recorte .sel-sec-btn.ativo');
+    var eixoMon = bEixoMon && +bEixoMon.dataset.e ? bEixoMon.textContent.trim() : '';
+    var secMon = bSecMon && +bSecMon.dataset.x ? bSecMon.textContent.trim() : '';
+    preencher('.slide-monitoramento .chip-eixo', eixoMon, 'Eixo');
+    preencher('.slide-monitoramento .chip-secretaria', secMon, 'Secretaria');
+  }}
+  // cliques nas barras Eixo x Secretaria do Monitoramento: o handler do
+  // próprio botão (resumo_acoes.py) já marcou o .ativo quando chega aqui
+  document.addEventListener('click', function (ev) {{
+    if (ev.target.closest && ev.target.closest('.sel-recorte button')) atualizarChipsFiltro();
+  }});
+
+  // Posição, na lista de slides recém-montada, do slide equivalente ao que
+  // estava na tela: o mesmo elemento (slides comuns — Canva, organograma,
+  // Monitoramento — são movidos entre variantes), ou o de mesma seção e
+  // página (data-chave/data-pag); se a seção não existir no recorte novo,
+  // fica na mesma posição numérica.
+  function posicaoEquivalente(anterior, indiceAnterior) {{
+    if (!anterior) return 0;
+    var i = slides.indexOf(anterior);
+    if (i >= 0) return i;
+    var chave = anterior.dataset.chave, pag = anterior.dataset.pag;
+    if (chave) {{
+      for (var j = 0; j < slides.length; j++) {{
+        if (slides[j].dataset.chave === chave && slides[j].dataset.pag === pag) return j;
+      }}
+      for (var j2 = 0; j2 < slides.length; j2++) {{
+        if (slides[j2].dataset.chave === chave) return j2;
+      }}
+    }}
+    return Math.min(indiceAnterior, Math.max(0, slides.length - 1));
+  }}
 
   // Visibilidade inicial das secretarias já bate com a gestão ativa de
   // largada (normalmente "todas", que mostra todas).
   atualizarVisibilidadeSecretarias((variante() && variante().dataset.gestao) || 'todas');
+  atualizarChipsFiltro();   // chips já refletem a seleção inicial
 
   montarSlides();
   if (!slides.length) return;
@@ -4616,14 +4835,18 @@ function gerarPdfCompleto() {{
     document.body.classList.toggle('tela-cheia', !!document.fullscreenElement);
   }});
 
-  // Painel de filtros (Gestão/Secretaria) e contador de página só aparecem
-  // perto da borda inferior da tela; as setas ‹/› só perto das bordas
-  // laterais — tanto na exibição normal quanto em tela cheia (pedido do
-  // usuário em 15/11/2026, no lugar do antigo "qualquer mexida no mouse
-  // revela e some sozinho depois de 2,5s" que só valia pra barra de
-  // navegação). Em tela sem mouse (toque), não existe "aproximar": um
-  // toque em qualquer lugar revela tudo por alguns segundos, e arrastar
-  // pro lado troca de slide (ver bloco "toque" abaixo).
+  // Contador de página só aparece perto da borda inferior da tela; as
+  // setas ‹/› só perto das bordas laterais — tanto na exibição normal
+  // quanto em tela cheia (pedido do usuário em 15/11/2026, no lugar do
+  // antigo "qualquer mexida no mouse revela e some sozinho depois de
+  // 2,5s" que só valia pra barra de navegação). O painel de filtros
+  // (Gestão/Secretaria, ou Eixo/Secretaria no Monitoramento) SAIU dessa
+  // régua de proximidade — cobria conteúdo da página ao rolar — e agora só
+  // abre/fecha com um clique no botão .btn-filtros (body.filtros-abertos,
+  // ver mais abaixo) — pedido do usuário em 17/11/2026. Em tela sem mouse
+  // (toque), não existe "aproximar": um toque em qualquer lugar revela o
+  // contador/setas por alguns segundos, e arrastar pro lado troca de slide
+  // (ver bloco "toque" abaixo).
   var LIMIAR_RODAPE = 150, LIMIAR_LADO = 90;
   var SEM_MOUSE = !!(window.matchMedia && window.matchMedia('(hover: none)').matches);
   document.body.classList.toggle('toque', SEM_MOUSE);
@@ -4664,6 +4887,26 @@ function gerarPdfCompleto() {{
     }});
   }}
 
+  // Botão .btn-filtros: liga/desliga o painel de filtros (body.filtros-
+  // abertos) com um clique; clicar fora do botão e do painel aberto fecha
+  // de novo — pedido do usuário em 17/11/2026.
+  var btnFiltros = document.getElementById('btn-filtros');
+  if (btnFiltros) {{
+    btnFiltros.onclick = function (e) {{
+      e.stopPropagation();
+      var aberto = document.body.classList.toggle('filtros-abertos');
+      btnFiltros.classList.toggle('ativo', aberto);
+      btnFiltros.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+    }};
+    document.addEventListener('click', function (e) {{
+      if (!document.body.classList.contains('filtros-abertos')) return;
+      if (e.target.closest('#seletor-gestao, #seletor-secretaria, .sel-recorte, .btn-filtros')) return;
+      document.body.classList.remove('filtros-abertos');
+      btnFiltros.classList.remove('ativo');
+      btnFiltros.setAttribute('aria-expanded', 'false');
+    }});
+  }}
+
   document.addEventListener('keydown', function (e) {{
     // Espaço/Enter ficam de fora de propósito (diferente do Relatório SSP):
     // nos nossos slides eles ativam botões como "Ver detalhamento", e usar
@@ -4693,23 +4936,30 @@ function gerarPdfCompleto() {{
 # Seletor de gestão (pedido do usuário em 13/11/2026): fixo embaixo, no
 # centro (as laterais têm as setas de navegação); só a gestão ativa aparece e
 # é impressa. O selo no cabeçalho diz qual gestão está na tela. Igual ao
-# painel de Secretaria logo abaixo, só fica visível perto da borda inferior
-# da tela (gatilho único, body.mostra-rodape) — tanto na exibição normal
-# quanto em tela cheia (antes sumia de vez em tela cheia; agora segue a
-# mesma régua de proximidade dos dois modos) — pedido do usuário em
-# 15/11/2026.
+# painel de Secretaria logo abaixo, só aparece com o clique no botão
+# .btn-filtros (body.filtros-abertos) — antes era "perto da borda inferior
+# da tela"; trocado por um botão explícito porque a régua de proximidade
+# cobria conteúdo da página ao rolar — pedido do usuário em 17/11/2026.
 CSS_SELETOR_GESTAO = """
     .variante-gestao:not(.ativa), #slides-comuns { display:none; }
     #seletor-gestao { position:fixed; left:50%; transform:translateX(-50%); bottom:10px; z-index:1000; display:flex; gap:4px;
       background:rgba(11,31,63,.92); padding:5px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.3);
       opacity:0; pointer-events:none; transition:opacity .25s; }
-    body.mostra-rodape #seletor-gestao { opacity:1; pointer-events:auto; }
+    body.filtros-abertos #seletor-gestao { opacity:1; pointer-events:auto; }
     #seletor-gestao button { background:transparent; color:#C9D6EA; border:none; border-radius:7px;
       padding:8px 14px; font:700 13px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px; cursor:pointer; }
     #seletor-gestao button:hover { background:rgba(255,255,255,.12); color:#fff; }
     #seletor-gestao button.ativo { background:#4FA3E0; color:#0B1F3F; }
-    .selo-gestao { display:inline-block; background:#4FA3E0; color:#0B1F3F; font-weight:700; font-size:11px;
-      padding:1px 8px; border-radius:9px; margin-right:6px; letter-spacing:.3px; }
+    /* Chips de gestão/secretaria ao lado do título (pedido do usuário em
+       17/11/2026 — substituem o selo de gestão abaixo do subtítulo, no mesmo
+       estilo dele): gestão cheia, secretaria só com contorno; somem nas
+       opções "Todas" (ver atualizarChipsFiltro). */
+    .chips-filtro { display:inline-flex; flex-wrap:wrap; align-items:center; gap:8px; }
+    .chip-filtro { display:inline-block; font-weight:700; font-size:13px; line-height:1.2; padding:4px 12px;
+      border-radius:12px; letter-spacing:.3px; text-transform:uppercase; white-space:nowrap; border:1.5px solid #4FA3E0; }
+    .chip-filtro[hidden] { display:none; }
+    .chip-gestao, .chip-eixo { background:#4FA3E0; color:#0B1F3F; }
+    .chip-secretaria { background:transparent; color:#4FA3E0; }
     @media print { #seletor-gestao { display:none !important; } }
     /* Filtro de Secretaria (pedido do usuário em 15/11/2026, trocando o
        filtro de Executor feito antes): troca a apresentação inteira — ver
@@ -4722,7 +4972,7 @@ CSS_SELETOR_GESTAO = """
       display:flex; gap:4px; flex-wrap:wrap; justify-content:center; max-width:94vw;
       background:rgba(11,31,63,.92); padding:5px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.3);
       opacity:0; pointer-events:none; transition:opacity .25s; }
-    body.mostra-rodape #seletor-secretaria { opacity:1; pointer-events:auto; }
+    body.filtros-abertos #seletor-secretaria { opacity:1; pointer-events:auto; }
     #seletor-secretaria button { background:transparent; color:#C9D6EA; border:none; border-radius:7px;
       padding:7px 12px; font:700 12px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px; cursor:pointer; }
     #seletor-secretaria button:hover { background:rgba(255,255,255,.12); color:#fff; }
@@ -5107,8 +5357,8 @@ def listar_slides(df, formato=None):
         # fim da lista por padrão, mas o painel deixa reordenar pra
         # intercalar com as seções do dash — pedido do usuário em
         # 08/11/2026.
-        canva = [{"chave": _chave_canva(numero), "titulo": f"Canva — página {numero}",
-                  "layout": "texto"} for numero, _ in _paginas_canva_disponiveis()]
+        canva = [{"chave": _chave_canva(numero), "titulo": _titulo_canva(numero, nome),
+                  "layout": "texto"} for numero, nome in _paginas_canva_disponiveis()]
         # A capa (página 1 do Canva) abre a apresentação, antes do bloco
         # Organograma/Fluxo; as páginas 2 e 3 do Canva (organograma e fluxo
         # antigos, em imagem) chegam desmarcadas — os slides novos as

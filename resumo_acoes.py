@@ -9,10 +9,13 @@ pasta do programa); independe da planilha e dos filtros do PAC.
 Ligado ao módulo principal pelo mesmo padrão do gerar_pptx_pac:
 configurar(sys.modules[__name__]).
 """
+import base64
+import gzip
 import json
 import math
 import os
 import re
+import sys
 import unicodedata
 from datetime import datetime
 
@@ -125,7 +128,9 @@ RA_TOP30_POP_CHAVE = {_chave_municipio(nome): pop for nome, pop in RA_TOP30_POP.
 # de vista (mas as funções continuam existindo, religáveis por aqui), e no
 # lugar entram um gráfico de colunas e uma avaliação quantitativa dos 30
 # maiores municípios por população, antes da grade de cards.
-RA_HTML_MOSTRAR_MAPA = False
+RA_HTML_MOSTRAR_MAPA = True   # religado em 16/11/2026, com as cores do índice
+RA_COR_SEM_ACAO_TOP30 = "#C3CAD5"   # 30 maiores sem ação no recorte
+RA_COR_FORA_TOP30 = "#F1F3F6"       # demais municípios do estado
 
 # Pesos do Índice de Necessidade de Investimento (0 a 100) — combinação
 # ponderada e normalizada (min-max entre os 30) de: investimento per capita
@@ -321,6 +326,46 @@ def _ra_ordem(v):
             for p in re.split(r"(\d+)", _normalizar(v))]
 
 
+def _ra_brl(v):
+    """1234.5 -> '1.234,50' (como a tabela da página mostra o valor)."""
+    return f"{float(v):,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
+
+
+def _ra_texto_busca(v):
+    """Célula como texto pesquisável: data em dd/mm/aaaa, número também no
+    formato brasileiro, tudo sem acento e em minúsculas."""
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return ""
+    if isinstance(v, (datetime, pd.Timestamp)):
+        return f"{v:%d/%m/%Y}"
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        txt = _ra_brl(v)
+        return f"{v} {txt}" if float(v) != int(float(v)) else f"{int(float(v))} {txt}"
+    return _normalizar(" ".join(str(v).split()))
+
+
+def _ra_termos(termo):
+    """Palavras do que foi digitado (sem acento, minúsculas)."""
+    return [p for p in _normalizar(termo).split() if p]
+
+
+def _ra_contem_todos(serie_txt, termos):
+    """Linhas cujo texto (já normalizado) contém TODAS as palavras."""
+    marca = pd.Series(True, index=serie_txt.index)
+    for p in termos:
+        marca &= serie_txt.str.contains(p, regex=False)
+    return marca
+
+
+def _ra_texto_coluna(tipo, serie):
+    """Coluna da tabela como a página mostra, normalizada (busca por coluna)."""
+    if tipo == "data":
+        return serie.map(lambda d: f"{d:%d/%m/%Y}" if pd.notna(d) else "")
+    if tipo == "valor":
+        return serie.map(lambda v: _ra_brl(v or 0))
+    return serie.map(_normalizar)
+
+
 def _ra_base(caminho):
     """Planilha já preparada; só é lida de novo se o arquivo tiver mudado."""
     global _ra_cache
@@ -334,6 +379,11 @@ def _ra_base(caminho):
         raise ValueError("coluna(s) ausente(s): " + ", ".join(faltando))
     df = df[df[RA_COL_EIXO].notna() & df[RA_COL_STATUS].notna()].copy()
     df = df.reset_index(drop=True)
+    # texto de TODAS as colunas da base, normalizado, para a busca geral
+    # (pedido do usuário em 17/11/2026)
+    originais = list(df.columns)
+    df["_busca"] = [" | ".join(_ra_texto_busca(v) for v in linha)
+                    for linha in df[originais].itertuples(index=False, name=None)]
     df["_eixo"] = df[RA_COL_EIXO].astype(str).str.strip()
     # sem valor de investimento: usa o orçamento e marca para o asterisco
     investimento = df[RA_COL_VALOR].map(_ra_numero)
@@ -357,6 +407,13 @@ def _ra_base(caminho):
 # Obras Inauguradas viram um só status, somando ações e valores. Não é
 # filtro: não restringe o recorte e não é zerado pelo LIMPAR FILTROS.
 RA_STATUS_ENTREGUE = "01 - Entregue"
+
+
+def _ra_sem_num(status):
+    """Status sem o prefixo numérico ("03 - Em obras" -> "Em obras"), SÓ pra
+    escrita (dash, HTML, .pptx); a ordenação continua usando o valor completo
+    — pedido do usuário em 17/11/2026."""
+    return re.sub(r"^\d+\s*-\s*", "", str(status if status is not None else ""))
 
 
 def _ra_juntar_entregues(base):
@@ -398,8 +455,24 @@ def resumo_acoes_dados(caminho, filtros=None):
 
     top30 = bool(filtros.get("top30"))
 
+    # Buscas digitadas (pedido do usuário em 17/11/2026): "busca" = geral,
+    # em todas as colunas da base; "bcol" = {rótulo da coluna da tabela:
+    # texto}, só naquela coluna. Todas as palavras precisam aparecer. Valem
+    # como filtro: cards, quadros, tabela, Excel e HTML seguem o recorte.
+    busca_geral = str(filtros.get("busca") or "").strip()
+    busca_cols = {r: str(t).strip() for r, t in (filtros.get("bcol") or {}).items()
+                  if str(t or "").strip()}
+    marca_busca = pd.Series(True, index=base.index)
+    if busca_geral:
+        marca_busca &= _ra_contem_todos(base["_busca"], _ra_termos(busca_geral))
+    if busca_cols:
+        for rot, tipo, _c, serie in _ra_colunas_tabela(base):
+            if rot in busca_cols:
+                marca_busca &= _ra_contem_todos(_ra_texto_coluna(tipo, serie),
+                                                _ra_termos(busca_cols[rot]))
+
     def marca_datas(com_top30=True):
-        marca = pd.Series(True, index=base.index)
+        marca = marca_busca.copy()
         if top30 and com_top30:
             marca &= base["_top30"]
         for c, (de, ate) in sel_datas.items():
@@ -441,7 +514,7 @@ def resumo_acoes_dados(caminho, filtros=None):
     # sem filtro: todos os eixos, mesmo sem ação; com filtro, só os que têm
     # ação; sempre do maior para o menor investimento
     por_eixo = df.groupby("_eixo")["_valor"].sum()
-    filtrado = bool(sel or sel_datas or top30)
+    filtrado = bool(sel or sel_datas or top30 or busca_geral or busca_cols)
     eixos = sorted(set(df["_eixo"]) if filtrado
                    else set(RA_EIXOS) | set(df["_eixo"]),
                    key=lambda e: (-por_eixo.get(e, 0), e))
@@ -529,11 +602,14 @@ def resumo_acoes_dados(caminho, filtros=None):
         def resumo_filtros(limite):
             return "; ".join(
                 ([RA_TOP30_FONTE] if top30 else [])
-                + [f"{rotulo}: " + (", ".join(sel[c]) if len(sel[c]) <= limite
+                + [f"{rotulo}: " + (", ".join(_ra_sem_num(v) if c == "status" else v for v in sel[c])
+                                    if len(sel[c]) <= limite
                                   else f"{len(sel[c])} selecionado(s)")
                  for c, _, rotulo in campos if c in sel]
                 + [f"{rotulo}: {faixa_txt(*sel_datas[c])}"
-                   for c, _, rotulo in campos_data if c in sel_datas])
+                   for c, _, rotulo in campos_data if c in sel_datas]
+                + ([f'Busca: "{busca_geral}"'] if busca_geral else [])
+                + [f'{rot} contém "{t}"' for rot, t in busca_cols.items()])
         escolhidos = resumo_filtros(3)
         if len(escolhidos) > 220:
             escolhidos = resumo_filtros(0)
@@ -789,7 +865,7 @@ def gerar_pptx_resumo_acoes(dados, caminho):
     celula(tab.cell(0, n_col - 1), [("Total", fs_rot, branco, "b")], navy)
 
     for i, l in enumerate(linhas, 1):
-        celula(tab.cell(i, 0), [(l["status"], fs_st, navy, "n")], branco,
+        celula(tab.cell(i, 0), [(_ra_sem_num(l["status"]), fs_st, navy, "n")], branco,
                PP_ALIGN.LEFT)
         for j, c in enumerate(l["celulas"], 1):
             celula(tab.cell(i, j), conteudo(c, fs, RA_AZUL), branco)
@@ -899,7 +975,7 @@ def gerar_pptx_resumo_acoes(dados, caminho):
                 celula(tab.cell(0, n_col - 1), [("Total", 12, branco, "b")], navy)
 
             for r, l in enumerate(q["linhas"], 2):
-                celula(tab.cell(r, 0), [(l["status"], fs_st, navy, "n")], branco,
+                celula(tab.cell(r, 0), [(_ra_sem_num(l["status"]), fs_st, navy, "n")], branco,
                        PP_ALIGN.LEFT)
                 for j, i in enumerate(ix, 1):
                     celula(tab.cell(r, j), conteudo(l["celulas"][i], fs_v, RA_AZUL), branco)
@@ -987,10 +1063,19 @@ def _dados_cards_acoes_top30(df):
     (ver detalhe_rank/cartao_municipio) — pedido do usuário em 15/11/2026.
     Município/status/objeto na MESMA forma usada pelos data-* do clique (ver
     _acoes_do_municipio), pra o filtro em JS bater certo com a linha."""
-    campos = ["mu", "st", "ob", "nome", "mun", "ex", "ds", "av", "pz", "val", "orc"]
     if "_top30" not in df.columns:
-        return {"campos": campos, "acoes": []}
-    parte = df[df["_top30"]]
+        return _dados_cards_acoes(df.iloc[0:0])
+    return _dados_cards_acoes(df[df["_top30"]])
+
+
+def _dados_cards_acoes(parte):
+    """Uma linha por ação de `parte` pra janela de cards (ver
+    _dados_cards_acoes_top30). "fs"/"ei"/"fx" = status (com o número, igual
+    às linhas dos quadros), eixo e executor brutos: usados pelo clique nas
+    células dos quadros Status × Eixo/Objeto — pedido do usuário em
+    17/11/2026."""
+    campos = ["mu", "st", "ob", "nome", "mun", "ex", "ds", "av", "pz", "val", "orc",
+              "fs", "ei", "fx"]
     if parte.empty:
         return {"campos": campos, "acoes": []}
     objeto = (parte["_f_objeto"] if "_f_objeto" in parte.columns
@@ -1011,19 +1096,25 @@ def _dados_cards_acoes_top30(df):
               else pd.Series(float("nan"), index=parte.index))
     prazo = (parte["_d_entrega"] if "_d_entrega" in parte.columns
              else pd.Series(pd.NaT, index=parte.index))
+    f_exec = (parte["_f_executor"] if "_f_executor" in parte.columns
+              else pd.Series("", index=parte.index))
+    municipio = (parte["Município"] if "Município" in parte.columns
+                 else pd.Series("", index=parte.index))
 
     acoes = []
     for i in parte.index:
         av, pz, nome = avanco.loc[i], prazo.loc[i], str(nome_acao.loc[i]).strip()
+        mu = municipio.loc[i]
         acoes.append([
-            _chave_municipio(parte.loc[i, "Município"]), status.loc[i], objeto.loc[i],
+            _chave_municipio(mu), status.loc[i], objeto.loc[i],
             nome or str(objeto.loc[i]),
-            str(parte.loc[i, "Município"]).strip() if pd.notna(parte.loc[i, "Município"]) else "",
+            str(mu).strip() if pd.notna(mu) else "",
             str(executor.loc[i]).strip(), " ".join(str(descricao.loc[i]).split()),
             round(float(av), 1) if pd.notna(av) else None,
             pz.strftime("%d/%m/%Y") if pd.notna(pz) else "A definir",
             _ra_rs(float(parte.loc[i, "_valor"])) + ("*" if bool(parte.loc[i, "_orc"]) else ""),
             bool(parte.loc[i, "_orc"]),
+            str(parte.loc[i, "_f_status"]), str(parte.loc[i, "_eixo"]), str(f_exec.loc[i]),
         ])
     return {"campos": campos, "acoes": acoes}
 
@@ -1052,48 +1143,64 @@ def _acoes_do_municipio(parte):
     return saida
 
 
-def _svg_mapa(por_mun, largura=640):
-    """Bahia em SVG (paths já projetados), cada município com os dados do
-    tooltip em data-*. Devolve (svg, nomes do recorte fora do geojson)."""
+_ra_mapa_base_cache = None
+
+
+def _svg_mapa_base(largura=640):
+    """Bahia em SVG só com o desenho: cada município com data-k (chave de
+    _chave_municipio) e data-n (nome), sem cor de dado — quem pinta é o JS
+    (ligarMapa), com as cores do recorte visível. O desenho não muda, então
+    fica guardado para as próximas páginas."""
+    global _ra_mapa_base_cache
+    if _ra_mapa_base_cache:
+        return _ra_mapa_base_cache
     import relatorio_monitoramento as mon
     geo = pac.carregar_geojson_municipios() if pac else None
     if not geo:
-        return '<div class="sem-mapa">Mapa indisponível: falta municipios_bahia.geojson</div>', []
+        return '<div class="sem-mapa">Mapa indisponível: falta municipios_bahia.geojson</div>'
     feats = geo["features"]
-    aneis = lambda f: mon._poligonos(f)   # noqa: E731
-    pts = [p for f in feats for pol in aneis(f) for anel in pol for p in anel]
+    pts = [p for f in feats for pol in mon._poligonos(f) for anel in pol for p in anel]
     minlon, maxlon = min(p[0] for p in pts), max(p[0] for p in pts)
     minlat, maxlat = min(p[1] for p in pts), max(p[1] for p in pts)
     cx = math.cos(math.radians((minlat + maxlat) / 2))
     esc_x = largura / ((maxlon - minlon) * cx)
     altura = (maxlat - minlat) * esc_x
-    caminhos, usados = [], set()
+    def projetar(lon, lat):
+        return (lon - minlon) * cx * esc_x, (maxlat - lat) * esc_x
+
+    def centro(anel):
+        # centroide do polígono (fórmula da área); cai pra média dos pontos
+        # se a área for ~0
+        pts = [projetar(lon, lat) for lon, lat in anel]
+        a = sx = sy = 0.0
+        for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]):
+            c = x1 * y2 - x2 * y1
+            a += c
+            sx += (x1 + x2) * c
+            sy += (y1 + y2) * c
+        if abs(a) < 1e-9:
+            return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)), 0.0
+        return (sx / (3 * a), sy / (3 * a)), abs(a) / 2
+
+    caminhos = []
     for f in feats:
         nome = str(f["properties"].get("name", ""))
-        k = mon.normalizar(nome)
-        info = por_mun.get(k)
-        usados.add(k)
-        d = []
-        for pol in aneis(f):
-            for anel in pol:
-                d.append("M" + "L".join(
-                    f"{(lon - minlon) * cx * esc_x:.1f},{(maxlat - lat) * esc_x:.1f}"
-                    for lon, lat in anel) + "Z")
-        if info:
-            eixos = "|".join(f"{_esc(e)}~{_ra_rs(v)}" for e, v in info["eixos"])
-            attrs = (f' data-n="{_esc(nome)}" data-v="{_ra_rs(info["valor"])}'
-                     f'{"*" if info["orc"] else ""}" data-q="{_ra_qtd(info["qtd"])}"'
-                     f' data-e="{eixos}"')
-            cor = _cor_faixa(info["valor"])
-        else:
-            attrs = f' data-n="{_esc(nome)}" data-v="" data-q="sem ações no recorte"'
-            cor = RA_COR_SEM_ACAO
-        caminhos.append(f'<path d="{"".join(d)}" fill="{cor}"{attrs}/>')
-    fora = sorted(info["nome"] for k, info in por_mun.items() if k not in usados)
-    svg = (f'<svg class="mapa" viewBox="0 0 {largura:.0f} {altura:.0f}" '
-           f'role="img" aria-label="Mapa de investimento por município">'
-           + "".join(caminhos) + "</svg>")
-    return svg, fora
+        aneis = [anel for pol in mon._poligonos(f) for anel in pol]
+        d = "".join("M" + "L".join(
+            "{:.1f},{:.1f}".format(*projetar(lon, lat)) for lon, lat in anel) + "Z" for anel in aneis)
+        # centro do maior anel: onde vai o rótulo do município (ver
+        # rotulosMapa no JS — só nos de Prioridade alta, pedido do usuário
+        # em 16/11/2026)
+        (px, py), _ = max((centro(anel) for anel in aneis if len(anel) > 2),
+                          key=lambda c: c[1], default=((0.0, 0.0), 0.0))
+        caminhos.append(f'<path d="{d}" fill="{RA_COR_FORA_TOP30}" '
+                        f'data-k="{_chave_municipio(nome)}" data-n="{_esc(nome)}" '
+                        f'data-cx="{px:.1f}" data-cy="{py:.1f}"/>')
+    _ra_mapa_base_cache = (
+        f'<svg class="mapa" viewBox="0 0 {largura:.0f} {altura:.0f}" role="img" '
+        'aria-label="Mapa dos 30 maiores municípios pelo Índice de Necessidade">'
+        + "".join(caminhos) + "</svg>")
+    return _ra_mapa_base_cache
 
 
 # ---- Avaliação da carteira dos 30 maiores municípios -----------------------
@@ -1224,7 +1331,7 @@ RA_GRAFICO_LARGURA = 920
 RA_GRAFICO_ALTURA = 260
 RA_GRAFICO_MARGEM_ESQ = 68
 RA_GRAFICO_MARGEM_DIR = 90
-RA_GRAFICO_MARGEM_SUP = 22
+RA_GRAFICO_MARGEM_SUP = 34   # espaço para o rótulo das barras em destaque
 RA_GRAFICO_MARGEM_INF = 108
 
 
@@ -1264,6 +1371,10 @@ def _svg_grafico_investimento_top30(itens, quebra, escala, vmax, mediana_per_cap
         y = y_de(it["valor"]) if tem_acao else base_y - 3
         altura_barra = max(0.0, base_y - y) if tem_acao else 3.0
         cor = it["cor_classe"] if tem_acao else "#D8DCE3"
+        # investimento adequado esmaecido, pra destacar quem precisa de
+        # atenção — pedido do usuário em 16/11/2026
+        esmaecer = (' fill-opacity="0.35"'
+                    if tem_acao and it["classe"] == "Adequado" else "")
         tip = (
             f'data-n="{_esc(it["nome"])}" data-pos="{it["pos_pop"]}" '
             f'data-v="{_esc(_ra_rs(it["valor"]) if tem_acao else "sem ação no recorte")}" '
@@ -1274,7 +1385,7 @@ def _svg_grafico_investimento_top30(itens, quebra, escala, vmax, mediana_per_cap
         partes.append(
             f'<rect class="barra-top30" tabindex="0" data-alvo="mun-card-{i}" '
             f'x="{x:.1f}" y="{y:.1f}" width="{largura_barra:.1f}" height="{altura_barra:.1f}" '
-            f'rx="3" fill="{cor}" {tip}><title>{_esc(it["nome"])}</title></rect>'
+            f'rx="3" fill="{cor}"{esmaecer} {tip}><title>{_esc(it["nome"])}</title></rect>'
         )
         if quebra and it["valor"] == vmax:
             partes.append(
@@ -1289,6 +1400,17 @@ def _svg_grafico_investimento_top30(itens, quebra, escala, vmax, mediana_per_cap
                     f'y2="{y_esperado:.1f}" class="grafico-esperado"/>'
                 )
         centro_x = x + largura_barra / 2
+        # rótulo de dados só nas barras em destaque (Prioridade alta e
+        # Atenção), em duas linhas (número / unidade) para caber na coluna,
+        # logo acima da própria barra — pedido do usuário em 16/11/2026
+        if tem_acao and it["classe"] != "Adequado":
+            numero, _, unidade = _ra_rs(it["valor"]).replace("R$ ", "").partition(" ")
+            y2 = max(24.0, y - 4)
+            partes.append(
+                f'<text x="{centro_x:.1f}" y="{y2 - 10:.1f}" text-anchor="middle" '
+                f'class="grafico-rotulo" fill="{cor}">{_esc(numero)}</text>'
+                + (f'<text x="{centro_x:.1f}" y="{y2:.1f}" text-anchor="middle" '
+                   f'class="grafico-rotulo-un" fill="{cor}">{_esc(unidade)}</text>' if unidade else ""))
         rotulo = it["nome"] if tem_acao else f'{it["nome"]} (sem ação)'
         partes.append(
             f'<text x="{centro_x:.1f}" y="{base_y + 14:.1f}" '
@@ -1389,15 +1511,15 @@ def _escopar_css(css, escopo, nao_escopar=()):
     return processar_bloco(css)
 
 
-def _sufixar_ids_monitoramento(html):
+def _sufixar_ids_monitoramento(html, sufixo="monra"):
     """Garante que os ids do bloco embutido na Apresentação CGAPE não
     colidam com os da própria apresentação (mesmo princípio do
     _sufixar_ids usado lá entre variantes de gestão/secretaria, ver
     gerar_pptx_pac.py) — pedido do usuário em 15/11/2026. Troca tanto a
     declaração ("id=") quanto toda referência a ela (aria-controls=,
     data-alvo=), já que o JS do Monitoramento lê esses atributos em vez de
-    guardar o id como texto fixo."""
-    sufixo = "monra"
+    guardar o id como texto fixo. Também usada pelas variantes por eixo da
+    página autônoma (sufixo = chave do eixo)."""
     for id_html in set(re.findall(r'\bid="([^"]+)"', html)):
         novo = f"{id_html}--{sufixo}"
         html = html.replace(f'"{id_html}"', f'"{novo}"').replace(f"'{id_html}'", f"'{novo}'")
@@ -1531,7 +1653,7 @@ def _montar_blocos_monitoramento(caminho_base, dados):
         '<div class="legenda-top30">'
         f'<span><i style="background:{RA_COR_PRIORIDADE_ALTA}"></i>Prioridade alta</span>'
         f'<span><i style="background:{RA_COR_ATENCAO}"></i>Atenção</span>'
-        f'<span><i style="background:{RA_COR_ADEQUADO}"></i>Adequado</span>'
+        f'<span><i style="background:{RA_COR_ADEQUADO};opacity:.35"></i>Adequado</span>'
         '<span><i class="legenda-esperado"></i>investimento esperado pela população '
         '(mediana per capita dos 30)</span></div>'
         f'<div class="rolagem-grafico">{grafico_top30}</div>'
@@ -1548,57 +1670,61 @@ def _montar_blocos_monitoramento(caminho_base, dados):
         f'<div class="mun-grade">{cartoes_mun}</div></section>'
     )
 
-    # Mapa de investimento por município — OCULTO a pedido do usuário em
-    # 15/11/2026 (RA_HTML_MOSTRAR_MAPA), mas a função continua existindo:
-    # só não é chamada (nem a legenda/lista antigas são montadas) quando a
-    # chave está desligada, pra não gastar tempo com o SVG geográfico à toa.
-    secao_mapa = ""
+    # Mapa dos 30 maiores municípios colorido pela classe do Índice de
+    # Necessidade (mesmas cores do gráfico; "Adequado" esmaecido) — religado
+    # a pedido do usuário em 16/11/2026. O desenho (SVG) é um só para a página
+    # toda (p["mapa_svg"], guardado em .ra-mapa-guarda): cada recorte só
+    # traz as cores/dicas em JSON (.ra-mapa-dados) e o JS (ligarMapa) move o
+    # SVG para o .mapa-slot do recorte visível e o pinta.
+    secao_mapa, mapa_svg = "", ""
     if RA_HTML_MOSTRAR_MAPA:
-        svg, fora = _svg_mapa(por_mun)
-        valores = [i["valor"] for i in por_mun.values() if i["valor"] > 0]
-        legenda = []
-        for minimo, maximo, cor in reversed(RA_FAIXAS_MAPA):
-            n = sum(1 for v in valores if v >= minimo and (maximo is None or v < maximo))
-            if not n:
+        mapa_svg = _svg_mapa_base()
+        cores_mapa, grupos = {}, {"Prioridade alta": [], "Atenção": [], "Adequado": []}
+        sem_acao = []
+        # último item = id do cartão do município (o mesmo data-alvo da
+        # coluna do gráfico): clicar no mapa faz o mesmo que clicar na
+        # coluna — pedido do usuário em 16/11/2026
+        for i, it in enumerate(indicadores):
+            k = _chave_municipio(it["nome"])
+            if not it["qtd"]:
+                cores_mapa[k] = [RA_COR_SEM_ACAO_TOP30, "sem ação no recorte", "", "", "", "", ""]
+                sem_acao.append(it["nome"])
                 continue
-            rot = (f"até {_ra_rs(maximo)}" if minimo == 0 else
-                   f"acima de {_ra_rs(minimo)}" if maximo is None else
-                   f"{_ra_rs(minimo)} a {_ra_rs(maximo)}")
-            legenda.append(f'<li><i style="background:{cor}"></i>{rot}'
-                           f'<b>{n} município{"s" if n > 1 else ""}</b></li>')
-        sem_valor = sum(1 for i in por_mun.values() if i["valor"] <= 0)
-        legenda.append(f'<li><i style="background:{RA_COR_SEM_ACAO}"></i>sem ação'
-                       + (f" ou sem valor ({sem_valor} com ação e R$ 0)" if sem_valor else "")
-                       + "</li>")
+            cores_mapa[k] = [it["cor_classe"], it["classe"],
+                             _ra_rs(it["valor"]) + ("*" if it["orc"] else ""),
+                             _ra_qtd(it["qtd"]), f'{it["indice"]:.0f}',
+                             "0.35" if it["classe"] == "Adequado" else "",
+                             f"mun-card-{i}"]
+            grupos[it["classe"]].append(it["nome"])
+        cor_de = {"Prioridade alta": RA_COR_PRIORIDADE_ALTA, "Atenção": RA_COR_ATENCAO,
+                  "Adequado": RA_COR_ADEQUADO}
 
-        def linha_rank(i, m):
-            largura = (min(100, max(2, 100 * m["valor"] / escala)) if m["valor"] > 0 else 0)
-            botao = (f'<button type="button" class="det" aria-expanded="false" aria-controls="rk-det-{i}"'
-                     f' title="Ver detalhamento de {_esc(m["nome"])}">+</button>' if m["acoes"]
-                     else '<span></span>')
-            return (f'<li><div class="rk-linha{"" if m["qtd"] else " vazio"}"><span class="pos">{i + 1}</span>'
-                    f'<span class="nm">{_esc(m["nome"])}'
-                    f'<small>{_ra_qtd(m["qtd"]) if m["qtd"] else "sem ação no recorte"}</small></span>'
-                    f'<span class="barra{" quebra" if quebra and m["valor"] == vmax else ""}"><span style="width:'
-                    f'{largura:.1f}%;background:{_cor_faixa(m["valor"])}"></span></span>'
-                    f'<b>{_ra_rs(m["valor"]) if m["qtd"] else "–"}{"*" if m["orc"] else ""}</b>{botao}</div>'
-                    + (f'<div class="rk-det oculto" id="rk-det-{i}">{detalhe_rank(i, m)}</div>' if m["acoes"] else "")
-                    + "</li>")
+        def item_legenda(rotulo, cor, nomes, opacidade=""):
+            estilo = f"background:{cor}" + (f";opacity:{opacidade}" if opacidade else "")
+            n = len(nomes)
+            if not n:
+                return ""
+            return (f'<li><div class="leg-linha"><i style="{estilo}"></i>{_esc(rotulo)}'
+                    f'<b>{n} município{"s" if n != 1 else ""}</b></div>'
+                    + (f'<small>{_esc(", ".join(nomes))}</small>' if nomes else "") + "</li>")
 
-        linhas_rank = "".join(linha_rank(i, m) for i, m in enumerate(ranking))
-        nota_rank = ('<div class="nota-mapa">Em ordem de população (IBGE, estimativa 2026).'
-                     + (" Barra do maior investimento interrompida (≈) para não achatar as demais."
-                        if quebra else "") + "</div>")
-        total_mun = sum(1 for i in por_mun.values())
-        nota_mapa = (f"{total_mun} municípios com ação no recorte."
-                     + (f" Fora do mapa (nome não casa com o IBGE): {', '.join(fora)}." if fora else ""))
+        legenda = (item_legenda("Prioridade alta", cor_de["Prioridade alta"], grupos["Prioridade alta"])
+                   + item_legenda("Atenção", cor_de["Atenção"], grupos["Atenção"])
+                   + item_legenda("Adequado", cor_de["Adequado"], grupos["Adequado"], ".35")
+                   + (item_legenda("Sem ação no recorte", RA_COR_SEM_ACAO_TOP30, sem_acao)
+                      if sem_acao else "")
+                   + f'<li><div class="leg-linha"><i style="background:{RA_COR_FORA_TOP30};'
+                     'border:1px solid #D8DCE3"></i>Demais municípios (fora dos 30 maiores)</div></li>')
+        json_mapa = json.dumps(cores_mapa, ensure_ascii=False,
+                               separators=(",", ":")).replace("</", "<\\/")
         secao_mapa = (
-            '<section class="sec-mapa"><h2>MAPA DE INVESTIMENTO POR MUNICÍPIO</h2>'
-            f'<div class="mapa-grade"><div>{svg}<div class="nota-mapa">{_esc(nota_mapa)} '
-            'Passe o mouse sobre um município para ver o detalhe.</div></div>'
-            f'<div><h3>FAIXAS DE INVESTIMENTO</h3><ul class="legenda">{"".join(legenda)}</ul>'
-            f'<h3>30 MAIORES MUNICÍPIOS (POPULAÇÃO)</h3><ol class="ranking">{linhas_rank}</ol>'
-            f'{nota_rank}</div></div></section>'
+            '<section class="sec-mapa"><h2>MAPA DOS 30 MAIORES MUNICÍPIOS — ÍNDICE DE NECESSIDADE'
+            '<small>passe o mouse num município para ver o detalhe</small></h2>'
+            '<div class="mapa-grade"><div><div class="mapa-slot"></div>'
+            '<div class="nota-mapa">Cores pela classe do Índice de Necessidade de Investimento '
+            '(ver metodologia abaixo do gráfico), calculado entre os 30 maiores municípios por população.</div></div>'
+            f'<div><h3>CLASSIFICAÇÃO</h3><ul class="legenda legenda-prioridade">{legenda}</ul></div></div>'
+            f'<script type="application/json" class="ra-mapa-dados">{json_mapa}</script></section>'
         )
 
     cards_html = "".join(
@@ -1617,14 +1743,26 @@ def _montar_blocos_monitoramento(caminho_base, dados):
     recorte_txt = (f"Filtros: {dados.get('filtros_txt') or ''}"
                    if dados["filtrado"] else "Base completa")
 
-    def cel(c, cls=""):
-        cl = f' class="{cls}"' if cls else ""
-        return (f"<td{cl}><b>{_esc(c['txt'])}</b><small>{_esc(c['qtd'])}</small></td>"
-                if c else f'<td{cl}><span class="tr">–</span></td>')
+    # Clique numa célula dos quadros abre a janela de cards com as ações
+    # daquele Status × Eixo/Objeto (linha TOTAL = todos os status; coluna
+    # Total = todos os eixos) — pedido do usuário em 17/11/2026. Os data-*
+    # casam com os campos "fs"/"ei"/"ob" de _dados_cards_acoes.
+    def cel(c, cls="", st="", ei="", ob=""):
+        if not c:
+            cl = f' class="{cls}"' if cls else ""
+            return f'<td{cl}><span class="tr">–</span></td>'
+        attrs = "".join(f' data-{k}="{_esc(v)}"' for k, v in (("st", st), ("ei", ei), ("ob", ob)) if v)
+        return (f'<td class="{(cls + " ra-cel-clic").strip()}"{attrs} role="button" tabindex="0" '
+                f'title="Ver os cards das ações"><b>{_esc(c["txt"])}</b><small>{_esc(c["qtd"])}</small></td>')
+
+    def st_de(l):
+        return "" if l is dados["total"] or l is (dados.get("quadro_objeto") or {}).get("total") else l["status"]
 
     def linha(l, cls=""):
-        return (f"<td>{_esc(l['status'])}</td>" + "".join(cel(c, cls) for c in l["celulas"])
-                + cel(l["total"], "tot"))
+        st = st_de(l)
+        return (f"<td>{_esc(_ra_sem_num(l['status']))}</td>"
+                + "".join(cel(c, cls, st, e) for c, e in zip(l["celulas"], dados["eixos"]))
+                + cel(l["total"], "tot", st))
 
     quadro = ('<table class="quadro"><thead><tr><th>Status</th>'
               + "".join(f"<th>{_esc(e)}</th>" for e in dados["eixos"])
@@ -1639,12 +1777,14 @@ def _montar_blocos_monitoramento(caminho_base, dados):
         for g in q["grupos"]:
             inicio.add(n)
             n += len(g["objetos"])
+        colunas_eo = [(g["eixo"], o) for g in q["grupos"] for o in g["objetos"]]
 
         def linha_obj(l, cls=""):
-            return (f"<td>{_esc(l['status'])}</td>"
-                    + "".join(cel(c, (cls + (" ig" if i in inicio else "")).strip())
-                              for i, c in enumerate(l["celulas"]))
-                    + cel(l["total"], "tot ig"))
+            st = st_de(l)
+            return (f"<td>{_esc(_ra_sem_num(l['status']))}</td>"
+                    + "".join(cel(c, (cls + (" ig" if i in inicio else "")).strip(), st, e, o)
+                              for i, (c, (e, o)) in enumerate(zip(l["celulas"], colunas_eo)))
+                    + cel(l["total"], "tot ig", st))
 
         quadro_obj = (
             '<table class="quadro quadro-obj"><thead><tr><th rowspan="2">Status</th>'
@@ -1697,10 +1837,16 @@ h2{{margin:0 0 14px;font-size:15px;letter-spacing:.6px;color:var(--navy)}}
 .rk-linha.vazio{{opacity:.55}}
 .mapa path{{stroke:#fff;stroke-width:.6;transition:opacity .1s}}
 .mapa path:hover{{stroke:var(--navy);stroke-width:1.6;opacity:.85}}
+.mapa path.top30{{cursor:pointer}}
+.mapa-rotulos text{{font-size:11px;font-weight:800;fill:#0B1F3F;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;pointer-events:none;font-family:inherit}}
 .legenda{{list-style:none;padding:0;margin:0 0 18px;font-size:13px}}
 .legenda li{{display:flex;align-items:center;gap:8px;margin:5px 0}}
 .legenda i{{width:16px;height:16px;border-radius:4px;flex:none}}
 .legenda b{{margin-left:auto;color:var(--cinza);font-weight:600}}
+.legenda-prioridade li{{display:block;margin:10px 0}}
+.leg-linha{{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--navy)}}
+.legenda-prioridade small{{display:block;margin:3px 0 0 24px;color:var(--cinza);font-size:12.5px;line-height:1.45}}
+.ra-mapa-guarda{{display:none}}
 h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .ranking{{list-style:none;padding:0;margin:0;font-size:14.5px}}
 .ranking li{{border-bottom:1px solid #EEF1F5}}
@@ -1731,6 +1877,8 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .grafico-eixo-y{{fill:var(--cinza)}}
 .grafico-eixo-x{{fill:var(--navy);text-anchor:start}}
 .grafico-eixo-x.sem-acao{{fill:var(--cinza);font-style:italic}}
+.grafico-rotulo{{font-size:9.5px;font-weight:800;font-family:inherit;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}}
+.grafico-rotulo-un{{font-size:8px;font-weight:700;font-family:inherit;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}}
 .grafico-quebra{{font-size:13px;font-weight:700;fill:var(--navy);font-family:inherit}}
 .grafico-esperado{{stroke:var(--navy);stroke-width:1.6;stroke-dasharray:3 2;opacity:.55}}
 .barra-top30{{cursor:pointer;transition:opacity .1s}}
@@ -1742,6 +1890,19 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .leitura-metodologia{{font-size:12px;color:var(--cinza)}}
 .leitura-metodologia summary{{cursor:pointer;color:var(--navy);font-weight:600}}
 .leitura-metodologia p{{margin:8px 0 0}}
+.ra-top30-colapsavel{{border:0;margin:0 0 18px}}
+.ra-top30-colapsavel>summary{{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;
+  font:700 15px "Segoe UI",Roboto,system-ui,sans-serif;color:var(--navy);padding:14px 18px;
+  background:#F3F5F9;border-radius:10px;user-select:none}}
+.ra-top30-colapsavel>summary::-webkit-details-marker{{display:none}}
+.ra-top30-colapsavel>summary::marker{{content:""}}
+.ra-top30-colapsavel>summary:hover{{background:#E8EBF1}}
+.ra-top30-colapsavel>summary .ra-top30-seta{{margin-left:auto;width:0;height:0;flex:none;
+  border-style:solid;border-width:6px 0 6px 8px;border-color:transparent transparent transparent var(--cinza);
+  transition:transform .15s}}
+.ra-top30-colapsavel[open]>summary .ra-top30-seta{{transform:rotate(90deg)}}
+.ra-top30-colapsavel-corpo{{padding-top:16px}}
+@media print{{.ra-top30-colapsavel>*{{display:block!important}}}}
 .mun-grade{{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}}
 @media (max-width:900px){{.mun-grade{{grid-template-columns:repeat(2,1fr)}}}}
 @media (max-width:560px){{.mun-grade{{grid-template-columns:1fr}}}}
@@ -1835,6 +1996,8 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
    objeto clicável é parte do conteúdo normal (dentro de .mon-ra).*/
 .ra-obj-clic{{cursor:pointer;color:var(--azul);text-decoration:underline dotted;text-underline-offset:2px}}
 .ra-obj-clic:hover{{color:var(--navy);text-decoration-style:solid}}
+.quadro td.ra-cel-clic{{cursor:pointer}}
+.quadro td.ra-cel-clic:hover,.quadro td.ra-cel-clic:focus-visible{{background:#E3EEFA;outline:none;box-shadow:inset 0 0 0 2px #0B5CAD}}
 #ra-oc-fundo{{display:none;position:fixed;inset:0;z-index:1150;background:rgba(11,31,63,.55);align-items:center;justify-content:center;padding:24px}}
 #ra-oc-fundo.aberta{{display:flex}}
 #ra-oc-fundo .ra-oc-janela{{background:#fff;border-radius:12px;width:min(1200px,100%);max-height:100%;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)}}
@@ -1843,16 +2006,24 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 #ra-oc-fundo .ra-oc-sub{{font-size:13px;color:var(--cinza);margin-top:4px}}
 #ra-oc-fundo .ra-oc-fechar{{background:none;border:none;font-size:26px;line-height:1;color:var(--cinza);cursor:pointer;padding:0 4px}}
 #ra-oc-fundo .ra-oc-fechar:hover{{color:var(--navy)}}
-#ra-oc-fundo .ra-oc-corpo{{padding:16px 24px 24px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}}
-#ra-oc-fundo .ra-oc-card{{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;box-shadow:0 2px 8px rgba(11,31,63,.06)}}
-#ra-oc-fundo .ra-oc-card-topo{{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}}
-#ra-oc-fundo .ra-oc-card-objeto{{font-size:15px;font-weight:800;color:var(--navy)}}
-#ra-oc-fundo .ra-oc-card-linha{{font-size:12.5px;color:var(--cinza);margin-top:3px}}
-#ra-oc-fundo .ra-oc-card-desc{{font-size:12.5px;color:#3A4456;line-height:1.4}}
-#ra-oc-fundo .ra-oc-card-rodape{{display:flex;gap:16px;margin-top:auto;padding-top:8px;border-top:1px solid var(--linha)}}
-#ra-oc-fundo .ra-oc-card-rotulo{{font-size:10px;color:var(--cinza);letter-spacing:.3px;text-transform:uppercase}}
-#ra-oc-fundo .ra-oc-card-valor{{font-size:14.5px;font-weight:800;color:var(--navy);white-space:nowrap}}
-#ra-oc-fundo .ra-oc-sem-gauge{{font-size:10px;color:var(--cinza);text-align:center;line-height:1.25;flex:none}}
+/* Cards no MESMO desenho dos cards de ação do HTML do PAC (.entrega-card
+   em gerar_pptx_pac.py): velocímetro de 76px que nunca encolhe (a descrição
+   não interfere mais no tamanho dele) e descrição em até 3 linhas — pedido
+   do usuário em 16/11/2026. */
+#ra-oc-fundo .ra-oc-corpo{{padding:16px 24px 24px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}}
+#ra-oc-fundo .ra-oc-card{{background:#fff;border:1px solid #D8DCE3;border-top:4px solid #0B5CAD;border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;height:100%}}
+#ra-oc-fundo .ra-oc-card-topo{{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}}
+#ra-oc-fundo .ra-oc-card-id{{min-width:0}}
+#ra-oc-fundo .ra-oc-card-objeto{{font-size:15px;font-weight:700;color:#0B1F3F;line-height:1.25}}
+#ra-oc-fundo .ra-oc-card-mun{{font-size:13px;color:#5B6576;margin-top:2px}}
+#ra-oc-fundo .ra-oc-card-ex{{font-size:12px;color:#8C8C8C;margin-top:3px}}
+#ra-oc-fundo .ra-oc-card-gauge{{flex-shrink:0;width:76px;height:76px}}
+#ra-oc-fundo .ra-oc-card-desc{{font-size:13px;color:#0B1F3F;line-height:1.35;margin-top:12px;margin-bottom:12px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
+#ra-oc-fundo .ra-oc-card-rodape{{display:flex;justify-content:space-between;gap:10px;margin-top:auto;border-top:1px solid #F0F2F6;padding-top:10px}}
+#ra-oc-fundo .ra-oc-card-rotulo{{font-size:10.5px;font-weight:700;color:#5B6576;text-transform:uppercase}}
+#ra-oc-fundo .ra-oc-card-valor{{font-size:14.5px;font-weight:700;color:#0B1F3F;margin-top:2px}}
+#ra-oc-fundo .ra-oc-card-inv{{font-size:18px;font-weight:900;color:#0B5CAD;white-space:nowrap}}
+#ra-oc-fundo .ra-oc-sem-gauge{{width:76px;height:76px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10.5px;font-weight:700;color:#8C8C8C;line-height:1.3}}
 #ra-oc-fundo .ra-oc-vazio{{font-size:13px;color:var(--cinza);padding:20px 4px}}
 @media print{{#ra-oc-fundo{{display:none!important}}.ra-obj-clic{{color:inherit;text-decoration:none}}}}
 """
@@ -1860,9 +2031,11 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     agora = datetime.now()
     titulo = "AÇÕES EM MONITORAMENTO"
     js_bruto = f"""(function(){{
-  // "+" / "–" de cada status/objeto — da lista de ranking do mapa (se
-  // religado) e dos cards dos 30 maiores municípios: abre/fecha o
-  // detalhamento no próprio lugar onde está.
+  // Tudo que liga eventos fica em ligar(raiz): a página autônoma troca o
+  // recorte (eixo/executor) trocando o HTML e chama window.raLigar de novo
+  // só no conteúdo novo — pedido do usuário em 16/11/2026.
+  function todos(raiz,sel){{return Array.prototype.slice.call(raiz.querySelectorAll(sel));}}
+  // "+" / "–" de cada status/objeto: abre/fecha o detalhamento no lugar.
   function alternar(b,abrir){{
     var alvo=document.getElementById(b.getAttribute("aria-controls"));
     if(abrir===undefined)abrir=alvo.classList.contains("oculto");
@@ -1871,57 +2044,8 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     b.setAttribute("aria-expanded",abrir?"true":"false");
     b.title=abrir?b.title.replace("Ver","Ocultar"):b.title.replace("Ocultar","Ver");
   }}
-  Array.prototype.slice.call(document.querySelectorAll(".det")).forEach(function(b){{
-    b.addEventListener("click",function(){{alternar(b);}});
-  }});
 
-  // Cartão de cada um dos 30 maiores municípios: clicar abre, logo abaixo
-  // dele (ocupando a largura toda da grade — ver .mun-det no CSS), o
-  // detalhamento por status; só um cartão aberto por vez — pedido do
-  // usuário em 15/11/2026.
-  var cartoes=Array.prototype.slice.call(document.querySelectorAll(".mun-card:not(.sem-acao)"));
-  function alternarCartao(cartao){{
-    var det=document.getElementById(cartao.getAttribute("aria-controls"));
-    var vaiAbrir=det.classList.contains("oculto");
-    cartoes.forEach(function(outro){{
-      document.getElementById(outro.getAttribute("aria-controls")).classList.add("oculto");
-      outro.classList.remove("aberto");
-      outro.setAttribute("aria-expanded","false");
-    }});
-    det.classList.toggle("oculto",!vaiAbrir);
-    cartao.classList.toggle("aberto",vaiAbrir);
-    cartao.setAttribute("aria-expanded",vaiAbrir?"true":"false");
-  }}
-  cartoes.forEach(function(cartao){{
-    cartao.addEventListener("click",function(){{alternarCartao(cartao);}});
-    cartao.addEventListener("keydown",function(ev){{
-      if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();alternarCartao(cartao);}}
-    }});
-  }});
-
-  // Clicar (ou "Enter"/espaço) numa coluna do gráfico rola até o cartão do
-  // município correspondente e o abre — pedido do usuário em 15/11/2026.
-  Array.prototype.slice.call(document.querySelectorAll(".barra-top30[data-alvo]")).forEach(function(barra){{
-    function irParaCartao(){{
-      var cartao=document.getElementById(barra.dataset.alvo);
-      if(!cartao||cartao.classList.contains("sem-acao"))return;
-      cartao.scrollIntoView({{behavior:"smooth",block:"center"}});
-      if(!cartao.classList.contains("aberto"))alternarCartao(cartao);
-    }}
-    barra.addEventListener("click",irParaCartao);
-    barra.addEventListener("keydown",function(ev){{
-      if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();irParaCartao();}}
-    }});
-  }});
-
-  // Imprimir/salvar em PDF: o CSS de @media print já força o gráfico, a
-  // avaliação e o detalhamento por status de cada cartão a aparecerem
-  // abertos (ver .mun-det.oculto{{display:block!important}}), então não
-  // precisa pré-abrir nada em JS antes de chamar window.print().
-  window.gerarPdf=function(){{window.print();}};
-
-  // Dica (tooltip) ao passar o mouse — reaproveitada tanto pelo mapa (se
-  // religado) quanto pelas colunas do gráfico dos 30 maiores municípios.
+  // Dica (tooltip) ao passar o mouse — mapa e colunas do gráfico.
   var dica=document.getElementById("dica");
   function mostrarDica(html,ev,elemento){{
     dica.innerHTML=html;
@@ -1941,63 +2065,176 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
   function linhaDica(rotulo,valor){{
     return valor?"<li><span>"+rotulo+"</span><span>"+valor+"</span></li>":"";
   }}
-  document.querySelectorAll(".mapa path").forEach(function(p){{
-    p.addEventListener("mousemove",function(ev){{
-      var e=p.dataset.e?p.dataset.e.split("|").map(function(x){{var a=x.split("~");return linhaDica(a[0],a[1]);}}).join(""):"";
-      mostrarDica("<b>"+p.dataset.n+"</b>"+(p.dataset.v?'<span class="v">'+p.dataset.v+"</span> · ":"")+p.dataset.q+(e?"<ul>"+e+"</ul>":""),ev);
+
+  // Mapa: um SVG só para a página (guardado em .ra-mapa-guarda); vai para o
+  // .mapa-slot do recorte visível e é pintado com as cores dele
+  // (.ra-mapa-dados: chave -> [cor, classe, investimento, ações, índice, opacidade]).
+  var mapaM={{}};
+  function ligarMapa(raiz){{
+    var slot=raiz.querySelector(".mapa-slot");
+    var svg=document.querySelector(".ra-mapa-guarda svg")||document.querySelector(".mapa-slot svg");
+    if(!slot||!svg)return;
+    if(svg.parentNode!==slot)slot.appendChild(svg);
+    var el=raiz.querySelector(".ra-mapa-dados");
+    mapaM=el?JSON.parse(el.textContent):{{}};
+    todos(svg,"path").forEach(function(p){{
+      var d=mapaM[p.dataset.k];
+      p.setAttribute("fill",d?d[0]:"{RA_COR_FORA_TOP30}");
+      if(d&&d[5])p.setAttribute("fill-opacity",d[5]);else p.removeAttribute("fill-opacity");
+      p.classList.toggle("top30",!!d);
     }});
-    p.addEventListener("mouseleave",function(){{dica.style.display="none";}});
-  }});
-  document.querySelectorAll(".barra-top30").forEach(function(b){{
-    function html(){{
-      return "<b>"+b.dataset.n+"</b><ul>"
-        +linhaDica("Posição (população)",b.dataset.pos+"º")
-        +linhaDica("Investimento",b.dataset.v)
-        +linhaDica("Ações",b.dataset.q)
-        +linhaDica("Per capita",b.dataset.pc)
-        +linhaDica("Índice de necessidade",b.dataset.idx+" ("+b.dataset.classe+")")
-        +"</ul>";
+    // nome do município no mapa só nos de Prioridade alta do recorte
+    // visível — pedido do usuário em 16/11/2026
+    var antigo=svg.querySelector(".mapa-rotulos");
+    if(antigo)antigo.parentNode.removeChild(antigo);
+    var NS="http://www.w3.org/2000/svg",g=document.createElementNS(NS,"g");
+    g.setAttribute("class","mapa-rotulos");
+    // caixas estimadas (largura ~6,2 por letra, 13 de altura): rótulo que
+    // bateria em outro já posto desce uma linha (municípios vizinhos, ex.:
+    // Candeias e Dias d'Ávila)
+    var postos=[];
+    todos(svg,"path").forEach(function(p){{
+      var d=mapaM[p.dataset.k];
+      if(!d||d[1]!=="Prioridade alta"||!p.dataset.cx)return;
+      var x=+p.dataset.cx,y=+p.dataset.cy,w=p.dataset.n.length*6.2,tent=0;
+      function bate(){{return postos.some(function(b){{return Math.abs(b.x-x)<(b.w+w)/2&&Math.abs(b.y-y)<13;}});}}
+      while(bate()&&tent<6){{y+=13;tent++;}}
+      postos.push({{x:x,y:y,w:w}});
+      var t=document.createElementNS(NS,"text");
+      t.setAttribute("x",x);t.setAttribute("y",y);
+      t.setAttribute("text-anchor","middle");t.setAttribute("dy","0.35em");
+      t.textContent=p.dataset.n;
+      g.appendChild(t);
+    }});
+    svg.appendChild(g);
+    if(svg.dataset.ligado)return;
+    svg.dataset.ligado="1";
+    svg.addEventListener("mousemove",function(ev){{
+      var p=ev.target.closest("path");
+      if(!p){{dica.style.display="none";return;}}
+      var d=mapaM[p.dataset.k];
+      mostrarDica("<b>"+p.dataset.n+"</b>"+(d?(d[2]
+          ?"<ul>"+linhaDica("Classe",d[1])+linhaDica("Investimento",d[2])+linhaDica("Ações",d[3])+linhaDica("Índice de necessidade",d[4])+"</ul>"
+          :"sem ação no recorte"):"fora dos 30 maiores municípios"),ev);
+    }});
+    svg.addEventListener("mouseleave",function(){{dica.style.display="none";}});
+    // clique num dos 30 maiores = clique na coluna dele no gráfico (rola até
+    // o cartão do município e o abre)
+    svg.addEventListener("click",function(ev){{
+      var p=ev.target.closest("path"),d=p&&mapaM[p.dataset.k];
+      if(!d||!d[6])return;
+      var barra=document.querySelector('.barra-top30[data-alvo="'+d[6]+'"]');
+      if(barra){{dica.style.display="none";barra.dispatchEvent(new MouseEvent("click",{{bubbles:true}}));}}
+    }});
+  }}
+
+  function ligar(raiz){{
+    todos(raiz,".det").forEach(function(b){{
+      b.addEventListener("click",function(){{alternar(b);}});
+    }});
+
+    // Cartão de cada um dos 30 maiores municípios: abre logo abaixo o
+    // detalhamento por status; só um cartão aberto por vez.
+    var cartoes=todos(raiz,".mun-card:not(.sem-acao)");
+    function alternarCartao(cartao){{
+      var det=document.getElementById(cartao.getAttribute("aria-controls"));
+      var vaiAbrir=det.classList.contains("oculto");
+      cartoes.forEach(function(outro){{
+        document.getElementById(outro.getAttribute("aria-controls")).classList.add("oculto");
+        outro.classList.remove("aberto");
+        outro.setAttribute("aria-expanded","false");
+      }});
+      det.classList.toggle("oculto",!vaiAbrir);
+      cartao.classList.toggle("aberto",vaiAbrir);
+      cartao.setAttribute("aria-expanded",vaiAbrir?"true":"false");
     }}
-    b.addEventListener("mousemove",function(ev){{mostrarDica(html(),ev);}});
-    b.addEventListener("mouseleave",function(){{dica.style.display="none";}});
-    b.addEventListener("focus",function(){{mostrarDica(html(),null,b);}});
-    b.addEventListener("blur",function(){{dica.style.display="none";}});
-  }});
+    cartoes.forEach(function(cartao){{
+      cartao.addEventListener("click",function(){{alternarCartao(cartao);}});
+      cartao.addEventListener("keydown",function(ev){{
+        if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();alternarCartao(cartao);}}
+      }});
+    }});
+
+    // Clicar numa coluna do gráfico rola até o cartão do município e o abre.
+    todos(raiz,".barra-top30[data-alvo]").forEach(function(barra){{
+      function irParaCartao(){{
+        var cartao=document.getElementById(barra.dataset.alvo);
+        if(!cartao||cartao.classList.contains("sem-acao"))return;
+        cartao.scrollIntoView({{behavior:"smooth",block:"center"}});
+        if(!cartao.classList.contains("aberto"))alternarCartao(cartao);
+      }}
+      barra.addEventListener("click",irParaCartao);
+      barra.addEventListener("keydown",function(ev){{
+        if(ev.key==="Enter"||ev.key===" "){{ev.preventDefault();irParaCartao();}}
+      }});
+    }});
+
+    todos(raiz,".barra-top30").forEach(function(b){{
+      function html(){{
+        return "<b>"+b.dataset.n+"</b><ul>"
+          +linhaDica("Posição (população)",b.dataset.pos+"º")
+          +linhaDica("Investimento",b.dataset.v)
+          +linhaDica("Ações",b.dataset.q)
+          +linhaDica("Per capita",b.dataset.pc)
+          +linhaDica("Índice de necessidade",b.dataset.idx+" ("+b.dataset.classe+")")
+          +"</ul>";
+      }}
+      b.addEventListener("mousemove",function(ev){{mostrarDica(html(),ev);}});
+      b.addEventListener("mouseleave",function(){{dica.style.display="none";}});
+      b.addEventListener("focus",function(){{mostrarDica(html(),null,b);}});
+      b.addEventListener("blur",function(){{dica.style.display="none";}});
+    }});
+    ligarMapa(raiz);
+  }}
+  window.raLigar=ligar;
+  ligar(document);
+
+  // Imprimir/salvar em PDF: o CSS de @media print já abre o que precisa.
+  window.gerarPdf=function(){{window.print();}};
 }})();
 // Janela de cards ao clicar num objeto da grade de município (ver
 // detalhe_rank/_dados_cards_acoes_top30) — pedido do usuário em 15/11/2026.
 (function(){{
-  var dadosEl=document.getElementById("ra-oc-dados");
-  if(!dadosEl)return;
-  var D=JSON.parse(dadosEl.textContent),C={{}};
-  (D.campos||[]).forEach(function(k,i){{C[k]=i;}});
+  // Dados das ações: o bloco JSON "ra-oc-dados" do recorte visível (ou o
+  // indicado em data-oc pelo contêiner).
   var fundo=document.getElementById("ra-oc-fundo");
+  if(!fundo)return;
+  var D=null,C={{}};
+  function carregar(id){{
+    var el=document.getElementById(id);
+    D=el?JSON.parse(el.textContent):{{campos:[],acoes:[]}};C={{}};
+    (D.campos||[]).forEach(function(k,i){{C[k]=i;}});
+  }}
   function esc(t){{var d=document.createElement("div");d.textContent=t==null?"":String(t);return d.innerHTML;}}
+  // velocímetro igual ao do PAC (arco de 250°, 76px; ver #pac-gauge em
+  // gerar_pptx_pac.py), desenhado aqui mesmo (sem <use>)
+  var ARCO='M 11.74 56.39 A 32.06 32.06 0 1 1 64.26 56.39';
   function gauge(v){{
     if(v==null)return '<div class="ra-oc-sem-gauge">Avanço<br>não<br>informado</div>';
     v=Math.max(0,Math.min(100,v));
-    var r=26,c=2*Math.PI*r,cheio=(v/100*c).toFixed(1);
-    return '<svg width="64" height="64" viewBox="0 0 64 64">'
-      +'<circle cx="32" cy="32" r="'+r+'" fill="none" stroke="#E9ECF2" stroke-width="6"></circle>'
-      +(v>0.5?'<circle cx="32" cy="32" r="'+r+'" fill="none" stroke="#2E7D32" stroke-width="6" '
-        +'stroke-dasharray="'+cheio+' '+c.toFixed(1)+'" stroke-linecap="round" transform="rotate(-90 32 32)"></circle>':'')
-      +'<text x="32" y="37" text-anchor="middle" font-size="15" font-weight="900" fill="#0B1F3F">'+Math.round(v)+'%</text></svg>';
+    return '<svg width="76" height="76" viewBox="0 0 76 76" class="ra-oc-card-gauge">'
+      +'<path d="'+ARCO+'" fill="none" stroke="#E9ECF2" stroke-width="9.88" stroke-linecap="round" pathLength="100"></path>'
+      +(v>0.5?'<path d="'+ARCO+'" fill="none" stroke="#2E7D32" stroke-width="9.88" stroke-linecap="round" pathLength="100" stroke-dasharray="'+v.toFixed(1)+' 200"></path>':'')
+      +'<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="#0B1F3F">'+Math.round(v)+'%</text></svg>';
   }}
   function card(a){{
-    return '<div class="ra-oc-card"><div class="ra-oc-card-topo"><div>'
+    return '<div class="ra-oc-card"><div class="ra-oc-card-topo"><div class="ra-oc-card-id">'
       +'<div class="ra-oc-card-objeto">'+esc(a[C.nome])+'</div>'
-      +'<div class="ra-oc-card-linha">'+[a[C.mun],a[C.ex]].filter(Boolean).map(esc).join(" · ")+'</div>'
+      +'<div class="ra-oc-card-mun">'+esc(a[C.mun]||'Município não informado')+'</div>'
+      +(a[C.ex]?'<div class="ra-oc-card-ex">'+esc(a[C.ex])+'</div>':'')
       +'</div>'+gauge(a[C.av])+'</div>'
-      +(a[C.ds]?'<div class="ra-oc-card-desc">'+esc(a[C.ds])+'</div>':'')
+      +(a[C.ds]?'<div class="ra-oc-card-desc" title="'+esc(a[C.ds])+'">'+esc(a[C.ds])+'</div>':'')
       +'<div class="ra-oc-card-rodape">'
-      +'<div><div class="ra-oc-card-rotulo">Conclusão prevista</div><div class="ra-oc-card-valor">'+esc(a[C.pz])+'</div></div>'
-      +'<div><div class="ra-oc-card-rotulo">Investimento</div><div class="ra-oc-card-valor">'+esc(a[C.val])+'</div></div>'
+      +'<div><div class="ra-oc-card-rotulo">Conclusão prevista</div><div class="ra-oc-card-valor">'+esc(a[C.pz]||'A definir')+'</div></div>'
+      +'<div><div class="ra-oc-card-rotulo">Investimento</div><div class="ra-oc-card-inv">'+esc(a[C.val])+'</div></div>'
       +'</div></div>';
   }}
   window.raOcFechar=function(){{if(fundo)fundo.classList.remove("aberta");}};
   document.addEventListener("click",function(ev){{
     var alvo=ev.target.closest(".ra-obj-clic");
     if(!alvo)return;
+    var var_el=alvo.closest("[data-oc]");
+    carregar(var_el?var_el.dataset.oc:"ra-oc-dados");
     var mun=alvo.dataset.mun,status=alvo.dataset.status,objeto=alvo.dataset.objeto;
     var lista=D.acoes.filter(function(a){{
       return a[C.mu]===mun&&a[C.st]===status&&a[C.ob]===objeto;
@@ -2007,6 +2244,47 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     document.getElementById("ra-oc-corpo").innerHTML=lista.map(card).join("")
       ||'<div class="ra-oc-vazio">Nenhuma ação encontrada.</div>';
     fundo.classList.add("aberta");
+  }});
+  // Clique numa célula dos quadros Status × Eixo/Objeto (pedido do usuário
+  // em 17/11/2026): ações de TODO o recorte ficam num bloco só, compactado
+  // (.ra-qd-dados, gzip + base64, fora do conteúdo trocado pelo seletor
+  // eixo × executor); o recorte visível (.ra-quadros data-fe/data-fx) e a
+  // célula (data-st/ei/ob) dizem quais mostrar.
+  var Q=null;
+  function dadosQuadros(td){{
+    if(Q)return Promise.resolve(Q);
+    var raiz=td.closest(".ra-sel-raiz")||document,el=raiz.querySelector(".ra-qd-dados");
+    if(!el||!window.DecompressionStream)return Promise.resolve({{campos:[],acoes:[]}});
+    var b=atob(el.textContent.trim()),u=new Uint8Array(b.length);
+    for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);
+    return new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream("gzip"))).json()
+      .then(function(d){{Q=d;return d;}});
+  }}
+  function semNumero(s){{return String(s||"").replace(/^\\d+\\s*-\\s*/,"");}}
+  function abrirCelula(td){{
+    var q=td.closest(".ra-quadros")||td,fe=q.dataset.fe||"",fx=q.dataset.fx||"";
+    var st=td.dataset.st||"",ei=td.dataset.ei||"",ob=td.dataset.ob||"";
+    dadosQuadros(td).then(function(d){{
+      D=d;C={{}};(D.campos||[]).forEach(function(k,i){{C[k]=i;}});
+      var lista=D.acoes.filter(function(a){{
+        return (!st||a[C.fs]===st)&&(!ei||a[C.ei]===ei)&&(!ob||a[C.ob]===ob)
+          &&(!fe||a[C.ei]===fe)&&(!fx||a[C.fx]===fx);
+      }});
+      document.getElementById("ra-oc-titulo").textContent=ob||ei||fe||"Todas as ações";
+      document.getElementById("ra-oc-sub").textContent=[ob?(ei||fe):"",st?semNumero(st):"Todos os status",fx,
+        lista.length+(lista.length===1?" ação":" ações")].filter(Boolean).join(" · ");
+      document.getElementById("ra-oc-corpo").innerHTML=lista.map(card).join("")
+        ||'<div class="ra-oc-vazio">Nenhuma ação encontrada.</div>';
+      fundo.classList.add("aberta");
+    }});
+  }}
+  document.addEventListener("click",function(ev){{
+    var td=ev.target.closest&&ev.target.closest(".ra-cel-clic");
+    if(td)abrirCelula(td);
+  }});
+  document.addEventListener("keydown",function(ev){{
+    var td=ev.target.closest&&ev.target.closest(".ra-cel-clic");
+    if(td&&(ev.key==="Enter"||ev.key===" ")){{ev.preventDefault();abrirCelula(td);}}
   }});
   if(fundo)fundo.addEventListener("click",function(ev){{if(ev.target===fundo)window.raOcFechar();}});
   document.addEventListener("keydown",function(e){{
@@ -2037,6 +2315,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
         "aviso_cards_html": aviso_cards_html,
         "filtros_html": filtros_html,
         "secao_mapa": secao_mapa,
+        "mapa_svg": mapa_svg,
         "secao_top30_grafico": secao_top30_grafico,
         "secao_cartoes": secao_cartoes,
         "quadro_status_eixo_html": quadro_status_eixo_html,
@@ -2050,99 +2329,316 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     }
 
 
-def gerar_html_resumo_acoes(caminho_base, dados):
-    """Página única (abre sem internet) com cards, o gráfico/avaliação dos
-    30 maiores municípios por população (mapa oculto — RA_HTML_MOSTRAR_MAPA)
-    e o quadro Status × Eixo do recorte atual."""
-    p = _montar_blocos_monitoramento(caminho_base, dados)
+CSS_SELETOR_RECORTE = """
+.sel-recorte{position:fixed;left:50%;transform:translateX(-50%);bottom:10px;z-index:1000;display:flex;flex-direction:column;align-items:center;gap:6px;width:max-content;max-width:94vw;opacity:0;pointer-events:none;transition:opacity .25s}
+body.filtros-abertos .sel-recorte{opacity:1;pointer-events:auto}
+.sel-barra{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;background:rgba(11,31,63,.92);padding:5px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.sel-barra button{background:transparent;color:#C9D6EA;border:none;border-radius:7px;padding:7px 12px;font:700 12px 'Roboto','Segoe UI',Arial,sans-serif;letter-spacing:.3px;cursor:pointer}
+.sel-barra button:hover{background:rgba(255,255,255,.12);color:#fff}
+.sel-barra button.oculto{display:none}
+.sel-barra-eixo button{padding:8px 14px;font-size:13px}
+.sel-barra-eixo button.ativo{background:#4FA3E0;color:#0B1F3F}
+.sel-barra-sec button.ativo{background:#E68A00;color:#fff}
+@media print{.sel-recorte{display:none!important}}
+/* Botão que liga/desliga o painel acima (só existe na página autônoma —
+   embutida na Apresentação CGAPE, o botão é o dela, .btn-filtros também,
+   e já controla o mesmo body.filtros-abertos) — pedido do usuário em
+   17/11/2026, no lugar da régua de proximidade da borda inferior, que
+   cobria conteúdo da página ao rolar. */
+.btn-filtros{position:fixed;right:16px;bottom:14px;z-index:1001;width:44px;height:44px;border-radius:50%;border:none;background:rgba(11,31,63,.85);color:#C9D6EA;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 4px 16px rgba(0,0,0,.3);transition:background .2s,color .2s}
+.btn-filtros svg{width:20px;height:20px}
+.btn-filtros:hover{background:rgba(11,31,63,1);color:#fff}
+.btn-filtros.ativo{background:#4FA3E0;color:#0B1F3F}
+@media print{.btn-filtros{display:none!important}}
+"""
+
+JS_SELETOR_RECORTE = """
+(function(){
+  // Seletor EIXO x SECRETARIA/EXECUTOR (pedido do usuário em 16/11/2026),
+  // no mesmo desenho dos seletores de Gestão/Secretaria do PAC: barras
+  // flutuantes no rodapé, que só aparecem com um clique no botão
+  // .btn-filtros (body.filtros-abertos — pedido do usuário em 17/11/2026,
+  // no lugar da régua de proximidade da borda inferior). Cada combinação
+  // com ação é o conteúdo inteiro já calculado, guardado compactado (gzip
+  // + base64) num <script class="ra-v" data-k="E|X">; ao escolher, é
+  // descompactado, posto no lugar e os eventos ligados de novo
+  // (window.raLigar).
+  function bytes(s){var b=atob(s),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
+  function esconderDica(){["dica","mon-dica"].forEach(function(id){var d=document.getElementById(id);if(d)d.style.display="none";});}
+  var raiz=document.querySelector(".ra-sel-raiz"),barra=document.querySelector(".sel-recorte");
+  if(!raiz||!barra)return;
+  var lista=raiz.querySelector(".ra-v-lista");
+  if(!lista)return;
+  var V=JSON.parse(lista.textContent),cache={},atual="0|0",e=0,x=0;
+  var cont=raiz.querySelector(".ra-recorte");
+  var bEixo=Array.prototype.slice.call(barra.querySelectorAll(".sel-eixo-btn"));
+  var bSec=Array.prototype.slice.call(barra.querySelectorAll(".sel-sec-btn"));
+  // página autônoma: o botão .btn-filtros é dela (na Apresentação CGAPE o
+  // botão e o clique-fora-fecha já são do carrossel, que liga o mesmo
+  // body.filtros-abertos — ver JS em gerar_pptx_pac.py).
+  if(!document.getElementById("nav-carrossel")){
+    var btnFiltros=document.getElementById("btn-filtros");
+    if(btnFiltros){
+      btnFiltros.onclick=function(ev){
+        ev.stopPropagation();
+        var aberto=document.body.classList.toggle("filtros-abertos");
+        btnFiltros.classList.toggle("ativo",aberto);
+        btnFiltros.setAttribute("aria-expanded",aberto?"true":"false");
+      };
+      document.addEventListener("click",function(ev){
+        if(!document.body.classList.contains("filtros-abertos"))return;
+        if(ev.target.closest(".sel-recorte,.btn-filtros"))return;
+        document.body.classList.remove("filtros-abertos");
+        btnFiltros.classList.remove("ativo");
+        btnFiltros.setAttribute("aria-expanded","false");
+      });
+    }
+  }
+  function abrir(k){
+    if(cache[k])return Promise.resolve(cache[k]);
+    var el=raiz.querySelector('.ra-v[data-k="'+k+'"]');
+    var fluxo=new Blob([bytes(el.textContent.trim())]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return new Response(fluxo).text().then(function(h){cache[k]=h;return h;});
+  }
+  function controles(){
+    bEixo.forEach(function(b){b.classList.toggle("ativo",+b.dataset.e===e);});
+    // secretaria sem ação no eixo escolhido some da barra (igual ao PAC)
+    bSec.forEach(function(b){
+      var i=+b.dataset.x;
+      b.classList.toggle("ativo",i===x);
+      b.classList.toggle("oculto",i!==0&&V.indexOf(e+"|"+i)<0);
+    });
+  }
+  function mostrar(ne,nx){
+    if(V.indexOf(ne+"|"+nx)<0)nx=0;
+    var k=ne+"|"+nx;
+    e=ne;x=nx;controles();
+    if(k===atual)return;
+    if(!window.DecompressionStream){alert("Este navegador não consegue abrir os recortes. Use o Edge ou o Chrome atualizados.");return;}
+    document.body.style.cursor="progress";
+    abrir(k).then(function(h){
+      var svg=cont.querySelector(".mapa-slot svg"),guarda=document.querySelector(".ra-mapa-guarda");
+      if(svg&&guarda)guarda.appendChild(svg);
+      cont.innerHTML=h;atual=k;
+      window.raLigar(cont);
+      esconderDica();
+      document.body.style.cursor="";
+    }).catch(function(err){document.body.style.cursor="";alert("Não consegui abrir o recorte: "+err);});
+  }
+  bEixo.forEach(function(b){b.addEventListener("click",function(){mostrar(+b.dataset.e,x);});});
+  bSec.forEach(function(b){b.addEventListener("click",function(){mostrar(e,+b.dataset.x);});});
+  controles();
+})();
+"""
+
+
+def _variantes_recorte(caminho_base, dados, filtros):
+    """Combinações EIXO x SECRETARIA/EXECUTOR do recorte para o seletor —
+    pedido do usuário em 16/11/2026. Devolve (eixos, executores,
+    combinações) com eixos = ["TODOS OS EIXOS", ...], executores =
+    ["TODAS AS SECRETARIAS / EXECUTORES", ...] e combinações = [(i_eixo,
+    i_executor, filtros)] só das que têm ação; o índice 0 é sempre "todos"."""
+    eixos = ["TODOS OS EIXOS"]
+    executores = ["TODOS"]
+    if filtros is None:
+        return eixos, executores, [(0, 0, None)]
+    base = _ra_base(caminho_base)
+    linhas = base.iloc[dados["ids"]]
+    if "_f_executor" not in linhas.columns:
+        linhas = linhas.assign(_f_executor="")
+    eixos += [e for e, c in zip(dados["eixos"], dados["total"]["celulas"]) if c]
+    executores += sorted(set(linhas["_f_executor"]) - {""}, key=_ra_ordem)
+    pares = set(zip(linhas["_eixo"], linhas["_f_executor"]))
+    eixos_com = {e for e, _ in pares}
+    execs_com = {x for _, x in pares}
+    combos = []
+    for ie, e in enumerate(eixos):
+        for ix, x in enumerate(executores):
+            if (ie and e not in eixos_com) or (ix and x not in execs_com):
+                continue
+            if ie and ix and (e, x) not in pares:
+                continue
+            f = dict(filtros)
+            if ie:
+                f["eixo"] = [e]
+            if ix:
+                f["executor"] = [x]
+            combos.append((ie, ix, f))
+    if len(eixos) < 3 and len(executores) < 3:
+        return eixos, executores, [(0, 0, None)]
+    return eixos, executores, combos
+
+
+def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
+    """(html, seletor, p) — conteúdo do recorte inicial + as demais
+    combinações compactadas (dentro de .ra-sel-raiz), as barras flutuantes
+    EIXO x SECRETARIA/EXECUTOR (.sel-recorte, fora do conteúdo: ficam
+    fixas no rodapé — ver JS_SELETOR_RECORTE) e p = peças do recorte
+    inicial (CSS/JS/janela/mapa). `sufixo`: ids de cada recorte sufixados (página
+    embutida na Apresentação CGAPE — ver _sufixar_ids_monitoramento)."""
+    eixos, executores, combos = _variantes_recorte(caminho_base, dados, filtros)
+    p, inicial, guardados, chaves = None, "", [], []
+    for ie, ix, f in combos:
+        dv = dados if (ie, ix) == (0, 0) else resumo_acoes_dados(caminho_base, f)
+        if dv["vazio"]:
+            continue
+        pv = _montar_blocos_monitoramento(caminho_base, dv)
+        if p is None:
+            p = pv
+        json_oc, _, _ = pv["oc_html"].partition('<div id="ra-oc-fundo">')
+        # Chave "30 MAIORES MUNICÍPIOS" desligada: só os dois quadros resumo
+        # (sem mapa, gráfico e cartões dos 30 maiores). Ligada: os cards
+        # (total sem a chave + total com a chave), o mapa, o gráfico e os
+        # cartões por município entram ABAIXO dos quadros por eixo/objeto,
+        # não antes — pedido do usuário em 17/11/2026.
+        bloco_cards = f'{pv["aviso_cards_html"]}<div class="cards">{pv["cards_html"]}</div>'
+        # Mapa + gráfico + cartões por município começam recolhidos: um
+        # único título clicável (<details>/<summary>) expande a seção toda
+        # de uma vez, em vez de abrir sempre tudo já expandido — pedido do
+        # usuário em 17/11/2026.
+        secoes_top30 = (
+            '<details class="ra-top30-colapsavel">'
+            '<summary>30 MAIORES MUNICÍPIOS (POPULAÇÃO)<span class="ra-top30-seta"></span></summary>'
+            f'<div class="ra-top30-colapsavel-corpo">'
+            f'{pv["secao_mapa"]}{pv["secao_top30_grafico"]}{pv["secao_cartoes"]}</div></details>{json_oc}'
+            if dv.get("top30") else "")
+        bloco_quadros = (
+            f'<div class="ra-quadros" data-fe="{_esc(eixos[ie]) if ie else ""}" '
+            f'data-fx="{_esc(executores[ix]) if ix else ""}">'
+            f'{pv["quadro_status_eixo_html"]}{pv["quadro_status_objeto_html"]}</div>')
+        corpo_filtros = (
+            f'<div class="filtros">{pv["filtros_html"]}'
+            + (f'Gerado em {pv["agora"]:%d/%m/%Y às %Hh%M}.' if not sufixo else "") + '</div>')
+        if dv.get("top30"):
+            corpo = f'{corpo_filtros}{bloco_quadros}{bloco_cards}{secoes_top30}'
+        else:
+            corpo = f'{corpo_filtros}{bloco_cards}{bloco_quadros}'
+        if sufixo:
+            corpo = _sufixar_ids_monitoramento(corpo, sufixo)
+        if (ie, ix) == (0, 0):
+            inicial = corpo
+        if len(combos) > 1:
+            chaves.append(f"{ie}|{ix}")
+            dado = base64.b64encode(gzip.compress(corpo.encode("utf-8"), 9)).decode("ascii")
+            guardados.append(f'<script type="application/octet-stream" class="ra-v" data-k="{ie}|{ix}">{dado}</script>')
+    data_oc = "ra-oc-dados" + (f"--{sufixo}" if sufixo else "")
+    seletor = ""
+    if len(combos) > 1:
+        b_eixo = "".join(
+            f'<button type="button" class="sel-eixo-btn{" ativo" if i == 0 else ""}" data-e="{i}">'
+            f'{_esc(e)}</button>' for i, e in enumerate(eixos))
+        b_sec = "".join(
+            f'<button type="button" class="sel-sec-btn{" ativo" if i == 0 else ""}" data-x="{i}">'
+            f'{_esc("Todas as secretarias" if i == 0 else x)}</button>'
+            for i, x in enumerate(executores))
+        seletor = ('<div class="sel-recorte" role="group" aria-label="Eixo e secretaria/executor">'
+                   f'<div class="sel-barra sel-barra-sec">{b_sec}</div>'
+                   f'<div class="sel-barra sel-barra-eixo">{b_eixo}</div></div>')
+        guardados.append('<script type="application/json" class="ra-v-lista">'
+                         + json.dumps(chaves) + "</script>")
+    # ações de todo o recorte (todas as combinações eixo × executor são
+    # subconjuntos dele) pra janela de cards das células dos quadros
+    base_qd = _ra_base(caminho_base)
+    if dados.get("entregue"):
+        base_qd, _ = _ra_juntar_entregues(base_qd)
+    json_qd = json.dumps(_dados_cards_acoes(base_qd.iloc[dados["ids"]]),
+                         ensure_ascii=False, separators=(",", ":"))
+    guardados.append('<script type="application/octet-stream" class="ra-qd-dados">'
+                     + base64.b64encode(gzip.compress(json_qd.encode("utf-8"), 9)).decode("ascii")
+                     + "</script>")
+    html = (f'<div class="ra-sel-raiz">'
+            f'<div class="ra-recorte" data-oc="{data_oc}">{inicial}</div>'
+            f'{"".join(guardados)}</div>')
+    return html, seletor, p
+
+
+def gerar_html_resumo_acoes(caminho_base, dados, filtros=None):
+    """Página única (abre sem internet) com cards, mapa e gráfico/avaliação
+    dos 30 maiores municípios por população, cartões por município e os
+    quadros Status × Eixo/Objeto do recorte atual. Com `filtros`, ganha no
+    topo o seletor EIXO (botões) x SECRETARIA/EXECUTOR (lista)."""
+    html_recortes, seletor, p = _montar_recortes(caminho_base, dados, filtros)
+    fundo_oc = '<div id="ra-oc-fundo">' + p["oc_html"].partition('<div id="ra-oc-fundo">')[2]
+    guarda_mapa = f'<div class="ra-mapa-guarda">{p["mapa_svg"]}</div>' if p.get("mapa_svg") else ""
+    # Botão que liga/desliga o seletor EIXO x SECRETARIA/EXECUTOR acima — só
+    # faz sentido se existir algo pra filtrar (`seletor` vazio = recorte sem
+    # combinações) — pedido do usuário em 17/11/2026.
+    btn_filtros = (
+        '<button type="button" id="btn-filtros" class="btn-filtros" '
+        'title="Mostrar/ocultar filtros" aria-expanded="false">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+        'stroke-linecap="round" stroke-linejoin="round">'
+        '<polygon points="4 4 20 4 14 12 14 19 10 21 10 12 4 4"></polygon></svg></button>'
+        if seletor else "")
     return f"""<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ações em Monitoramento</title>
 <style>
-{p["css_bruto"]}
+{p["css_bruto"]}{CSS_SELETOR_RECORTE}
 </style></head><body>
-<button type="button" class="btn-pdf" onclick="gerarPdf()" title="Imprime/salva em PDF com o gráfico, a avaliação e o detalhamento por status de cada município já abertos">Gerar PDF</button>
+<button type="button" class="btn-pdf" onclick="gerarPdf()" title="Imprime/salva em PDF o recorte selecionado, com o mapa, o gráfico, a avaliação e o detalhamento por status de cada município já abertos">Gerar PDF</button>
 <header><div><h1>{p["titulo"]}</h1><p>COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</p></div>
 <div class="gov">GOVERNO DO ESTADO DA BAHIA<br>CASA CIVIL</div></header>
 <main>
-<div class="filtros">{p["filtros_html"]}Gerado em {p["agora"]:%d/%m/%Y às %Hh%M}.</div>
-{p["aviso_cards_html"]}
-<div class="cards">{p["cards_html"]}</div>
-{p["secao_mapa"]}
-{p["secao_top30_grafico"]}
-{p["secao_cartoes"]}
-{p["quadro_status_eixo_html"]}
-{p["quadro_status_objeto_html"]}
+{html_recortes}
 </main>
 <footer>CGAPE · Casa Civil · Base Ações do Cronograma</footer>
+{btn_filtros}
+{seletor}
 <div id="dica"></div>
-{p["oc_html"]}
+{guarda_mapa}
+{fundo_oc}
 <script>
-{p["js_bruto"]}
+{p["js_bruto"]}{JS_SELETOR_RECORTE}
 </script>
 </body></html>"""
 
 
-def montar_partes_html_monitoramento(caminho_base, dados):
+def montar_partes_html_monitoramento(caminho_base, dados, filtros=None):
     """Pedaços do HTML "Ações em Monitoramento", já isolados (CSS sob
     .mon-ra, ids sufixados, tooltip em #mon-dica) prontos para entrar como a
-    página MON_ACOES da Apresentação CGAPE (ver gerar_pptx_pac.py), ao lado
-    das páginas do PAC na mesma janela de seleção — pedido do usuário em
-    15/11/2026. Uma única página, com rolagem, juntando cards + gráfico dos
-    30 maiores + cartões por município + quadros, na mesma ordem e estrutura
-    da página autônoma (gerar_html_resumo_acoes) — pedido do usuário em
-    15/11/2026, pra não fatiar o Monitoramento em vários slides. Base e
-    filtros do Monitoramento são completamente independentes dos do PAC (os
-    `dados` já vêm de resumo_acoes_dados, com os filtros do próprio
-    Monitoramento); CSS e ids isolados garantem que o visual de um não vaza
-    pro outro, inclusive quando a apresentação troca de gestão/secretaria —
-    a página MON_ACOES fica de fora dessas variantes (ver
-    montar_html_apresentacao: renderizada uma única vez, nunca recalculada
-    por gestão/secretaria)."""
-    p = _montar_blocos_monitoramento(caminho_base, dados)
+    página MON_ACOES da Apresentação CGAPE (ver gerar_pptx_pac.py) — pedido
+    do usuário em 15/11/2026. Mesma estrutura da página autônoma
+    (gerar_html_resumo_acoes), inclusive o seletor EIXO x
+    SECRETARIA/EXECUTOR (pedido do usuário em 16/11/2026: os seletores de
+    Gestão/Secretaria da apresentação, que são do PAC, somem nesta página).
+    Base e filtros do Monitoramento são independentes dos do PAC; a página
+    MON_ACOES é renderizada uma única vez, fora das variantes de
+    gestão/secretaria do PAC."""
+    html_recortes, seletor, p = _montar_recortes(caminho_base, dados,
+                                                 {} if filtros is None else filtros, sufixo="monra")
+    guarda = f'<div class="ra-mapa-guarda">{p["mapa_svg"]}</div>' if p.get("mapa_svg") else ""
+    secoes = {"MON_ACOES": f'<div class="mon-ra">{html_recortes}{guarda}</div>'}
 
-    def envolver(html_interno):
-        return _sufixar_ids_monitoramento(f'<div class="mon-ra">{html_interno}</div>')
-
-    secoes = {
-        "MON_ACOES": envolver(
-            f'<div class="filtros">{p["filtros_html"]}</div>'
-            f'{p["aviso_cards_html"]}'
-            f'<div class="cards">{p["cards_html"]}</div>'
-            f'{p["secao_mapa"]}'
-            f'{p["secao_top30_grafico"]}'
-            f'{p["secao_cartoes"]}'
-            f'{p["quadro_status_eixo_html"]}'
-            f'{p["quadro_status_objeto_html"]}'
-        ),
-    }
-
-    # O tooltip (#dica) e o botão "Gerar PDF" (window.gerarPdf) da página
-    # autônoma viram, no embutido, #mon-dica — fora de qualquer .mon-ra,
-    # pra não sumir se o slide que o contém não for o ativo (ver
-    # "dica_html" abaixo, colocado fora de qualquer slide por quem monta a
-    # apresentação) — e window.monRaGerarPdf, sem botão próprio: a
-    # apresentação já tem o seu, que imprime a página inteira.
-    css_renomeado = p["css_bruto"].replace("#dica", "#mon-dica")
+    # O tooltip (#dica) da página autônoma vira, no embutido, #mon-dica —
+    # fora de qualquer .mon-ra, pra não sumir se o slide que o contém não
+    # for o ativo — e window.gerarPdf vira window.monRaGerarPdf, sem botão
+    # próprio: a apresentação já tem o seu, que imprime a página inteira.
+    css_renomeado = (p["css_bruto"] + CSS_SELETOR_RECORTE).replace("#dica", "#mon-dica")
     css_isolado = _escopar_css(css_renomeado, ".mon-ra",
-                               nao_escopar=("#mon-dica", "#ra-oc-fundo"))
+                               nao_escopar=("#mon-dica", "#ra-oc-fundo", ".sel-recorte",
+                                            ".sel-barra", ".sel-barra-eixo", ".sel-barra-sec",
+                                            ".btn-filtros", "body.filtros-abertos"))
     js_isolado = (
         p["js_bruto"]
         .replace('getElementById("dica")', 'getElementById("mon-dica")')
         .replace("window.gerarPdf=", "window.monRaGerarPdf=")
+        + JS_SELETOR_RECORTE
     )
-
+    fundo_oc = '<div id="ra-oc-fundo">' + p["oc_html"].partition('<div id="ra-oc-fundo">')[2]
     return {
         "css": css_isolado,
         "secoes": secoes,
         "js": js_isolado,
-        "dica_html": '<div id="mon-dica"></div>',
-        # Janela de cards ao clicar num objeto (ver .ra-obj-clic): mesmo
-        # motivo do #mon-dica acima, fica fora de qualquer .mon-ra/slide —
-        # ids já únicos (ra-oc-*), não colidem com a janela "oc-*" que o
-        # próprio PAC usa pro clique em objeto/executor das suas tabelas.
-        "oc_html": p["oc_html"],
+        # barras EIXO x SECRETARIA/EXECUTOR: fora de qualquer slide (fixas no
+        # rodapé), visíveis só na página do Monitoramento — ver
+        # atualizarSeletoresMonitoramento() em gerar_pptx_pac.py
+        "dica_html": '<div id="mon-dica"></div>' + seletor,
+        # Janela de cards ao clicar num objeto (ver .ra-obj-clic): fica fora
+        # de qualquer .mon-ra/slide; os dados de cada recorte vêm do
+        # "ra-oc-dados--monra" do recorte visível (data-oc).
+        "oc_html": fundo_oc,
         "recorte": p["recorte_txt"],
     }
 
@@ -2170,6 +2666,34 @@ def api_base():
         return {"ok": True, **resumo_acoes_tabela(caminho)}
     except Exception as exc:
         return {"ok": False, "mensagem": f"Erro ao ler '{RA_PLANILHA}': {exc}"}
+
+
+def api_atualizar_conder():
+    """Botão "ATUALIZAR DA CONDER" (pedido do usuário em 17/11/2026): baixa
+    a planilha do serviço público da CONDER (importar_cronograma.py, mesmo
+    conteúdo do botão "Exportar para planilha" do site) e grava por cima da
+    da pasta do programa — só troca se o conteúdo mudou."""
+    global _ra_cache
+    try:
+        import importar_cronograma as ic
+        caminho = pac.caminho_recurso(RA_PLANILHA) if pac else RA_PLANILHA
+        r = ic.atualizar_se_mudou(caminho)
+    except PermissionError:
+        return {"ok": False, "mensagem": f"Não consegui gravar '{RA_PLANILHA}': ela está aberta "
+                                         "em outro programa (Excel?). Feche e tente de novo."}
+    except Exception as exc:
+        return {"ok": False, "mensagem": f"Não consegui baixar do serviço da CONDER: {exc}"}
+    _ra_cache = None
+    # o MONITORAMENTO (relatorio_monitoramento.py) guarda a base lida uma vez
+    rm = sys.modules.get("relatorio_monitoramento")
+    if rm is not None and hasattr(rm, "_BASE"):
+        with rm._TRAVA_BASE:
+            rm._BASE = None
+    qtd = f"{r['acoes']:,}".replace(",", ".")
+    return {"ok": True, "mudou": r["mudou"],
+            "mensagem": (f"Base atualizada pelo serviço da CONDER: {qtd} ações."
+                         if r["mudou"] else
+                         f"A base já estava igual à da CONDER ({qtd} ações).")}
 
 
 def _caminho_livre(caminho):
@@ -2248,13 +2772,13 @@ def api_html(filtros=None, devolver_conteudo=False):
         if dados["vazio"]:
             return {"ok": False, "mensagem": "Nenhuma ação com os filtros "
                                              "escolhidos: HTML não gerado."}
-        html = gerar_html_resumo_acoes(caminho_base, dados)
+        html = gerar_html_resumo_acoes(caminho_base, dados, filtros or {})
         if devolver_conteudo:
             return {"ok": True, "html": html,
                     "mensagem": "HTML aberto em uma nova aba."}
         sufixo = "_Filtrado" if dados["filtrado"] else ""
         nome = ("Acoes_em_Monitoramento_"
-                f"{datetime.now():%d-%m-%Y_%Hh%Mmin}{sufixo}.html")
+                f"{datetime.now():%d-%m-%Y_%Hh%Mmin%Ss}{sufixo}.html")  # segundos: 2 no mesmo minuto não se sobrescrevem
         caminho = _caminho_livre(os.path.join(pasta_downloads(), nome))
         with open(caminho, "w", encoding="utf-8") as f:
             f.write(html)
@@ -2274,6 +2798,7 @@ HTML_JANELA = r"""
         <small>base Ações do Cronograma</small></h2>
       <div class="ra-botoes">
         <button type="button" class="ra-inicio" id="raInicio" title="Voltar à tela inicial">← Início</button>
+        <button type="button" id="raConder" title="Baixa agora a planilha Ações do Cronograma do serviço da CONDER (o mesmo conteúdo do botão Exportar para planilha do site app.conder.ba.gov.br/cronogramaacoes)">ATUALIZAR DA CONDER</button>
         <button type="button" id="raHtml" title="Gera uma página HTML com o gráfico de investimento dos 30 maiores municípios por população, a avaliação da carteira e o quadro Status × Eixo do recorte atual">GERAR HTML</button>
         <button type="button" id="raIncluirApresentacao" title="Abre a Apresentação CGAPE (HTML) já com as páginas do Monitoramento marcadas — você escolhe quais páginas do PAC entram junto">INCLUIR NA APRESENTAÇÃO</button>
         <button type="button" id="raGerar" title="Lê de novo a planilha Ações do Cronograma e gera o slide em Downloads">GERAR APRESENTAÇÃO</button>
@@ -2281,6 +2806,12 @@ HTML_JANELA = r"""
       </div>
     </div>
     <div class="ra-corpo">
+      <div class="ra-busca-geral">
+        <input type="search" id="raBuscaGeral" autocomplete="off"
+          placeholder="Buscar em todas as colunas da base (código, ação, município, executor, objeto, observações…)"
+          title="Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha Ações do Cronograma">
+        <button type="button" id="raBuscaGeralLimpar" title="Limpar a busca">×</button>
+      </div>
       <div class="ra-filtros" id="raFiltros"></div>
       <div class="ra-msg" id="raMsg"></div>
       <div id="raQuadro"></div>
@@ -2315,7 +2846,7 @@ HTML_JANELA = r"""
     border-color:var(--cor-acento-teal); font-weight:700; }
   #raGerar:hover, #raXlsx:hover { background:var(--cor-acento-teal-hover);
     color:#fff; }
-  #raGerar:disabled, #raXlsx:disabled, #raHtml:disabled { opacity:.6; cursor:default; }
+  #raGerar:disabled, #raXlsx:disabled, #raHtml:disabled, #raConder:disabled { opacity:.6; cursor:default; }
   .ra-corpo { flex:1; overflow:auto; padding:14px 18px 40px; }
   .ra-msg { font-size:13px; color:var(--cor-texto-secundario); min-height:18px;
     margin-bottom:10px; }
@@ -2458,7 +2989,7 @@ HTML_JANELA = r"""
   .ra-data-campos input { flex:1; min-width:0; background:var(--cor-fundo);
     color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado);
     border-radius:6px; padding:3px 6px; font-size:12px; font-family:inherit; }
-  html:not([data-tema="claro"]) .ra-data-campos input { color-scheme:dark; }
+  html[data-tema="escuro"] .ra-data-campos input { color-scheme:dark; }
   #raTabela { margin-top:18px; }
   .ra-tabela-topo { display:flex; align-items:center; gap:12px; margin-bottom:8px;
     font-size:12px; color:var(--cor-texto-secundario); }
@@ -2480,6 +3011,28 @@ HTML_JANELA = r"""
   .ra-acoes th.ra-col-filtro { color:var(--cor-acento-teal-texto);
     box-shadow:inset 0 -2px 0 var(--cor-acento-teal); }
   .ra-mais { display:block; margin:10px auto 0; }
+  /* Buscas digitadas (pedido do usuário em 17/11/2026) */
+  .ra-busca-geral { position:relative; margin-bottom:10px; }
+  #raBuscaGeral { width:100%; box-sizing:border-box; background:var(--cor-card);
+    color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado);
+    border-radius:8px; padding:10px 36px 10px 38px; font-size:13px; font-family:inherit;
+    box-shadow:var(--sombra-card); outline:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23889' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:12px center; }
+  #raBuscaGeral::-webkit-search-cancel-button { display:none; }
+  #raBuscaGeral:focus, .ra-busca-geral.ativo #raBuscaGeral { border-color:var(--cor-acento-teal); }
+  #raBuscaGeralLimpar { position:absolute; right:8px; top:50%; transform:translateY(-50%);
+    background:none; border:none; color:var(--cor-texto-secundario); font-size:18px;
+    line-height:1; cursor:pointer; padding:2px 6px; display:none; }
+  .ra-busca-geral.ativo #raBuscaGeralLimpar { display:block; }
+  .ra-acoes th .ra-col-busca { display:block; width:100%; min-width:70px; box-sizing:border-box;
+    margin-top:5px; background:var(--cor-fundo); color:var(--cor-texto-primario);
+    border:1px solid var(--cor-texto-terciario); border-radius:5px; padding:3px 6px;
+    font-size:11.5px; font-weight:400; font-family:inherit; cursor:text; outline:none; }
+  .ra-acoes th .ra-col-busca:focus, .ra-acoes th .ra-col-busca.ativo {
+    border-color:var(--cor-acento-teal); }
+  .ra-acoes td.ra-sem-linhas { text-align:center; padding:18px; white-space:normal;
+    color:var(--cor-texto-secundario); }
 </style>
 <script>
 (function () {
@@ -2488,6 +3041,10 @@ HTML_JANELA = r"""
       return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
     });
   }
+  // Status sem o prefixo numérico ("03 - Em obras" -> "Em obras") SÓ na
+  // escrita — o valor completo segue sendo usado pra ordenar e filtrar
+  // (pedido do usuário em 17/11/2026).
+  function semNum(t) { return String(t == null ? "" : t).replace(/^\d+\s*-\s*/, ""); }
   function norm(t) {
     return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   }
@@ -2582,7 +3139,7 @@ HTML_JANELA = r"""
       caixa.checked = marcados.indexOf(o.v) >= 0;
       caixa.onchange = function (e) { e.stopPropagation(); raAlternar(f.chave, o.v, caixa.checked); };
       var nome = document.createElement("span");
-      nome.textContent = o.v;
+      nome.textContent = f.chave === "status" ? semNum(o.v) : o.v;
       var qtd = document.createElement("small");
       qtd.textContent = o.n;
       rotulo.append(caixa, nome, qtd);
@@ -2599,7 +3156,7 @@ HTML_JANELA = r"""
       var chip = document.createElement("span");
       chip.className = "ra-chip";
       var nome = document.createElement("span");
-      nome.textContent = v; nome.title = v;
+      nome.textContent = f.chave === "status" ? semNum(v) : v; nome.title = nome.textContent;
       var x = document.createElement("button");
       x.type = "button"; x.textContent = "×"; x.title = "Remover";
       x.onclick = function (e) { e.stopPropagation(); raAlternar(f.chave, v, false); };
@@ -2715,6 +3272,7 @@ HTML_JANELA = r"""
     document.getElementById("raEntregueRotulo").classList.toggle("ativo", !!raFiltros.entregue);
     document.getElementById("raLimpar").style.visibility =
       raChavesFiltro().length ? "visible" : "hidden";
+    raSincronizarBuscaGeral();
   }
 
   // ---- tabela das ações do recorte ----------------------------------------
@@ -2723,11 +3281,53 @@ HTML_JANELA = r"""
   var raTab = {col: null, dir: 1, limite: 200};
   var RA_PASSO = 200;
   var raBRL = new Intl.NumberFormat("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  // Buscas digitadas (pedido do usuário em 17/11/2026): geral (todas as
+  // colunas da base, raFiltros.busca) e por coluna da tabela (raFiltros.bcol
+  // = {rótulo: texto}). O filtro em si é feito no Python (resumo_acoes_dados),
+  // então cards, quadros, tabela, Excel e HTML seguem o mesmo recorte.
+  var raBuscaTimer = null;
+  function raConsultarDepois() {
+    clearTimeout(raBuscaTimer);
+    raBuscaTimer = setTimeout(raConsultar, 350);
+  }
+  function raTemBuscaColuna() {
+    return !!(raFiltros.bcol && Object.keys(raFiltros.bcol).length);
+  }
+  function raDefinirBuscaColuna(rot, texto) {
+    var b = raFiltros.bcol || {};
+    if (texto.trim()) b[rot] = texto; else delete b[rot];
+    if (Object.keys(b).length) raFiltros.bcol = b; else delete raFiltros.bcol;
+    raConsultarDepois();
+  }
+  (function () {
+    var caixa = document.getElementById("raBuscaGeral");
+    var limpar = document.getElementById("raBuscaGeralLimpar");
+    if (!caixa) return;
+    function aplicar(texto) {
+      if (texto.trim()) raFiltros.busca = texto; else delete raFiltros.busca;
+      caixa.parentNode.classList.toggle("ativo", !!texto.trim());
+    }
+    caixa.oninput = function () { aplicar(caixa.value); raConsultarDepois(); };
+    caixa.onkeydown = function (e) {
+      if (e.key === "Enter") { clearTimeout(raBuscaTimer); raConsultar(); }
+      if (e.key === "Escape" && caixa.value) { e.stopPropagation(); caixa.value = ""; aplicar(""); raConsultar(); }
+    };
+    limpar.onclick = function () { caixa.value = ""; aplicar(""); raConsultar(); caixa.focus(); };
+  })();
+  function raSincronizarBuscaGeral() {
+    var caixa = document.getElementById("raBuscaGeral");
+    if (!caixa) return;
+    if (document.activeElement !== caixa) caixa.value = raFiltros.busca || "";
+    caixa.parentNode.classList.toggle("ativo", !!(raFiltros.busca || "").trim());
+  }
+
   function raTabelaAtualizar(d) {
     var alvo = document.getElementById("raTabela");
     raIds = d.vazio ? [] : d.ids;
     raTab.limite = RA_PASSO;
-    if (!raIds.length) { alvo.innerHTML = ""; return; }
+    // com busca por coluna, a tabela fica mesmo vazia (senão some o campo
+    // onde se digitou)
+    if (!raIds.length && !raTemBuscaColuna()) { alvo.innerHTML = ""; return; }
     if (raBase && raBaseVersao === d.versao) { raTabelaDesenhar(); return; }
     alvo.innerHTML = '<div class="ra-msg">Carregando a lista de ações…</div>';
     if (raBasePedido === d.versao) return;
@@ -2750,11 +3350,18 @@ HTML_JANELA = r"""
       var p = v ? v.split("-") : null;
       return '<td class="centro">' + (p ? p[2] + "/" + p[1] + "/" + p[0] : "–") + "</td>";
     }
+    if (c.filtro === "status") v = semNum(v);
     return "<td>" + (v ? esc(v) : "–") + "</td>";
   }
   function raTabelaDesenhar() {
     var alvo = document.getElementById("raTabela");
-    if (!raBase || !raIds.length) { alvo.innerHTML = ""; return; }
+    if (!raBase || (!raIds.length && !raTemBuscaColuna())) { alvo.innerHTML = ""; return; }
+    // campo de busca da coluna em uso: volta com o foco e o cursor no lugar
+    var focado = document.activeElement, focoRot = null, focoIni = 0, focoFim = 0;
+    if (focado && focado.classList && focado.classList.contains("ra-col-busca") && alvo.contains(focado)) {
+      focoRot = focado.dataset.rot; focoIni = focado.selectionStart; focoFim = focado.selectionEnd;
+    }
+    var bcol = raFiltros.bcol || {};
     var cols = raBase.colunas, L = raBase.linhas;
     var ids = raIds.slice();
     if (raTab.col !== null) {
@@ -2769,10 +3376,14 @@ HTML_JANELA = r"""
     }
     var cab = cols.map(function (c, i) {
       var classe = (c.tipo === "valor" ? "dir" : (c.tipo === "data" ? "centro" : "")) +
-        ((c.filtro && raFiltros[c.filtro]) || (c.filtro === "municipio" && raFiltros.top30)
-          ? " ra-col-filtro" : "");
+        ((c.filtro && raFiltros[c.filtro]) || (c.filtro === "municipio" && raFiltros.top30) ||
+         bcol[c.rotulo] ? " ra-col-filtro" : "");
+      var termo = bcol[c.rotulo] || "";
       return '<th class="' + classe + '" data-col="' + i + '" title="Ordenar">' + esc(c.rotulo) +
-        (raTab.col === i ? (raTab.dir > 0 ? " ▲" : " ▼") : "") + "</th>";
+        (raTab.col === i ? (raTab.dir > 0 ? " ▲" : " ▼") : "") +
+        '<input type="text" class="ra-col-busca' + (termo ? " ativo" : "") + '" data-rot="' + esc(c.rotulo) +
+        '" value="' + esc(termo) + '" placeholder="Buscar…" autocomplete="off" title="Buscar só nesta coluna">' +
+        "</th>";
     }).join("");
     var vis = ids.slice(0, raTab.limite);
     var corpo = vis.map(function (id, n) {
@@ -2784,9 +3395,26 @@ HTML_JANELA = r"""
       ")</b><span>Colunas destacadas: filtros em uso. Clique no cabeçalho para ordenar.</span>" +
       '<button type="button" id="raXlsx" title="Grava em Downloads a planilha das ações filtradas">EXPORTAR EXCEL</button></div>' +
       '<div class="ra-tabela-wrap"><table class="ra-acoes"><thead><tr><th class="centro">#</th>' + cab +
-      "</tr></thead><tbody>" + corpo + "</tbody></table></div>" +
+      "</tr></thead><tbody>" + (corpo || '<tr><td class="ra-sem-linhas" colspan="' + (cols.length + 1) +
+        '">Nenhuma ação com a busca e os filtros escolhidos.</td></tr>') + "</tbody></table></div>" +
       (resto > 0 ? '<button type="button" class="ra-mais">Mostrar mais ' + Math.min(RA_PASSO, resto) +
         " (faltam " + resto.toLocaleString("pt-BR") + ")</button>" : "");
+    alvo.querySelectorAll(".ra-col-busca").forEach(function (inp) {
+      inp.onclick = function (e) { e.stopPropagation(); };
+      inp.onkeydown = function (e) {
+        e.stopPropagation();
+        if (e.key === "Enter") { clearTimeout(raBuscaTimer); raConsultar(); }
+        if (e.key === "Escape" && inp.value) { inp.value = ""; raDefinirBuscaColuna(inp.dataset.rot, ""); }
+      };
+      inp.oninput = function () {
+        inp.classList.toggle("ativo", !!inp.value.trim());
+        raDefinirBuscaColuna(inp.dataset.rot, inp.value);
+      };
+      if (focoRot !== null && inp.dataset.rot === focoRot) {
+        inp.focus();
+        try { inp.setSelectionRange(focoIni, focoFim); } catch (e) { /* ignora */ }
+      }
+    });
     alvo.querySelectorAll("th[data-col]").forEach(function (th) {
       th.onclick = function () {
         var i = +th.dataset.col;
@@ -2818,7 +3446,7 @@ HTML_JANELA = r"""
       return;
     }
     var linha = function (l, classeExtra) {
-      return "<td>" + esc(l.status) + "</td>" +
+      return "<td>" + esc(semNum(l.status)) + "</td>" +
         l.celulas.map(function (c) { return raCelula(c, classeExtra); }).join("") +
         raCelula(l.total, "tot");
     };
@@ -2848,7 +3476,7 @@ HTML_JANELA = r"""
       return raCelula(c, cl.trim());
     };
     var linha = function (l, classeExtra) {
-      return "<td>" + esc(l.status) + "</td>" +
+      return "<td>" + esc(semNum(l.status)) + "</td>" +
         l.celulas.map(function (c, i) { return cel(c, i, classeExtra); }).join("") +
         raCelula(l.total, "tot ra-ini-grupo");
     };
@@ -2923,6 +3551,22 @@ HTML_JANELA = r"""
   document.getElementById("raFechar").onclick = fechar;
   document.getElementById("raGerar").onclick = raGerar;
   document.getElementById("raHtml").onclick = raHtml;
+  // "ATUALIZAR DA CONDER" (pedido do usuário em 17/11/2026): baixa a base
+  // do serviço da CONDER e relê tudo (a tabela recarrega pela versão nova)
+  document.getElementById("raConder").onclick = function () {
+    var msg = document.getElementById("raMsg");
+    var botao = document.getElementById("raConder");
+    botao.disabled = true;
+    msg.textContent = "Baixando a planilha do serviço da CONDER (leva uns 30 segundos)…";
+    api("resumo_acoes_atualizar_conder").then(function (r) {
+      if (!r.ok) { msg.textContent = r.mensagem; return; }
+      raBase = null; raBaseVersao = null;
+      raConsultar();
+      setTimeout(function () { msg.textContent = r.mensagem; }, 1500);
+    }).catch(function (e) {
+      msg.textContent = "Erro ao atualizar pela CONDER: " + e;
+    }).finally(function () { botao.disabled = false; });
+  };
   // "INCLUIR NA APRESENTAÇÃO" — abre a mesma janela de seleção de slides
   // da Apresentação CGAPE (definida no script do painel, injetado nesta
   // mesma página — ver window.abrirApresentacaoComMonitoramento em "CGAPE
