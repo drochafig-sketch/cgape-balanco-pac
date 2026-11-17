@@ -9629,7 +9629,18 @@ body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE
   .home-cartoes {{ flex-direction:column; align-items:center; }}
   .home-cartao {{ width:100%; max-width:320px; }}
 }}
+/* Tema escuro escolhido no dash (botão sol/lua) também vale aqui, sem botão
+   próprio — pedido do usuário em 17/11/2026; mesmos valores dos tokens
+   escuros do dash (montar_html_painel). */
+html[data-tema="escuro"] {{ color-scheme:dark; }}
+html[data-tema="escuro"] body {{ background:#0A1628; color:#EAF0F7; }}
+html[data-tema="escuro"] .home-cartao {{ background:#13233B; border-color:#1C304D; }}
+html[data-tema="escuro"] .home-cartao:hover, html[data-tema="escuro"] .home-cartao:focus-visible {{ border-color:#7DBBF3; }}
+html[data-tema="escuro"] .home-cartao-rotulo {{ color:#EAF0F7; }}
+html[data-tema="escuro"] .home-cartao-sub, html[data-tema="escuro"] .home-cartao-data {{ color:#AEBBCD; }}
+html[data-tema="escuro"] .home-cartao-icone {{ color:#7DBBF3; }}
 </style>
+<script>try{{if(localStorage.getItem("cgapeTema")==="escuro")document.documentElement.setAttribute("data-tema","escuro");}}catch(e){{}}</script>
 </head>
 <body>
 <div class="ivp-cabecalho">
@@ -9899,6 +9910,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
      realmente entrarem em vigor no celular, em vez de nunca disparar. -->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CGAPE - BALANÇO PAC</title>
+<!-- Tema escolhido (claro/escuro) aplicado ANTES do primeiro paint, sem
+     piscar o claro — pedido do usuário em 17/11/2026. Ver alternarTema(). -->
+<script>try{if(localStorage.getItem("cgapeTema")==="escuro")document.documentElement.setAttribute("data-tema","escuro");}catch(e){}</script>
 <style>
   :root {
     /* Identidade visual única do projeto (ver identidade_visual.py) —
@@ -9938,6 +9952,32 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     --transicao-rapida: 0.15s ease;
     --transicao-padrao: 0.25s ease-in-out;
     --fonte: 'Roboto', 'Segoe UI', Arial, sans-serif;
+  }
+  /* Tema ESCURO como opção (pedido do usuário em 17/11/2026) — o claro
+     continua o padrão. Mesma estratégia dos tokens acima: nomes mantidos,
+     só os VALORES mudam. Fundo na família do azul-marinho #0B1F3F do
+     cabeçalho, cards um degrau mais claros, texto quase branco, azul de
+     acento clareado (fundo de botão com texto branco ≥ 4,5:1) e um azul
+     próprio "só pra texto" (teal-texto/mint-texto), laranja mantido.
+     Contrastes WCAG AA conferidos (ver mensagem do commit). Ligado por
+     data-tema="escuro" no <html>, aplicado no <head> antes do 1º paint. */
+  html[data-tema="escuro"] {
+    color-scheme: dark;
+    --cor-fundo: #0A1628;
+    --cor-card: #13233B;
+    --cor-card-elevado: #1C304D;
+    --cor-texto-primario: #EAF0F7;
+    --cor-texto-secundario: #AEBBCD;
+    --cor-texto-terciario: #8D9CB2;
+    --cor-acento-mint: #2371C6;
+    --cor-acento-teal: #2371C6;
+    --cor-acento-teal-hover: #2D80D8;
+    --cor-acento-peach: #E68A00;
+    --cor-acento-gold: #4FA3E0;
+    --cor-acento-gold-claro: #C9D6EA;
+    --cor-acento-teal-texto: #7DBBF3;
+    --cor-acento-mint-texto: #7DBBF3;
+    --sombra-card: 0 4px 16px rgba(0, 0, 0, 0.45);
   }
 
   * { box-sizing: border-box; }
@@ -11134,6 +11174,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     padding: 7px 14px;
     box-shadow: none;
   }
+  /* Com o botão sol/lua (17/11/2026) a fileira não cabia mais numa linha
+     em ~1366px: espaçamento um pouco menor só nessa faixa de largura. */
+  @media (min-width: 769px) and (max-width: 1500px) {
+    .modal-titulo-botoes { gap: 3px; }
+    .modal-titulo-botoes .btn, .modal-titulo-botoes .btn-acento { padding-left: 10px; padding-right: 10px; }
+  }
   /* --- Acesso Rápido: botão de ícone (grade 2x2) que abre um menu com os
      atalhos FILTROS e PUBLICAR — mesmo componente nas duas
      barras (painel de filtros e dash), sempre no fim da fileira de
@@ -11195,6 +11241,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .acesso-rapido-item svg { flex-shrink: 0; }
   .acesso-rapido-item:hover { background: var(--cor-card-elevado); }
   .acesso-rapido-item:disabled { opacity: 0.5; }
+  /* Botão sol/lua (pedido do usuário em 17/11/2026): mostra a lua no claro
+     (ativar escuro) e o sol no escuro (voltar ao claro). */
+  html.tema-trocando, html.tema-trocando * { transition: none !important; }
+  .botao-tema .icone-sol { display: none; }
+  html[data-tema="escuro"] .botao-tema .icone-sol { display: inline-flex; }
+  html[data-tema="escuro"] .botao-tema .icone-lua { display: none; }
+  .botao-tema span { display: inline-flex; }
+  .botao-tema:focus-visible { outline: 2px solid var(--cor-acento-teal-texto); outline-offset: 2px; }
 
   /* --- Linha de filtro rápido por Secretaria/Órgão + Executor, no
      cabeçalho do dashboard. O separador verde e as pills de Executor só
@@ -11393,7 +11447,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     border-radius: var(--raio-sm);
     padding: 10px 14px;
     margin-bottom: 16px;
-    font-size: 12.5px;
+    font-size: 14px;
     color: var(--cor-texto-primario);
   }
   #preview-nota-secretaria b { color: var(--cor-acento-mint-texto); }
@@ -11449,7 +11503,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     text-align: center;
   }
   .preview-card-resumo .rotulo {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--cor-texto-secundario);
     text-transform: uppercase;
@@ -11498,7 +11552,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     gap: 7px;
     cursor: pointer;
     flex-shrink: 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--cor-texto-secundario);
     user-select: none;
   }
@@ -11597,7 +11651,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     line-height: 1.3;
   }
   .grafico-legenda-rotulo {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--cor-texto-secundario);
   }
   .grafico-legenda-qtd-mini {
@@ -11611,7 +11665,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     color: var(--cor-acento-mint-texto);
   }
   .grafico-legenda-pct {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 400;
     color: var(--cor-texto-terciario);
   }
@@ -11635,7 +11689,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     border-radius: var(--raio-sm);
   }
   .tooltip-objetos-titulo {
-    font-size: 10.5px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--cor-acento-teal-texto);
     text-transform: uppercase;
@@ -11650,7 +11704,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     gap: 10px;
   }
   .tooltip-objetos-titulo-com-valor .tooltip-objetos-valor {
-    font-size: 11px;
+    font-size: 12px;
   }
   .tooltip-objetos-item {
     display: flex;
@@ -11658,7 +11712,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     align-items: baseline;
     gap: 10px;
     padding: 3px 0;
-    font-size: 11px;
+    font-size: 12px;
   }
   .tooltip-objetos-nome {
     color: var(--cor-texto-primario);
@@ -11694,7 +11748,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .cards-acoes-fechar:hover { color: var(--cor-texto-primario); }
   .cards-acoes-corpo { overflow-y: auto; padding: 18px 22px 22px; display: grid; gap: 16px;
     grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); align-content: start; }
-  .cards-vazio { color: var(--cor-texto-secundario); font-size: 13px; }
+  .cards-vazio { color: var(--cor-texto-secundario); font-size: 14px; }
   .cards-acao { background: var(--cor-card); border: 1px solid var(--cor-card-elevado);
     border-top: 4px solid var(--cor-acento-teal); border-radius: 10px; padding: 16px 18px; cursor: pointer;
     display: flex; flex-direction: column; gap: 12px; transition: box-shadow .15s, border-color .15s; }
@@ -11707,14 +11761,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .cards-municipio { font-size: 13px; color: var(--cor-texto-secundario); }
   .cards-icone-local { display: inline-flex; color: var(--cor-acento-teal-texto); flex-shrink: 0; }
   .cards-executor { font-size: 12px; color: var(--cor-texto-terciario); margin-top: 3px; }
-  .cards-descricao { font-size: 13px; line-height: 1.35; display: -webkit-box;
+  .cards-descricao { font-size: 14px; line-height: 1.35; display: -webkit-box;
     -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .cards-gauge { flex-shrink: 0; color: var(--cor-texto-primario); }
   .cards-sem-gauge { width: 76px; height: 76px; display: flex; align-items: center; justify-content: center;
-    text-align: center; font-size: 10.5px; font-weight: 700; color: var(--cor-texto-terciario); line-height: 1.3; }
+    text-align: center; font-size: 12px; font-weight: 700; color: var(--cor-texto-terciario); line-height: 1.3; }
   .cards-rodape { display: flex; justify-content: space-between; gap: 10px; margin-top: auto;
     border-top: 1px solid var(--cor-card-elevado); padding-top: 10px; }
-  .cards-destaque-rotulo { font-size: 10.5px; font-weight: 700; color: var(--cor-texto-secundario);
+  .cards-destaque-rotulo { font-size: 12px; font-weight: 700; color: var(--cor-texto-secundario);
     text-transform: uppercase; }
   .cards-destaque-valor { font-size: 14.5px; font-weight: 700; margin-top: 2px; }
   .cards-destaque-investimento { font-size: 18px; font-weight: 900; color: var(--cor-acento-teal-texto);
@@ -11744,7 +11798,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     filter: brightness(1.15);
   }
   .grafico-barra-valor {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--cor-texto-primario);
     margin-bottom: 4px;
@@ -11761,7 +11815,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     transition: height var(--transicao-padrao);
   }
   .grafico-barra-rotulo {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--cor-texto-secundario);
     margin-top: 6px;
     text-align: center;
@@ -11789,7 +11843,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .cl-dash-kpi { background: var(--cor-card); border-radius: var(--raio-md); box-shadow: var(--sombra-card);
     border-top: 4px solid; padding: 12px 16px; }
   .cl-dash-kpi-valor { font-size: 26px; font-weight: 700; }
-  .cl-dash-kpi-rotulo { font-size: 11px; font-weight: 700; color: var(--cor-texto-secundario);
+  .cl-dash-kpi-rotulo { font-size: 12px; font-weight: 700; color: var(--cor-texto-secundario);
     text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
   .cl-dash-kpi-sub { font-size: 12px; color: var(--cor-texto-terciario); margin-top: 2px; }
   .cl-dash-legenda { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12px; color: var(--cor-texto-secundario);
@@ -11804,15 +11858,15 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .cl-dash-eixo-btn { width: 22px; height: 22px; border-radius: 50%; background: var(--cor-card-elevado);
     color: var(--cor-texto-primario); display: inline-flex; align-items: center; justify-content: center;
     font-size: 14px; font-weight: 700; flex-shrink: 0; }
-  .cl-dash-eixo-prazo { font-size: 11px; font-weight: 700; }
+  .cl-dash-eixo-prazo { font-size: 12px; font-weight: 700; }
   .cl-dash-grade.cl-dash-recolhido { display: none; }
   .cl-dash-vig { position: relative; overflow: hidden; display: flex; justify-content: space-between; align-items: center;
     gap: 10px; margin-top: 10px; border: 1px solid; border-left-width: 4px; border-radius: var(--raio-md); padding: 7px 10px; }
   .cl-dash-vig-fundo { position: absolute; inset: 0; opacity: 0.10; pointer-events: none; }
   .cl-dash-vig > :not(.cl-dash-vig-fundo) { position: relative; }
-  .cl-dash-vig-rotulo { font-size: 10px; font-weight: 700; color: var(--cor-texto-secundario); text-transform: uppercase; }
+  .cl-dash-vig-rotulo { font-size: 12px; font-weight: 700; color: var(--cor-texto-secundario); text-transform: uppercase; }
   .cl-dash-vig-data { font-size: 20px; font-weight: 800; line-height: 1.15; }
-  .cl-dash-vig-selo { color: #fff; font-size: 11px; font-weight: 700; border-radius: 12px; padding: 4px 10px; white-space: nowrap; }
+  .cl-dash-vig-selo { color: #fff; font-size: 12px; font-weight: 700; border-radius: 12px; padding: 4px 10px; white-space: nowrap; }
   .cl-dash-eixo-nome { font-size: 14px; font-weight: 700; color: var(--cor-texto-primario); text-transform: uppercase; }
   .cl-dash-eixo-resumo { font-size: 12px; font-weight: 700; color: var(--cor-acento-mint-texto); white-space: nowrap; }
   .cl-dash-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
@@ -11824,18 +11878,18 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .cl-dash-municipio { font-size: 12px; color: var(--cor-texto-secundario); margin-top: 2px; }
   .cl-dash-valor { font-size: 15px; font-weight: 700; color: var(--cor-acento-mint-texto); white-space: nowrap; }
   .cl-dash-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
-  .cl-dash-chip { font-size: 10px; font-weight: 700; color: var(--cor-texto-secundario); background: var(--cor-card-elevado);
+  .cl-dash-chip { font-size: 12px; font-weight: 700; color: var(--cor-texto-secundario); background: var(--cor-card-elevado);
     border-radius: 10px; padding: 2px 8px; text-transform: uppercase; }
   .cl-dash-vigencia { font-size: 12px; font-weight: 700; margin-top: 8px; }
-  .cl-dash-motivo-rotulo { font-size: 10px; font-weight: 700; color: var(--cor-texto-terciario); text-transform: uppercase;
+  .cl-dash-motivo-rotulo { font-size: 12px; font-weight: 700; color: var(--cor-texto-terciario); text-transform: uppercase;
     margin-top: 8px; }
-  .cl-dash-motivo { font-size: 12px; color: var(--cor-texto-primario); line-height: 1.35; margin-top: 2px; white-space: pre-line;
+  .cl-dash-motivo { font-size: 14px; color: var(--cor-texto-primario); line-height: 1.35; margin-top: 2px; white-space: pre-line;
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .cl-dash-sem-motivo { color: var(--cor-texto-terciario); font-style: italic; margin-top: 8px; }
   /* filtro de fase da seção (seleção múltipla; nenhuma marcada = todas) */
   .cl-dash-filtro { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
   .cl-dash-filtro-rotulo { font-size: 12px; font-weight: 700; color: var(--cor-texto-primario); margin-right: 2px; }
-  .cl-dash-filtro button { font-family: var(--fonte); font-size: 11px; font-weight: 700; text-transform: uppercase;
+  .cl-dash-filtro button { font-family: var(--fonte); font-size: 12px; font-weight: 700; text-transform: uppercase;
     background: transparent; color: var(--cor-texto-secundario); border: 1px solid var(--cor-card-elevado);
     border-radius: 12px; padding: 4px 11px; }
   .cl-dash-filtro button.ativo { background: var(--cor-acento-teal); border-color: var(--cor-acento-teal); color: #fff; }
@@ -11844,35 +11898,114 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 
   .preview-sem-dados {
     color: var(--cor-texto-terciario);
-    font-size: 12px;
+    font-size: 14px;
     text-align: center;
     padding: 30px 0;
   }
 
+  /* Seções do dash como cards numerados (pedido do usuário em 17/11/2026):
+     faixa de cabeçalho com barra à esquerda, número, título e descrição;
+     corpo no tom de fundo, para os cards de dentro continuarem destacados.
+     Recolher/expandir em qualquer largura (configurarAccordionSecoes). */
+  .preview-secao {
+    background: var(--cor-card);
+    border-radius: var(--raio-lg);
+    box-shadow: var(--sombra-card);
+    margin-top: 32px;
+    overflow: hidden;
+    scroll-margin-top: 64px;
+  }
+  .preview-secao:first-of-type { margin-top: 8px; }
   .preview-secao-titulo {
-    margin: 26px 0 14px 0;
-    padding-top: 18px;
-    border-top: 1px solid var(--cor-card-elevado);
-    font-size: 13px;
-    font-weight: 700;
+    margin: 0;
+    padding: 16px 20px 16px 18px;
+    background: var(--cor-card-elevado);
+    border-left: 5px solid var(--cor-acento-teal);
     color: var(--cor-texto-primario);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 16px;
+    cursor: pointer;
+    user-select: none;
   }
-  /* Seta de abrir/fechar seção no celular — some no desktop (seção sempre
-     aberta ali). Ver .preview-secao no @media (max-width: 768px). */
+  .preview-secao-titulo:focus-visible { outline: 2px solid var(--cor-acento-teal-texto); outline-offset: -2px; }
+  .secao-num {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--cor-acento-gold);
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+    min-width: 30px;
+  }
+  .secao-textos { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .secao-nome {
+    font-size: 21px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+  }
+  .secao-desc {
+    font-size: 13.5px;
+    font-weight: 400;
+    color: var(--cor-texto-secundario);
+    line-height: 1.4;
+  }
   .secao-seta {
-    display: none;
+    display: inline-block;
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 22px;
+    color: var(--cor-texto-secundario);
+    transition: transform var(--transicao-rapida);
   }
+  .preview-secao.secao-colapsada .secao-seta { transform: rotate(-90deg); }
+  .preview-secao.secao-colapsada .preview-secao-corpo { display: none; }
+  .preview-secao-corpo {
+    background: var(--cor-fundo);
+    padding: 20px 20px 24px;
+  }
+  /* Barra de atalhos, fixa no topo da área que rola */
   .preview-nav-rapida {
-    display: none;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    position: sticky;
+    top: -24px;
+    z-index: 5;
+    margin: -24px -32px 4px;
+    padding: 12px 32px;
+    background: var(--cor-fundo);
+    border-bottom: 1px solid var(--cor-card-elevado);
+    scrollbar-width: thin;
   }
+  .preview-nav-rapida button {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--cor-card);
+    color: var(--cor-texto-primario);
+    border: 1px solid var(--cor-card-elevado);
+    border-radius: 18px;
+    padding: 6px 14px;
+    font-family: var(--fonte);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background var(--transicao-rapida), border-color var(--transicao-rapida);
+  }
+  .preview-nav-rapida button:hover { border-color: var(--cor-acento-teal-texto); }
+  .preview-nav-rapida button .nav-num { font-weight: 800; color: var(--cor-acento-gold); }
+  .preview-nav-rapida button.ativo {
+    background: var(--cor-acento-teal);
+    border-color: var(--cor-acento-teal);
+    color: #fff;
+  }
+  .preview-nav-rapida button.ativo .nav-num { color: #fff; opacity: 0.85; }
   .preview-texto-explicativo {
-    font-size: 12px;
+    font-size: 14px;
     color: var(--cor-texto-secundario);
     line-height: 1.5;
     margin: -6px 0 14px 0;
@@ -11882,7 +12015,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     flex-wrap: wrap;
     gap: 14px;
     margin: -6px 0 12px 0;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--cor-texto-secundario);
   }
   .preview-legenda-fases-item {
@@ -11903,7 +12036,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     gap: 12px;
   }
   .preview-gestao-subtitulo {
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--cor-acento-teal-texto);
     text-transform: uppercase;
@@ -11979,7 +12112,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     min-width: 68px;
   }
   .preview-mini-card .grafico-legenda {
-    font-size: 11.5px;
+    font-size: 12px;
     gap: 5px;
   }
   .preview-mini-card .grafico-legenda-bolinha {
@@ -11988,7 +12121,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     min-width: 7px;
   }
   .preview-mini-card .grafico-legenda-rotulo {
-    font-size: 11px;
+    font-size: 12px;
   }
   .preview-mini-card .grafico-legenda-qtd-mini {
     font-size: 12.5px;
@@ -11997,7 +12130,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     font-size: 13.5px;
   }
   .preview-mini-card .grafico-legenda-pct {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .grafico-secretaria-legenda {
@@ -12005,7 +12138,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     flex-wrap: wrap;
     gap: 14px;
     margin-bottom: 10px;
-    font-size: 10.5px;
+    font-size: 12px;
     color: var(--cor-texto-secundario);
   }
   .grafico-secretaria-legenda-item {
@@ -12054,7 +12187,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .grafico-secretaria-qtd {
     font-weight: 400;
     color: var(--cor-texto-terciario);
-    font-size: 11px;
+    font-size: 12px;
     text-decoration: none;
   }
   .grafico-secretaria-barra-trilha {
@@ -12112,7 +12245,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     cursor: grabbing;
   }
   .preview-mapa-wrap polygon {
-    stroke: #fff;
+    stroke: var(--cor-card);   /* branco no claro; escuro no tema escuro */
     stroke-width: 0.4;
   }
   .preview-mapa-poligono-com-dado {
@@ -12120,7 +12253,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     transition: var(--transicao-rapida);
   }
   .preview-mapa-poligono-com-dado:hover {
-    stroke: var(--cor-acento-teal);
+    stroke: var(--cor-acento-teal-texto);
     stroke-width: 1.4;
   }
   .preview-mapa-controles {
@@ -12242,55 +12375,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       grid-template-columns: repeat(2, 1fr);
     }
 
-    /* --- Seções recolhíveis (Panorama por Secretaria, Índice de
-       Desempenho, Detalhamento Financeiro, Mapa) — mesmo padrão de
-       acordeão dos filtros, ver configurarAccordionSecoes() no JS. Todas
-       começam fechadas: é o que reduz a rolagem gigante que só empilhar
-       tudo em 1 coluna criava. --- */
-    .preview-secao-titulo {
-      cursor: pointer;
-    }
-    .secao-seta {
-      display: inline-block;
-      font-size: 12px;
-      color: var(--cor-texto-terciario);
-      transition: transform var(--transicao-rapida);
-    }
-    .preview-secao.secao-colapsada .secao-seta {
-      transform: rotate(-90deg);
-    }
-    .preview-secao.secao-colapsada .preview-secao-corpo {
-      display: none;
-    }
-
-    /* --- Nav rápida entre seções, fixa no topo da área que rola --- */
-    .preview-nav-rapida {
-      display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      padding: 2px 2px 12px 2px;
-      margin-bottom: 4px;
-      position: sticky;
-      top: 0;
-      background: var(--cor-fundo);
-      z-index: 3;
-    }
-    .preview-nav-rapida button {
-      flex: 0 0 auto;
-      background: var(--cor-card-elevado);
-      color: var(--cor-texto-primario);
-      border: none;
-      border-radius: var(--raio-md);
-      padding: 6px 14px;
-      font-size: 11.5px;
-      font-weight: 600;
-      white-space: nowrap;
-      cursor: pointer;
-    }
-    .preview-nav-rapida button:active {
-      background: var(--cor-acento-teal);
-      color: #fff;
-    }
+    /* --- Seções recolhíveis: no celular todas começam fechadas (ver
+       configurarAccordionSecoes() no JS); cabeçalho mais compacto. --- */
+    .preview-secao-titulo { padding: 12px 14px; gap: 10px; }
+    .secao-num { font-size: 18px; min-width: 24px; }
+    .secao-nome { font-size: 16px; }
+    .secao-desc { font-size: 12.5px; }
+    .preview-secao-corpo { padding: 14px 12px 18px; }
 
     #preview-grafico-prazo {
       overflow-x: auto;
@@ -12386,6 +12477,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       <button class="btn-acento" id="btn-gerar">GERAR RELATÓRIO</button>
       <button class="btn" id="btn-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
       <button class="btn" id="btn-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
+      <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
       <div class="acesso-rapido-wrap" id="acesso-rapido-filtros-wrap">
         <button class="botao-icone-topo" id="acesso-rapido-filtros-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -12537,6 +12629,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         <button class="btn" id="dash-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
         <button class="btn" id="dash-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
         <button class="btn" id="dash-resumo-acoes" data-abrir-resumo-acoes title="Ações em monitoramento (base Ações do Cronograma)">AÇÕES EM MONITORAMENTO</button>
+        <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
         <div class="acesso-rapido-wrap" id="acesso-rapido-dash-wrap">
           <button class="botao-icone-topo" id="acesso-rapido-dash-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -12607,14 +12700,22 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
            pras seções de baixo sem precisar rolar a tela toda. Também
            reabre a seção-alvo se ela estiver fechada no acordeão (ver
            configurarAccordionSecoes() no JS). -->
-      <div class="preview-nav-rapida" id="preview-nav-rapida">
-        <button type="button" data-alvo="secao-clausulas">Cláusulas</button>
-        <button type="button" data-alvo="secao-secretaria">Secretaria</button>
-        <button type="button" data-alvo="secao-desempenho">Desempenho</button>
-        <button type="button" data-alvo="secao-financeiro">Financeiro</button>
-        <button type="button" data-alvo="secao-mapa">Mapa</button>
-      </div>
+      <!-- Barra de atalhos das seções (pedido do usuário em 17/11/2026): fixa
+           no topo da área que rola, em todas as larguras; o clique reabre a
+           seção se estiver recolhida e rola até ela; o chip da seção visível
+           fica destacado (ver configurarAccordionSecoes() no JS). -->
+      <nav class="preview-nav-rapida" id="preview-nav-rapida" aria-label="Seções do dashboard">
+        <button type="button" data-alvo="secao-visao-geral"><span class="nav-num">01</span>Visão geral</button>
+        <button type="button" data-alvo="secao-clausulas"><span class="nav-num">02</span>Cláusulas</button>
+        <button type="button" data-alvo="secao-secretaria"><span class="nav-num">03</span>Secretaria | Executor</button>
+        <button type="button" data-alvo="secao-desempenho"><span class="nav-num">04</span>Desempenho</button>
+        <button type="button" data-alvo="secao-financeiro"><span class="nav-num">05</span>Financeiro</button>
+        <button type="button" data-alvo="secao-mapa"><span class="nav-num">06</span>Mapa</button>
+      </nav>
       <div id="preview-nota-secretaria"></div>
+      <section class="preview-secao" id="secao-visao-geral">
+        <h3 class="preview-secao-titulo"><span class="secao-num">01</span><span class="secao-textos"><span class="secao-nome">Visão geral</span><span class="secao-desc">Quantidade de ações e investimento do recorte, previsão de conclusão da fase, resumo financeiro por fonte, panorama das fases e situação do Termo de Compromisso.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <div class="preview-secao-corpo">
       <div id="preview-cards"></div>
       <div class="preview-grid">
         <div class="preview-grafico-card">
@@ -12641,17 +12742,19 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
           <div id="preview-grafico-termo"></div>
         </div>
       </div>
+        </div>
+      </section>
 
       <!-- Antes do Panorama por Secretaria — pedido do usuário em 10/11/2026 -->
       <section class="preview-secao" id="secao-clausulas">
-        <h3 class="preview-secao-titulo">Cláusulas Suspensivas por Executor<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">02</span><span class="secao-textos"><span class="secao-nome">Cláusulas Suspensivas por Executor</span><span class="secao-desc">Ações com cláusula suspensiva ainda não retirada, agrupadas por executor, com a situação da vigência (vencida, vence em até 90 dias, no prazo, sem data) e filtro por fase.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div id="preview-clausulas"></div>
         </div>
       </section>
 
       <section class="preview-secao" id="secao-secretaria">
-        <h3 class="preview-secao-titulo">Panorama por Secretaria | Executor<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">03</span><span class="secao-textos"><span class="secao-nome">Panorama por Secretaria | Executor</span><span class="secao-desc">Distribuição do investimento por fase em cada combinação Secretaria | Executor, separada por gestão estadual e federal.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div class="preview-legenda-fases">
             <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="vermelho"></span>Selecionada</span>
@@ -12664,7 +12767,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       </section>
 
       <section class="preview-secao" id="secao-desempenho">
-        <h3 class="preview-secao-titulo">Índice de Desempenho por Secretaria<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">04</span><span class="secao-textos"><span class="secao-nome">Índice de Desempenho por Secretaria</span><span class="secao-desc">Nota de 0 a 100 de cada Secretaria | Executor, da melhor para a pior. Combina status, fase, cláusula suspensiva, prazos, volume de ações e valor contratado.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div class="preview-texto-explicativo">
             O índice combina Status, Fase, Cláusula Suspensiva, o tempo entre aviso de licitação, O.S. e
@@ -12677,14 +12780,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       </section>
 
       <section class="preview-secao" id="secao-financeiro">
-        <h3 class="preview-secao-titulo">Detalhamento Financeiro por Secretaria<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">05</span><span class="secao-textos"><span class="secao-nome">Detalhamento Financeiro por Secretaria</span><span class="secao-desc">Investimento de cada secretaria aberto por fonte: valor contratado, OGU, financiamento e recurso estadual.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div id="preview-detalhamento-secretaria"></div>
         </div>
       </section>
 
       <section class="preview-secao" id="secao-mapa">
-        <h3 class="preview-secao-titulo">Mapa de Investimentos por Município<span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">06</span><span class="secao-textos"><span class="secao-nome">Mapa de Investimentos por Município</span><span class="secao-desc">Investimento por município da Bahia em faixas de valor. Passe o mouse para ver os objetos e clique para ver as ações.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div id="preview-mapa"></div>
         </div>
@@ -13399,27 +13502,90 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // também os botões da nav rápida (#preview-nav-rapida): clicar neles
   // reabre a seção-alvo (se estiver fechada) antes de rolar até ela, pra
   // nunca "pular" pra um título com o corpo escondido.
+  // Desde 17/11/2026 (pedido do usuário) recolhe/expande em qualquer
+  // largura (no desktop começa aberta; no celular, fechada), a faixa do
+  // título é acessível por teclado, e a barra de atalhos destaca o chip da
+  // seção visível (IntersectionObserver sobre #preview-corpo, que é quem
+  // rola).
   function configurarAccordionSecoes() {
+    function alternar(secao) {
+      var fechada = secao.classList.toggle("secao-colapsada");
+      var titulo = secao.querySelector(".preview-secao-titulo");
+      if (titulo) titulo.setAttribute("aria-expanded", fechada ? "false" : "true");
+    }
     document.querySelectorAll(".preview-secao").forEach(function (secao) {
       var titulo = secao.querySelector(".preview-secao-titulo");
       if (!titulo) return;
-      titulo.addEventListener("click", function () {
-        if (!window.matchMedia("(max-width: 768px)").matches) return;
-        secao.classList.toggle("secao-colapsada");
+      var celular = window.matchMedia("(max-width: 768px)").matches;
+      if (celular) secao.classList.add("secao-colapsada");
+      titulo.setAttribute("role", "button");
+      titulo.setAttribute("tabindex", "0");
+      titulo.setAttribute("aria-expanded", celular ? "false" : "true");
+      titulo.addEventListener("click", function () { alternar(secao); });
+      titulo.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); alternar(secao); }
       });
-      if (window.matchMedia("(max-width: 768px)").matches) {
-        secao.classList.add("secao-colapsada");
-      }
     });
 
-    document.querySelectorAll(".preview-nav-rapida button").forEach(function (botao) {
+    var botoes = Array.prototype.slice.call(document.querySelectorAll(".preview-nav-rapida button"));
+    function marcarAtivo(id) {
+      botoes.forEach(function (b) {
+        var ativo = b.dataset.alvo === id;
+        b.classList.toggle("ativo", ativo);
+        if (ativo) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+      });
+      var atual = botoes.filter(function (b) { return b.dataset.alvo === id; })[0];
+      var barra = document.getElementById("preview-nav-rapida");
+      if (atual && barra && barra.scrollWidth > barra.clientWidth) {
+        barra.scrollTo({ left: atual.offsetLeft - 16, behavior: "smooth" });
+      }
+    }
+    var clicouEm = 0;
+    botoes.forEach(function (botao) {
       botao.addEventListener("click", function () {
         var alvo = document.getElementById(botao.dataset.alvo);
         if (!alvo) return;
         alvo.classList.remove("secao-colapsada");
+        var titulo = alvo.querySelector(".preview-secao-titulo");
+        if (titulo) titulo.setAttribute("aria-expanded", "true");
+        clicouEm = 1;   // até a rolagem parar, o destaque fica no chip clicado
+        marcarAtivo(botao.dataset.alvo);
         alvo.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
+    var raiz = document.getElementById("preview-corpo");
+    if (!("IntersectionObserver" in window) || !raiz) return;
+    // O observador só avisa que algo cruzou a faixa de leitura; a seção
+    // ativa é calculada na hora pela posição real (a última cujo topo já
+    // passou da barra de atalhos) — não depende da ordem dos avisos.
+    function secaoAtual() {
+      var limite = raiz.getBoundingClientRect().top + 90, atual = null;
+      botoes.forEach(function (b) {
+        var s = document.getElementById(b.dataset.alvo);
+        if (s && s.getBoundingClientRect().top <= limite) atual = b.dataset.alvo;
+      });
+      return atual || (botoes[0] && botoes[0].dataset.alvo);
+    }
+    var observador = new IntersectionObserver(function () {
+      if (clicouEm) return;   // rolagem suave do clique ainda em curso
+      marcarAtivo(secaoAtual());
+    }, { root: raiz, rootMargin: "-70px 0px -55% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] });
+    botoes.forEach(function (b) {
+      var s = document.getElementById(b.dataset.alvo);
+      if (s) observador.observe(s);
+    });
+    // reforço: o observador só avisa a cada quadro desenhado; o fim da
+    // rolagem (sem eventos por 150 ms) recalcula o destaque e encerra a
+    // rolagem suave iniciada por um chip
+    var esperaRolagem = null;
+    raiz.addEventListener("scroll", function () {
+      clearTimeout(esperaRolagem);
+      esperaRolagem = setTimeout(function () {
+        clicouEm = 0;
+        marcarAtivo(secaoAtual());
+      }, 150);
+    }, { passive: true });
+    marcarAtivo(botoes.length ? botoes[0].dataset.alvo : "");
   }
 
   function renderizarBloco(chave) {
@@ -13896,6 +14062,52 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     "Estadual A Contratar": TONS_FINANCEIRO.estadual.aContratar,
     "Não Discriminado": TONS_FINANCEIRO.naoDiscriminado,
   };
+
+  // --- Tema claro/escuro (pedido do usuário em 17/11/2026) ---
+  // O <head> já aplicou o tema salvo antes do 1º paint; aqui ficam o botão
+  // sol/lua, a gravação da escolha (localStorage, com try/catch) e as cores
+  // de gráfico que mudam no escuro. As cores com significado (fase, fonte,
+  // firmado/não firmado, status) mantêm o matiz; só o que fica abaixo de
+  // 3:1 contra o card escuro ganha um tom mais claro — hoje só o azul
+  // "OGU contratado" (2,3:1). PDF/PPTX são gerados no Python e não leem
+  // nada disto: saem sempre no tema claro.
+  var CORES_TEMA_ESCURO = { apoiadoContratado: "#4A8BD0", mapaSemDado: "#2A3B55" };
+  var _apoiadoContratadoOriginal = TONS_FINANCEIRO.apoiado.contratado;
+  var _ultimosDadosPreview = null;
+  function temaEscuro() { return document.documentElement.getAttribute("data-tema") === "escuro"; }
+  function aplicarCoresGraficosTema() {
+    var c = temaEscuro() ? CORES_TEMA_ESCURO.apoiadoContratado : _apoiadoContratadoOriginal;
+    TONS_FINANCEIRO.apoiado.contratado = c;
+    CORES_FINANCEIRO["OGU"] = c;
+    CORES_BARRA_SECRETARIA["Apoiado Contratado"] = c;
+  }
+  function sincronizarBotoesTema() {
+    var escuro = temaEscuro();
+    document.querySelectorAll(".botao-tema").forEach(function (b) {
+      b.setAttribute("aria-pressed", escuro ? "true" : "false");
+      b.setAttribute("aria-label", escuro ? "Voltar ao tema claro" : "Ativar tema escuro");
+      b.title = escuro ? "Tema claro" : "Tema escuro";
+    });
+  }
+  window.alternarTema = function () {
+    var novo = temaEscuro() ? "claro" : "escuro";
+    var raizHtml = document.documentElement;
+    raizHtml.classList.add("tema-trocando");   // troca seca, sem transição de cor
+    if (novo === "escuro") raizHtml.setAttribute("data-tema", "escuro");
+    else raizHtml.removeAttribute("data-tema");
+    void raizHtml.offsetHeight;
+    setTimeout(function () { raizHtml.classList.remove("tema-trocando"); }, 50);
+    try { localStorage.setItem("cgapeTema", novo); } catch (e) { /* sem localStorage: vale só nesta sessão */ }
+    aplicarCoresGraficosTema();
+    sincronizarBotoesTema();
+    // gráficos são desenhados com cores calculadas: redesenha com as novas
+    if (_ultimosDadosPreview) montarPreVisualizacao(_ultimosDadosPreview);
+  };
+  document.querySelectorAll(".botao-tema").forEach(function (b) {
+    b.addEventListener("click", window.alternarTema);
+  });
+  aplicarCoresGraficosTema();
+  sincronizarBotoesTema();
 
   // Chave "Detalhar contratado" do Resumo Financeiro: alterna o gráfico
   // entre a visão geral (Contratado x previsões) e o Valor Contratado
@@ -14525,7 +14737,8 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     mapaDados.poligonos.forEach(function (poly) {
       var el = document.createElementNS(svgNS, "polygon");
       el.setAttribute("points", poly.pontos);
-      el.setAttribute("fill", poly.cor);
+      // "sem ação" (cinza-claro do PDF) vira um tom escuro no tema escuro
+      el.setAttribute("fill", temaEscuro() && poly.cor === mapaDados.cor_sem_dado ? CORES_TEMA_ESCURO.mapaSemDado : poly.cor);
       if (poly.objetos) {
         el.classList.add("preview-mapa-poligono-com-dado");
         ativarTooltipMunicipio(el, poly);
@@ -14663,11 +14876,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var linhaSemDado = document.createElement("div");
     linhaSemDado.className = "preview-mapa-legenda-item";
     linhaSemDado.innerHTML =
-      '<span class="preview-mapa-legenda-swatch" style="background:' + mapaDados.cor_sem_dado + ';"></span>' +
+      '<span class="preview-mapa-legenda-swatch" style="background:' + (temaEscuro() ? CORES_TEMA_ESCURO.mapaSemDado : mapaDados.cor_sem_dado) + ';"></span>' +
       '<span>Sem ação no filtro atual</span>';
     legenda.appendChild(linhaSemDado);
     var linhaResumo = document.createElement("div");
-    linhaResumo.style.cssText = "margin-top:8px;color:var(--cor-texto-secundario);font-size:11px;";
+    linhaResumo.style.cssText = "margin-top:8px;color:var(--cor-texto-secundario);font-size:12px;";
     linhaResumo.textContent = mapaDados.qtd_municipios_com_dado + " de " + mapaDados.qtd_municipios_total + " municípios com ao menos uma ação.";
     legenda.appendChild(linhaResumo);
     wrap.appendChild(legenda);
@@ -14676,6 +14889,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   }
 
   function montarPreVisualizacao(dados) {
+    _ultimosDadosPreview = dados;   // redesenho ao trocar o tema
     var nota = document.getElementById("preview-nota-secretaria");
     if (dados.secretaria_unica) {
       nota.style.display = "block";

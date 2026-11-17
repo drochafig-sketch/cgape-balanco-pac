@@ -2829,7 +2829,7 @@ HTML_JANELA = r"""
   .ra-data-campos input { flex:1; min-width:0; background:var(--cor-fundo);
     color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado);
     border-radius:6px; padding:3px 6px; font-size:12px; font-family:inherit; }
-  html:not([data-tema="claro"]) .ra-data-campos input { color-scheme:dark; }
+  html[data-tema="escuro"] .ra-data-campos input { color-scheme:dark; }
   #raTabela { margin-top:18px; }
   .ra-tabela-topo { display:flex; align-items:center; gap:12px; margin-bottom:8px;
     font-size:12px; color:var(--cor-texto-secundario); }
