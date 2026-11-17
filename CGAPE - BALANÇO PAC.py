@@ -147,6 +147,47 @@ def _erro_fatal_inicializacao(mensagem):
 arquivo_excel = caminho_recurso(
     "PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026.xlsx")
 
+
+def _arquivo_xlsx_legivel(caminho):
+    """Devolve um caminho que o Python consegue abrir como .xlsx.
+
+    Às vezes a planilha (pasta compartilhada na rede) é regravada POR CIMA
+    de uma versão maior sem o arquivo ser encurtado: depois do fim real do
+    .xlsx sobra um rabo da versão antiga (com um "fim de zip" velho) e bytes
+    zerados. O Excel abre normalmente, mas o zipfile do Python pega o fim
+    velho e dá "File is not a zip file". O conteúdo verdadeiro está íntegro;
+    então grava uma cópia temporária cortada no fim real e lê dela — o
+    original não é alterado. Se nada passar na verificação, devolve o
+    original (e o erro aparece como antes)."""
+    import zipfile
+    import tempfile
+    try:
+        if not os.path.isfile(caminho) or zipfile.is_zipfile(caminho):
+            return caminho
+        with open(caminho, "rb") as f:
+            dados = f.read()
+        copia = os.path.join(tempfile.gettempdir(), "cgape_planilha_pac_corrigida.xlsx")
+        fim = len(dados)
+        for _ in range(20):  # testa cada "fim de zip", do último para o primeiro
+            fim = dados.rfind(b"PK\x05\x06", 0, fim)
+            if fim < 0:
+                break
+            tam_comentario = int.from_bytes(dados[fim + 20:fim + 22], "little")
+            with open(copia, "wb") as f:
+                f.write(dados[:fim + 22 + tam_comentario])
+            try:
+                with zipfile.ZipFile(copia) as z:
+                    if z.testzip() is None:
+                        return copia
+            except zipfile.BadZipFile:
+                pass
+        return caminho
+    except OSError:
+        return caminho
+
+
+_arquivo_excel_leitura = _arquivo_xlsx_legivel(arquivo_excel)
+
 # A data/hora de "atualizado em" vem das PROPRIEDADES internas do próprio
 # arquivo .xlsx (o campo "Modificado em" que o Excel grava sozinho ao
 # salvar) — não da data de modificação do arquivo no sistema operacional
@@ -164,7 +205,7 @@ try:
     # planilha fica travada no Windows enquanto o app estiver aberto
     # (impedindo a sincronização de gravar uma versão nova por cima).
     _pasta_trabalho_excel = openpyxl.load_workbook(
-        arquivo_excel, read_only=True)
+        _arquivo_excel_leitura, read_only=True)
     try:
         _propriedades_excel = _pasta_trabalho_excel.properties
     finally:
@@ -5844,11 +5885,11 @@ try:
         return None
 
     LINHAS_BUSCA_CABECALHO = 20
-    df_temp = pd.read_excel(arquivo_excel, header=None,
+    df_temp = pd.read_excel(_arquivo_excel_leitura, header=None,
                             nrows=LINHAS_BUSCA_CABECALHO)
     linha_header = _linha_do_cabecalho(df_temp)
     if linha_header is None:
-        df_temp = pd.read_excel(arquivo_excel, header=None)
+        df_temp = pd.read_excel(_arquivo_excel_leitura, header=None)
         linha_header = _linha_do_cabecalho(df_temp)
     if linha_header is None:
         _erro_fatal_inicializacao(
@@ -5859,7 +5900,7 @@ try:
             "renomeados por engano.\n\n"
             f"Arquivo:\n{arquivo_excel}"
         )
-    df = pd.read_excel(arquivo_excel, header=linha_header)
+    df = pd.read_excel(_arquivo_excel_leitura, header=linha_header)
 except PermissionError:
     _erro_fatal_inicializacao(
         "Não foi possível abrir a planilha porque ela está sendo usada por outro "
@@ -5994,7 +6035,7 @@ def _preencher_hiperlinks_embutidos(arquivo, linha_do_cabecalho, coluna_alvo):
 
 
 for _coluna_link in (col_link_monitora, col_link_localizacao):
-    _preencher_hiperlinks_embutidos(arquivo_excel, linha_header, _coluna_link)
+    _preencher_hiperlinks_embutidos(_arquivo_excel_leitura, linha_header, _coluna_link)
 
 # Diagnóstico rápido no console: se um dos campos de link aparecer vazio na
 # ficha, essas linhas dizem se o problema é o cabeçalho da planilha (coluna
