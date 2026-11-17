@@ -11,6 +11,18 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh = CreateObject("WScript.Shell")
 pasta = fso.GetParentFolderName(WScript.ScriptFullName)
 origem = pasta & "\CGAPE - BALANCO PAC.exe"
+' Se o .exe de dist\ (build mais recente) for mais novo, usa ele: assim a
+' versao nova vale mesmo com o .exe da pasta preso por alguem que o abriu
+' direto (pedido do usuario em 17/11/2026).
+Dim origemDist
+origemDist = pasta & "\dist\CGAPE - BALANCO PAC.exe"
+If fso.FileExists(origemDist) Then
+  If Not fso.FileExists(origem) Then
+    origem = origemDist
+  ElseIf fso.GetFile(origemDist).DateLastModified > fso.GetFile(origem).DateLastModified Then
+    origem = origemDist
+  End If
+End If
 destDir = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\CGAPE"
 destino = destDir & "\CGAPE - BALANCO PAC.exe"
 
