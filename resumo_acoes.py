@@ -325,6 +325,46 @@ def _ra_ordem(v):
             for p in re.split(r"(\d+)", _normalizar(v))]
 
 
+def _ra_brl(v):
+    """1234.5 -> '1.234,50' (como a tabela da página mostra o valor)."""
+    return f"{float(v):,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
+
+
+def _ra_texto_busca(v):
+    """Célula como texto pesquisável: data em dd/mm/aaaa, número também no
+    formato brasileiro, tudo sem acento e em minúsculas."""
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return ""
+    if isinstance(v, (datetime, pd.Timestamp)):
+        return f"{v:%d/%m/%Y}"
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        txt = _ra_brl(v)
+        return f"{v} {txt}" if float(v) != int(float(v)) else f"{int(float(v))} {txt}"
+    return _normalizar(" ".join(str(v).split()))
+
+
+def _ra_termos(termo):
+    """Palavras do que foi digitado (sem acento, minúsculas)."""
+    return [p for p in _normalizar(termo).split() if p]
+
+
+def _ra_contem_todos(serie_txt, termos):
+    """Linhas cujo texto (já normalizado) contém TODAS as palavras."""
+    marca = pd.Series(True, index=serie_txt.index)
+    for p in termos:
+        marca &= serie_txt.str.contains(p, regex=False)
+    return marca
+
+
+def _ra_texto_coluna(tipo, serie):
+    """Coluna da tabela como a página mostra, normalizada (busca por coluna)."""
+    if tipo == "data":
+        return serie.map(lambda d: f"{d:%d/%m/%Y}" if pd.notna(d) else "")
+    if tipo == "valor":
+        return serie.map(lambda v: _ra_brl(v or 0))
+    return serie.map(_normalizar)
+
+
 def _ra_base(caminho):
     """Planilha já preparada; só é lida de novo se o arquivo tiver mudado."""
     global _ra_cache
@@ -338,6 +378,11 @@ def _ra_base(caminho):
         raise ValueError("coluna(s) ausente(s): " + ", ".join(faltando))
     df = df[df[RA_COL_EIXO].notna() & df[RA_COL_STATUS].notna()].copy()
     df = df.reset_index(drop=True)
+    # texto de TODAS as colunas da base, normalizado, para a busca geral
+    # (pedido do usuário em 17/11/2026)
+    originais = list(df.columns)
+    df["_busca"] = [" | ".join(_ra_texto_busca(v) for v in linha)
+                    for linha in df[originais].itertuples(index=False, name=None)]
     df["_eixo"] = df[RA_COL_EIXO].astype(str).str.strip()
     # sem valor de investimento: usa o orçamento e marca para o asterisco
     investimento = df[RA_COL_VALOR].map(_ra_numero)
@@ -402,8 +447,24 @@ def resumo_acoes_dados(caminho, filtros=None):
 
     top30 = bool(filtros.get("top30"))
 
+    # Buscas digitadas (pedido do usuário em 17/11/2026): "busca" = geral,
+    # em todas as colunas da base; "bcol" = {rótulo da coluna da tabela:
+    # texto}, só naquela coluna. Todas as palavras precisam aparecer. Valem
+    # como filtro: cards, quadros, tabela, Excel e HTML seguem o recorte.
+    busca_geral = str(filtros.get("busca") or "").strip()
+    busca_cols = {r: str(t).strip() for r, t in (filtros.get("bcol") or {}).items()
+                  if str(t or "").strip()}
+    marca_busca = pd.Series(True, index=base.index)
+    if busca_geral:
+        marca_busca &= _ra_contem_todos(base["_busca"], _ra_termos(busca_geral))
+    if busca_cols:
+        for rot, tipo, _c, serie in _ra_colunas_tabela(base):
+            if rot in busca_cols:
+                marca_busca &= _ra_contem_todos(_ra_texto_coluna(tipo, serie),
+                                                _ra_termos(busca_cols[rot]))
+
     def marca_datas(com_top30=True):
-        marca = pd.Series(True, index=base.index)
+        marca = marca_busca.copy()
         if top30 and com_top30:
             marca &= base["_top30"]
         for c, (de, ate) in sel_datas.items():
@@ -445,7 +506,7 @@ def resumo_acoes_dados(caminho, filtros=None):
     # sem filtro: todos os eixos, mesmo sem ação; com filtro, só os que têm
     # ação; sempre do maior para o menor investimento
     por_eixo = df.groupby("_eixo")["_valor"].sum()
-    filtrado = bool(sel or sel_datas or top30)
+    filtrado = bool(sel or sel_datas or top30 or busca_geral or busca_cols)
     eixos = sorted(set(df["_eixo"]) if filtrado
                    else set(RA_EIXOS) | set(df["_eixo"]),
                    key=lambda e: (-por_eixo.get(e, 0), e))
@@ -537,7 +598,9 @@ def resumo_acoes_dados(caminho, filtros=None):
                                   else f"{len(sel[c])} selecionado(s)")
                  for c, _, rotulo in campos if c in sel]
                 + [f"{rotulo}: {faixa_txt(*sel_datas[c])}"
-                   for c, _, rotulo in campos_data if c in sel_datas])
+                   for c, _, rotulo in campos_data if c in sel_datas]
+                + ([f'Busca: "{busca_geral}"'] if busca_geral else [])
+                + [f'{rot} contém "{t}"' for rot, t in busca_cols.items()])
         escolhidos = resumo_filtros(3)
         if len(escolhidos) > 220:
             escolhidos = resumo_filtros(0)
@@ -2553,6 +2616,12 @@ HTML_JANELA = r"""
       </div>
     </div>
     <div class="ra-corpo">
+      <div class="ra-busca-geral">
+        <input type="search" id="raBuscaGeral" autocomplete="off"
+          placeholder="Buscar em todas as colunas da base (código, ação, município, executor, objeto, observações…)"
+          title="Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha Ações do Cronograma">
+        <button type="button" id="raBuscaGeralLimpar" title="Limpar a busca">×</button>
+      </div>
       <div class="ra-filtros" id="raFiltros"></div>
       <div class="ra-msg" id="raMsg"></div>
       <div id="raQuadro"></div>
@@ -2752,6 +2821,28 @@ HTML_JANELA = r"""
   .ra-acoes th.ra-col-filtro { color:var(--cor-acento-teal-texto);
     box-shadow:inset 0 -2px 0 var(--cor-acento-teal); }
   .ra-mais { display:block; margin:10px auto 0; }
+  /* Buscas digitadas (pedido do usuário em 17/11/2026) */
+  .ra-busca-geral { position:relative; margin-bottom:10px; }
+  #raBuscaGeral { width:100%; box-sizing:border-box; background:var(--cor-card);
+    color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado);
+    border-radius:8px; padding:10px 36px 10px 38px; font-size:13px; font-family:inherit;
+    box-shadow:var(--sombra-card); outline:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23889' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:12px center; }
+  #raBuscaGeral::-webkit-search-cancel-button { display:none; }
+  #raBuscaGeral:focus, .ra-busca-geral.ativo #raBuscaGeral { border-color:var(--cor-acento-teal); }
+  #raBuscaGeralLimpar { position:absolute; right:8px; top:50%; transform:translateY(-50%);
+    background:none; border:none; color:var(--cor-texto-secundario); font-size:18px;
+    line-height:1; cursor:pointer; padding:2px 6px; display:none; }
+  .ra-busca-geral.ativo #raBuscaGeralLimpar { display:block; }
+  .ra-acoes th .ra-col-busca { display:block; width:100%; min-width:70px; box-sizing:border-box;
+    margin-top:5px; background:var(--cor-fundo); color:var(--cor-texto-primario);
+    border:1px solid var(--cor-texto-terciario); border-radius:5px; padding:3px 6px;
+    font-size:11.5px; font-weight:400; font-family:inherit; cursor:text; outline:none; }
+  .ra-acoes th .ra-col-busca:focus, .ra-acoes th .ra-col-busca.ativo {
+    border-color:var(--cor-acento-teal); }
+  .ra-acoes td.ra-sem-linhas { text-align:center; padding:18px; white-space:normal;
+    color:var(--cor-texto-secundario); }
 </style>
 <script>
 (function () {
@@ -2987,6 +3078,7 @@ HTML_JANELA = r"""
     document.getElementById("raEntregueRotulo").classList.toggle("ativo", !!raFiltros.entregue);
     document.getElementById("raLimpar").style.visibility =
       raChavesFiltro().length ? "visible" : "hidden";
+    raSincronizarBuscaGeral();
   }
 
   // ---- tabela das ações do recorte ----------------------------------------
@@ -2995,11 +3087,53 @@ HTML_JANELA = r"""
   var raTab = {col: null, dir: 1, limite: 200};
   var RA_PASSO = 200;
   var raBRL = new Intl.NumberFormat("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  // Buscas digitadas (pedido do usuário em 17/11/2026): geral (todas as
+  // colunas da base, raFiltros.busca) e por coluna da tabela (raFiltros.bcol
+  // = {rótulo: texto}). O filtro em si é feito no Python (resumo_acoes_dados),
+  // então cards, quadros, tabela, Excel e HTML seguem o mesmo recorte.
+  var raBuscaTimer = null;
+  function raConsultarDepois() {
+    clearTimeout(raBuscaTimer);
+    raBuscaTimer = setTimeout(raConsultar, 350);
+  }
+  function raTemBuscaColuna() {
+    return !!(raFiltros.bcol && Object.keys(raFiltros.bcol).length);
+  }
+  function raDefinirBuscaColuna(rot, texto) {
+    var b = raFiltros.bcol || {};
+    if (texto.trim()) b[rot] = texto; else delete b[rot];
+    if (Object.keys(b).length) raFiltros.bcol = b; else delete raFiltros.bcol;
+    raConsultarDepois();
+  }
+  (function () {
+    var caixa = document.getElementById("raBuscaGeral");
+    var limpar = document.getElementById("raBuscaGeralLimpar");
+    if (!caixa) return;
+    function aplicar(texto) {
+      if (texto.trim()) raFiltros.busca = texto; else delete raFiltros.busca;
+      caixa.parentNode.classList.toggle("ativo", !!texto.trim());
+    }
+    caixa.oninput = function () { aplicar(caixa.value); raConsultarDepois(); };
+    caixa.onkeydown = function (e) {
+      if (e.key === "Enter") { clearTimeout(raBuscaTimer); raConsultar(); }
+      if (e.key === "Escape" && caixa.value) { e.stopPropagation(); caixa.value = ""; aplicar(""); raConsultar(); }
+    };
+    limpar.onclick = function () { caixa.value = ""; aplicar(""); raConsultar(); caixa.focus(); };
+  })();
+  function raSincronizarBuscaGeral() {
+    var caixa = document.getElementById("raBuscaGeral");
+    if (!caixa) return;
+    if (document.activeElement !== caixa) caixa.value = raFiltros.busca || "";
+    caixa.parentNode.classList.toggle("ativo", !!(raFiltros.busca || "").trim());
+  }
+
   function raTabelaAtualizar(d) {
     var alvo = document.getElementById("raTabela");
     raIds = d.vazio ? [] : d.ids;
     raTab.limite = RA_PASSO;
-    if (!raIds.length) { alvo.innerHTML = ""; return; }
+    // com busca por coluna, a tabela fica mesmo vazia (senão some o campo
+    // onde se digitou)
+    if (!raIds.length && !raTemBuscaColuna()) { alvo.innerHTML = ""; return; }
     if (raBase && raBaseVersao === d.versao) { raTabelaDesenhar(); return; }
     alvo.innerHTML = '<div class="ra-msg">Carregando a lista de ações…</div>';
     if (raBasePedido === d.versao) return;
@@ -3026,7 +3160,13 @@ HTML_JANELA = r"""
   }
   function raTabelaDesenhar() {
     var alvo = document.getElementById("raTabela");
-    if (!raBase || !raIds.length) { alvo.innerHTML = ""; return; }
+    if (!raBase || (!raIds.length && !raTemBuscaColuna())) { alvo.innerHTML = ""; return; }
+    // campo de busca da coluna em uso: volta com o foco e o cursor no lugar
+    var focado = document.activeElement, focoRot = null, focoIni = 0, focoFim = 0;
+    if (focado && focado.classList && focado.classList.contains("ra-col-busca") && alvo.contains(focado)) {
+      focoRot = focado.dataset.rot; focoIni = focado.selectionStart; focoFim = focado.selectionEnd;
+    }
+    var bcol = raFiltros.bcol || {};
     var cols = raBase.colunas, L = raBase.linhas;
     var ids = raIds.slice();
     if (raTab.col !== null) {
@@ -3041,10 +3181,14 @@ HTML_JANELA = r"""
     }
     var cab = cols.map(function (c, i) {
       var classe = (c.tipo === "valor" ? "dir" : (c.tipo === "data" ? "centro" : "")) +
-        ((c.filtro && raFiltros[c.filtro]) || (c.filtro === "municipio" && raFiltros.top30)
-          ? " ra-col-filtro" : "");
+        ((c.filtro && raFiltros[c.filtro]) || (c.filtro === "municipio" && raFiltros.top30) ||
+         bcol[c.rotulo] ? " ra-col-filtro" : "");
+      var termo = bcol[c.rotulo] || "";
       return '<th class="' + classe + '" data-col="' + i + '" title="Ordenar">' + esc(c.rotulo) +
-        (raTab.col === i ? (raTab.dir > 0 ? " ▲" : " ▼") : "") + "</th>";
+        (raTab.col === i ? (raTab.dir > 0 ? " ▲" : " ▼") : "") +
+        '<input type="text" class="ra-col-busca' + (termo ? " ativo" : "") + '" data-rot="' + esc(c.rotulo) +
+        '" value="' + esc(termo) + '" placeholder="Buscar…" autocomplete="off" title="Buscar só nesta coluna">' +
+        "</th>";
     }).join("");
     var vis = ids.slice(0, raTab.limite);
     var corpo = vis.map(function (id, n) {
@@ -3056,9 +3200,26 @@ HTML_JANELA = r"""
       ")</b><span>Colunas destacadas: filtros em uso. Clique no cabeçalho para ordenar.</span>" +
       '<button type="button" id="raXlsx" title="Grava em Downloads a planilha das ações filtradas">EXPORTAR EXCEL</button></div>' +
       '<div class="ra-tabela-wrap"><table class="ra-acoes"><thead><tr><th class="centro">#</th>' + cab +
-      "</tr></thead><tbody>" + corpo + "</tbody></table></div>" +
+      "</tr></thead><tbody>" + (corpo || '<tr><td class="ra-sem-linhas" colspan="' + (cols.length + 1) +
+        '">Nenhuma ação com a busca e os filtros escolhidos.</td></tr>') + "</tbody></table></div>" +
       (resto > 0 ? '<button type="button" class="ra-mais">Mostrar mais ' + Math.min(RA_PASSO, resto) +
         " (faltam " + resto.toLocaleString("pt-BR") + ")</button>" : "");
+    alvo.querySelectorAll(".ra-col-busca").forEach(function (inp) {
+      inp.onclick = function (e) { e.stopPropagation(); };
+      inp.onkeydown = function (e) {
+        e.stopPropagation();
+        if (e.key === "Enter") { clearTimeout(raBuscaTimer); raConsultar(); }
+        if (e.key === "Escape" && inp.value) { inp.value = ""; raDefinirBuscaColuna(inp.dataset.rot, ""); }
+      };
+      inp.oninput = function () {
+        inp.classList.toggle("ativo", !!inp.value.trim());
+        raDefinirBuscaColuna(inp.dataset.rot, inp.value);
+      };
+      if (focoRot !== null && inp.dataset.rot === focoRot) {
+        inp.focus();
+        try { inp.setSelectionRange(focoIni, focoFim); } catch (e) { /* ignora */ }
+      }
+    });
     alvo.querySelectorAll("th[data-col]").forEach(function (th) {
       th.onclick = function () {
         var i = +th.dataset.col;
