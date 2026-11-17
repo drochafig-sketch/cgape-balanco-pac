@@ -2192,7 +2192,12 @@ def _html_tabela(cabecalho, linhas, linhas_bold=(), cor_cabecalho=None, clique=N
     return f'<table class="pac-tabela"><thead><tr>{ths}</tr></thead><tbody>{"".join(trs)}</tbody></table>'
 
 
-def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, recorte="", classe_extra="", id_html=""):
+def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, recorte="", classe_extra="", id_html="",
+                                chips=("gestao", "secretaria")):
+    # chips de filtro ao lado do título, na ordem dada (preenchidos por
+    # atualizarChipsFiltro no JS): PAC = gestão/secretaria; Monitoramento =
+    # eixo/secretaria — pedido do usuário em 17/11/2026
+    html_chips = "".join(f'<span class="chip-filtro chip-{c}" hidden></span>' for c in chips)
     nome_planilha = os.path.basename(pac.CAMINHO_PLANILHA) if hasattr(pac, "CAMINHO_PLANILHA") else \
         "PANORAMA - PAC ORIGINAL - PAC SELEÇÕES - 2026"
     posicao = pac.ultima_atualizacao.strftime("%m/%Y") if hasattr(pac, "ultima_atualizacao") else date.today().strftime("%m/%Y")
@@ -2200,7 +2205,7 @@ def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, reco
     return f'''<section class="slide{(" " + classe_extra) if classe_extra else ""}"{atributo_id}>
       <div class="cabecalho">
         <div class="titulo-linha"><div class="titulo">PAC - {_html_esc(tema)}</div>
-          <span class="chips-filtro"><span class="chip-filtro chip-gestao" hidden></span><span class="chip-filtro chip-secretaria" hidden></span></span></div>
+          <span class="chips-filtro">{html_chips}</span></div>
         <div class="subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
         <div class="base-atualizada">{_html_esc(texto_base_atualizada())}</div>
         <div class="governo"><div>GOVERNO DO ESTADO DA BAHIA</div><div>CASA CIVIL</div></div>
@@ -3181,7 +3186,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             return []
         html = _html_cabecalho_rodape_base(
             titulo, "§PAG§", m["total_slides"], partes_monitoramento["secoes"][chave],
-            recorte=partes_monitoramento["recorte"], classe_extra="slide-continua slide-monitoramento")
+            recorte=partes_monitoramento["recorte"], classe_extra="slide-continua slide-monitoramento",
+            chips=("eixo", "secretaria"))
         # "PAC + ..." em vez do "PAC - ..." padrão (pedido do usuário em
         # 15/11/2026): só nesta página, que soma o Monitoramento ao PAC em
         # vez de ser uma seção interna dele.
@@ -4718,18 +4724,34 @@ function gerarPdfCompleto() {{
   // .ativo de #seletor-gestao/#seletor-secretaria) — trocarGestao passa
   // por trocarSecretaria, então os dois cliques chegam aqui. "Todas" = chip
   // escondido.
+  // Vale também para o slide do Monitoramento (pedido do usuário em
+  // 17/11/2026): lá os chips são eixo/secretaria e leem o botão .ativo da
+  // barra .sel-recorte (índice 0 = "Todos/Todas" = sem chip). As duas
+  // secretarias são filtros independentes (PAC x base de Ações).
   function atualizarChipsFiltro() {{
+    function preencher(seletorChip, texto, rotulo) {{
+      document.querySelectorAll(seletorChip).forEach(function (c) {{
+        c.textContent = texto; c.hidden = !texto; c.title = texto ? rotulo + ': ' + texto : '';
+      }});
+    }}
     var bGestao = document.querySelector('#seletor-gestao button.ativo');
     var bSec = document.querySelector('#seletor-secretaria button.ativo');
     var gestao = bGestao && bGestao.dataset.gestao !== 'todas' ? bGestao.textContent.trim() : '';
     var sec = bSec && bSec.dataset.secretaria ? bSec.dataset.secretaria : '';
-    document.querySelectorAll('.chip-gestao').forEach(function (c) {{
-      c.textContent = gestao; c.hidden = !gestao; c.title = gestao ? 'Gestão: ' + gestao : '';
-    }});
-    document.querySelectorAll('.chip-secretaria').forEach(function (c) {{
-      c.textContent = sec; c.hidden = !sec; c.title = sec ? 'Secretaria: ' + sec : '';
-    }});
+    preencher('.slide:not(.slide-monitoramento) .chip-gestao', gestao, 'Gestão');
+    preencher('.slide:not(.slide-monitoramento) .chip-secretaria', sec, 'Secretaria');
+    var bEixoMon = document.querySelector('.sel-recorte .sel-eixo-btn.ativo');
+    var bSecMon = document.querySelector('.sel-recorte .sel-sec-btn.ativo');
+    var eixoMon = bEixoMon && +bEixoMon.dataset.e ? bEixoMon.textContent.trim() : '';
+    var secMon = bSecMon && +bSecMon.dataset.x ? bSecMon.textContent.trim() : '';
+    preencher('.slide-monitoramento .chip-eixo', eixoMon, 'Eixo');
+    preencher('.slide-monitoramento .chip-secretaria', secMon, 'Secretaria');
   }}
+  // cliques nas barras Eixo x Secretaria do Monitoramento: o handler do
+  // próprio botão (resumo_acoes.py) já marcou o .ativo quando chega aqui
+  document.addEventListener('click', function (ev) {{
+    if (ev.target.closest && ev.target.closest('.sel-recorte button')) atualizarChipsFiltro();
+  }});
 
   // Posição, na lista de slides recém-montada, do slide equivalente ao que
   // estava na tela: o mesmo elemento (slides comuns — Canva, organograma,
@@ -4882,9 +4904,8 @@ CSS_SELETOR_GESTAO = """
     .chip-filtro { display:inline-block; font-weight:700; font-size:13px; line-height:1.2; padding:4px 12px;
       border-radius:12px; letter-spacing:.3px; text-transform:uppercase; white-space:nowrap; border:1.5px solid #4FA3E0; }
     .chip-filtro[hidden] { display:none; }
-    .chip-gestao { background:#4FA3E0; color:#0B1F3F; }
+    .chip-gestao, .chip-eixo { background:#4FA3E0; color:#0B1F3F; }
     .chip-secretaria { background:transparent; color:#4FA3E0; }
-    .slide-monitoramento .chips-filtro { display:none; }
     @media print { #seletor-gestao { display:none !important; } }
     /* Filtro de Secretaria (pedido do usuário em 15/11/2026, trocando o
        filtro de Executor feito antes): troca a apresentação inteira — ver
