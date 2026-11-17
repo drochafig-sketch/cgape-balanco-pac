@@ -2138,6 +2138,33 @@ def _html_grafico_fase(m, grafico, rotulo_secao=ROTULO_GRAFICO_FASE, legenda=Non
                if _linha_com_valor(c, a))}'''
 
 
+def _html_card_fase(grafico, id_detalhe=None):
+    # Card de uma fase da Composição por Fase (só HTML) — pedido do usuário
+    # em 17/11/2026: os cards ficam lado a lado e o clique no card abre o
+    # detalhamento por objeto da fase (id_detalhe; None = fase sem objetos,
+    # card não clicável). Mesmos dados, cores, escala das barras (fonte
+    # sobre o total da fase) e formatação de _html_grafico_fase.
+    rotulo, c_val, a_val, fontes = grafico
+    linhas = "".join(f'''<div class="fc-fonte">
+          <div class="fc-fonte-cab"><span class="fc-fonte-nome">{_html_esc(r)}</span>
+            <span class="fc-fonte-total">{_html_esc(abreviar_moeda(c + a))}</span></div>
+          <div class="barra-trilho">{_html_segmentos_barra(c, a, c_val + a_val, VERDE, LARANJA)}</div>
+          <div class="fc-fonte-valores"><span style="color:#{VERDE}">{_html_esc(abreviar_moeda(c))}</span>
+            <span style="color:#{LARANJA}">{_html_esc(abreviar_moeda(a))}</span></div>
+        </div>''' for r, c, a, _, _ in fontes if _linha_com_valor(c, a))
+    atributos = (f' role="button" tabindex="0" aria-expanded="false" aria-controls="{id_detalhe}" '
+                 f'data-detalhe="{id_detalhe}" title="Ver detalhamento por objeto — {_html_esc(rotulo)}"'
+                 if id_detalhe else "")
+    return f'''<div class="fase-card{" clicavel" if id_detalhe else ""}"{atributos}>
+        <div class="fc-topo"><span class="fc-nome">{_html_esc(rotulo)}</span>
+          {'<span class="fc-seta" aria-hidden="true">▾</span>' if id_detalhe else ""}</div>
+        <div class="fc-total">{_html_esc(abreviar_moeda(c_val + a_val))}</div>
+        <div class="fc-fontes">{linhas}</div>
+        <div class="fc-legenda"><span><i style="background:#{VERDE}"></i>T.C. firmado</span>
+          <span><i style="background:#{LARANJA}"></i>T.C. não firmado</span></div>
+      </div>'''
+
+
 def _html_cabecalho_tabela():
     return ('<div class="barra-linha cabecalho-tabela"><div class="barra-rotulo" style="width:340px"></div>'
             '<div class="barra-col-valor col-contratado">T.C. FIRMADO</div>'
@@ -2172,7 +2199,8 @@ def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, reco
     atributo_id = f' id="{id_html}"' if id_html else ""
     return f'''<section class="slide{(" " + classe_extra) if classe_extra else ""}"{atributo_id}>
       <div class="cabecalho">
-        <div class="titulo">PAC - {_html_esc(tema)}</div>
+        <div class="titulo-linha"><div class="titulo">PAC - {_html_esc(tema)}</div>
+          <span class="chips-filtro"><span class="chip-filtro chip-gestao" hidden></span><span class="chip-filtro chip-secretaria" hidden></span></span></div>
         <div class="subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
         <div class="base-atualizada">{_html_esc(texto_base_atualizada())}</div>
         <div class="governo"><div>GOVERNO DO ESTADO DA BAHIA</div><div>CASA CIVIL</div></div>
@@ -3209,12 +3237,12 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
       apresentação — a base não distingue dívida do Estado com aval federal de financiamento federal direto.</div>
     ''')
 
-    # --- Composição por Fase: as 4 fases juntas, atrás de um único botão de
-    # detalhamento na página do Panorama (mesma lógica do botão de
-    # "Investimento por Fase e Fonte") — pedido do usuário em 08/11/2026.
-    # Antes era 1 slide por fase (07/11/2026), depois virou página própria
-    # com as 4 juntas; agora é mais um bloco dentro do Panorama.
-    blocos_fases_html = []
+    # --- Composição por Fase: um card por fase, lado a lado, e o clique no
+    # card abre o detalhamento por objeto da fase logo abaixo da linha de
+    # cards (só um aberto por vez — ver faseCardAlternar no JS) — pedido do
+    # usuário em 17/11/2026. Antes (08/11/2026) eram as fases empilhadas,
+    # cada uma com o botão "Ver detalhamento por objeto".
+    cards_fases_html, detalhes_fases_html = [], []
     for idx_fase, (fase, (rotulo_f, c_f, a_f, fontes_f)) in enumerate(zip(m["fases_ordem"], _fases_por_fonte(m)), 1):
         grafico = (rotulo_f, c_f, a_f, fontes_f)
         blocos = []
@@ -3225,28 +3253,24 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         blocos = _blocos_alinhados(blocos)
         nota = _nota_objetos(m, fase, [cab for cab, _, _ in blocos])
         id_detalhe = f"detalhe-fase-{idx_fase}"
-        detalhamento_html = ""
         if blocos:
             tabelas_html = "".join(
                 _html_tabela(cabecalho, linhas, linhas_bold={len(linhas) - 1}, cor_cabecalho=cor,
                              clique=(dict(filtro_gestao, f=fase), "o", 1 if cor == LARANJA else 0))
                 for cabecalho, linhas, cor in blocos
             )
-            detalhamento_html = f'''
-        <button type="button" class="btn-detalhamento"
-                onclick="alternarDetalhamento(this, '{id_detalhe}')">Ver detalhamento por objeto ▾</button>
-        <div class="detalhamento-fase oculto" id="{id_detalhe}">
+            detalhes_fases_html.append(f'''
+        <div class="composicao-fase detalhamento-fase fase-detalhe oculto" id="{id_detalhe}">
+          <div class="fase-detalhe-titulo">{_html_esc(rotulo_f)} — detalhamento por objeto</div>
           {tabelas_html}
           {f'<div class="nota-rodape" style="margin-top:6px">{_html_esc(nota)}</div>' if nota else ""}
-        </div>'''
-        separador = '<hr class="separador-fase">' if idx_fase > 1 else ""
-        blocos_fases_html.append(f'''
-      <div class="composicao-fase">
-        {separador}
-        <div class="grafico-fase-bloco gf-ordem-tc">{_html_grafico_fase(m, grafico, rotulo_secao="")}</div>
-        {detalhamento_html}
-      </div>''')
-    composicao_fase_html = "".join(blocos_fases_html)
+        </div>''')
+        cards_fases_html.append(_html_card_fase(grafico, id_detalhe if blocos else None))
+    # uma coluna por fase (hoje 4: Selecionada, Licitação, Execução do Objeto
+    # e Concluída), todas na mesma linha; 1 coluna em tela estreita (CSS)
+    composicao_fase_html = (f'<div class="fase-cards" style="--n-fases:{max(1, len(cards_fases_html))}">'
+                            f'{"".join(cards_fases_html)}</div>'
+                            f'{"".join(detalhes_fases_html)}')
 
     # --- Composição por Eixo/Executor (pedido do usuário em 11/11/2026):
     # mesmo desenho da Composição por Fase — um gráfico por eixo, aberto por
@@ -3559,9 +3583,6 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
       Clique num card para ver todas as informações da ação.</div>
     ''', classe_extra="slide-continua")
 
-    cabecalho_quadro, linhas_quadro = _sem_colunas_zeradas(CABECALHO_QUADRO_RESUMO,
-                                                           _linhas_quadro_resumo(m, _mi_bi_2_casas))
-
     # --- panorama + visão geral: página única (pedido do usuário em
     # 08/11/2026; antes eram 2 páginas com investimento total, barra e cards
     # duplicados — agora o valor de T.C. não firmado por fonte e a tabela de
@@ -3610,24 +3631,11 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
       {cartoes_status_html}
       <div style="margin-top:40px">
         <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
-          <span>INVESTIMENTO POR FASE E FONTE</span>
-          <button type="button" class="btn-icone-detalhamento" title="Ver tabela de investimento por fase"
-                  onclick="alternarDetalhamento(this, 'detalhe-tabela-fase')">+</button>
-        </div>
-        <div class="oculto" id="detalhe-tabela-fase">
-          {_html_tabela([c + "*" if c == "NÃO DISCRIMINADO" else c for c in cabecalho_quadro],
-                        linhas_quadro, linhas_bold={len(linhas_quadro) - 1})}
-          {f'<div class="nota-rodape">{_html_esc(_nota_nao_discriminado(m, com_remissao=False))}</div>'
-           if "NÃO DISCRIMINADO" in cabecalho_quadro else ""}
-        </div>
-      </div>
-      <div style="margin-top:40px">
-        <div class="rotulo-secao" style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
           <span>COMPOSIÇÃO POR FASE</span>
-          <button type="button" class="btn-icone-detalhamento" title="Ver composição por fase"
-                  onclick="alternarDetalhamento(this, 'detalhe-composicao-fase')">+</button>
+          <button type="button" class="btn-icone-detalhamento" title="Ocultar composição por fase"
+                  onclick="alternarDetalhamento(this, 'detalhe-composicao-fase')">–</button>
         </div>
-        <div class="oculto" id="detalhe-composicao-fase">
+        <div id="detalhe-composicao-fase">
           {composicao_fase_html}
         </div>
       </div>
@@ -3683,6 +3691,18 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
        pedido do usuário em 09/11/2026. */
     .cabecalho { background:#0B1F3F; color:#fff; padding:14px 40px 8px; position:relative; }
     .cabecalho .titulo { font-size:30px; font-weight:700; }
+    /* título + chips de filtro na mesma linha, centralizados na vertical;
+       a reserva à direita (padding) é o espaço do bloco "GOVERNO DO
+       ESTADO / CASA CIVIL" — em tela estreita os chips quebram pra linha de
+       baixo em vez de passar por cima dele (pedido do usuário em 17/11/2026) */
+    .cabecalho .titulo-linha { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; padding-right:var(--reserva-governo, 300px); }
+    /* até ~1700px o slide ocupa a tela toda e o botão flutuante "Gerar PDF"
+       (fixo no canto) caía em cima do "GOVERNO DO ESTADO / CASA CIVIL":
+       o bloco recua pra esquerda do botão (só na tela, não na impressão) */
+    @media screen and (max-width:1700px) {
+      body:not(.tela-cheia) .cabecalho .governo { right:160px; }
+      body:not(.tela-cheia) .cabecalho .titulo-linha { --reserva-governo:420px; }
+    }
     .cabecalho .subtitulo { font-size:14px; font-weight:700; color:#C9D6EA; margin-top:4px; }
     .cabecalho .base-atualizada { font-size:12px; line-height:1.3; color:#C9D6EA; margin-top:3px; }
     .cabecalho .governo { position:absolute; top:14px; right:40px; text-align:right; font-weight:700;
@@ -3897,6 +3917,35 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .btn-detalhamento:hover { background:#E6E9EE; }
     .detalhamento-fase { margin-top:18px; }
     .separador-fase { border:none; border-top:1px solid #D8DCE3; margin:28px 0 24px; }
+    /* Composição por Fase em cards lado a lado; clique no card abre o
+       detalhamento por objeto da fase em largura total, logo abaixo —
+       pedido do usuário em 17/11/2026 (ver _html_card_fase e faseCardAlternar). */
+    .fase-cards { display:grid; grid-template-columns:repeat(var(--n-fases, 3), minmax(0, 1fr)); gap:18px; }
+    @media (max-width:900px) { .fase-cards { grid-template-columns:1fr; } }
+    .fase-card { background:#fff; border:1px solid #D8DCE3; border-top:4px solid #0B5CAD; border-radius:10px;
+      padding:16px 18px; display:flex; flex-direction:column; gap:10px; transition:box-shadow .15s, border-color .15s; }
+    .fase-card.clicavel { cursor:pointer; }
+    .fase-card.clicavel:hover, .fase-card.clicavel:focus-visible { border-color:#0B1F3F; box-shadow:0 4px 14px rgba(11,31,63,.15);
+      outline:none; }
+    .fase-card.aberto { border-color:#0B1F3F; border-top-color:#0B1F3F; box-shadow:0 4px 14px rgba(11,31,63,.18); }
+    .fc-topo { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+    .fc-nome { font-size:19px; font-weight:700; color:#0B1F3F; }
+    .fc-seta { font-size:16px; color:#5B6576; }
+    .fase-card.aberto .fc-seta { color:#0B1F3F; }
+    .fc-total { font-size:30px; font-weight:900; color:#0B1F3F; line-height:1.1; margin-top:-4px; }
+    .fc-fontes { display:flex; flex-direction:column; gap:10px; border-top:1px solid #F0F2F6; padding-top:10px; }
+    .fc-fonte-cab { display:flex; justify-content:space-between; gap:8px; font-size:14px; }
+    .fc-fonte-nome { font-weight:700; color:#0B1F3F; }
+    .fc-fonte-total { font-weight:700; color:#0B1F3F; white-space:nowrap; }
+    .fc-fonte .barra-trilho { flex:none; height:13px; margin:4px 0 3px; }
+    .fc-fonte-valores { display:flex; justify-content:space-between; gap:8px; font-size:13px; font-weight:700; }
+    .fc-legenda { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:#5B6576; margin-top:auto;
+      border-top:1px solid #F0F2F6; padding-top:8px; }
+    .fc-legenda i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+    .fase-detalhe { margin-top:18px; border:1px solid #D8DCE3; border-top:4px solid #0B1F3F; border-radius:10px;
+      padding:14px 18px 18px; }
+    .fase-detalhe-titulo { font-size:16px; font-weight:700; color:#0B1F3F; }
+    @media print { .fase-card { break-inside:avoid; } .fc-seta { display:none; } }
 
     /* Panorama + Visão Geral: botões de detalhamento (em ícone) do valor de
        T.C. não firmado por fonte e da tabela de investimento por fase —
@@ -4249,7 +4298,11 @@ def _sufixar_ids(html, sufixo):
     que apontam para ele ('x' em onclick) acompanham."""
     for id_html in set(re.findall(r'\sid="([^"]+)"', html)):
         html = (html.replace(f'id="{id_html}"', f'id="{id_html}--{sufixo}"')
-                .replace(f"'{id_html}'", f"'{id_html}--{sufixo}'"))
+                .replace(f"'{id_html}'", f"'{id_html}--{sufixo}'")
+                # cards da Composição por Fase apontam o detalhamento por
+                # atributo (ver _html_card_fase)
+                .replace(f'aria-controls="{id_html}"', f'aria-controls="{id_html}--{sufixo}"')
+                .replace(f'data-detalhe="{id_html}"', f'data-detalhe="{id_html}--{sufixo}"'))
     return html
 
 
@@ -4307,10 +4360,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
                                                   chave_gestao=chave_v, metricas_saida=metricas,
                                                   partes_monitoramento=partes_monitoramento)
             slides_v = _sufixar_ids(slides_v, chave_v)
-            if chave_v != "todas":
-                slides_v = slides_v.replace('<div class="base-atualizada">',
-                                            f'<div class="base-atualizada"><span class="selo-gestao">'
-                                            f'{_html_esc(rotulo_v)}</span> ')
+            # o selo de gestão que ficava aqui (fixo, abaixo do subtítulo)
+            # virou o chip ao lado do título, atualizado pelo JS dos
+            # seletores (atualizarChipsFiltro) — pedido do usuário em 17/11/2026
             blocos.append(f'<div class="variante-gestao{" ativa" if i == 0 else ""}" data-gestao="{chave_v}">'
                           f'{slides_v}</div>')
             classe_botao = ' class="ativo"' if i == 0 else ""
@@ -4471,11 +4523,42 @@ function textoBotaoDetalhamento(texto, aberto) {{
                 : texto.replace(/^Ocultar/, 'Ver').replace('▴', '▾');
 }}
 
+// Composição por Fase (pedido do usuário em 17/11/2026): clicar no card da
+// fase abre/fecha o detalhamento por objeto dela, logo abaixo dos cards; só
+// um aberto por vez (os cards de cada variante de gestão/secretaria são
+// independentes — a busca é sempre dentro da mesma linha de cards).
+function faseCardAlternar(card) {{
+  var grade = card.parentNode;
+  var vaiAbrir = card.getAttribute('aria-expanded') !== 'true';
+  grade.querySelectorAll('.fase-card.clicavel').forEach(function (c) {{
+    var alvo = document.getElementById(c.dataset.detalhe);
+    var abrir = vaiAbrir && c === card;
+    if (alvo) alvo.classList.toggle('oculto', !abrir);
+    c.classList.toggle('aberto', abrir);
+    c.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+    var seta = c.querySelector('.fc-seta');
+    if (seta) seta.textContent = abrir ? '▴' : '▾';
+    c.title = c.title.replace(abrir ? 'Ver' : 'Ocultar', abrir ? 'Ocultar' : 'Ver');
+  }});
+}}
+document.addEventListener('click', function (ev) {{
+  var card = ev.target.closest('.fase-card.clicavel');
+  if (card) faseCardAlternar(card);
+}});
+document.addEventListener('keydown', function (ev) {{
+  var card = ev.target.closest && ev.target.closest('.fase-card.clicavel');
+  if (card && (ev.key === 'Enter' || ev.key === ' ')) {{ ev.preventDefault(); ev.stopPropagation(); faseCardAlternar(card); }}
+}}, true);
+
 function gerarPdfCompleto() {{
   // Expande todo detalhamento oculto para sair no PDF e devolve ao estado
   // anterior depois que a caixa de impressão do navegador é fechada.
   var ocultos = Array.prototype.slice.call(document.querySelectorAll('.oculto'));
   ocultos.forEach(function (el) {{ el.classList.remove('oculto'); }});
+  // ícones "+/–" voltam exatamente como estavam (a Composição por Fase já
+  // abre expandida — não pode voltar como "+" depois da impressão)
+  var icones = Array.prototype.slice.call(document.querySelectorAll('.btn-icone-detalhamento'))
+    .map(function (b) {{ return [b, b.textContent, b.title]; }});
   document.querySelectorAll('.btn-detalhamento').forEach(function (b) {{
     b.textContent = textoBotaoDetalhamento(b.textContent, true);
   }});
@@ -4489,10 +4572,7 @@ function gerarPdfCompleto() {{
     document.querySelectorAll('.btn-detalhamento').forEach(function (b) {{
       b.textContent = textoBotaoDetalhamento(b.textContent, false);
     }});
-    document.querySelectorAll('.btn-icone-detalhamento').forEach(function (b) {{
-      b.textContent = '+';
-      if (b.title.indexOf('Ocultar') === 0) b.title = b.title.replace('Ocultar', 'Ver');
-    }});
+    icones.forEach(function (x) {{ x[0].textContent = x[1]; x[0].title = x[2]; }});
     window.removeEventListener('afterprint', restaurar);
   }}
   window.addEventListener('afterprint', restaurar);
@@ -4630,7 +4710,26 @@ function gerarPdfCompleto() {{
     var anterior = slides[atual], indiceAnterior = atual;
     montarSlides();
     mostrar(posicaoEquivalente(anterior, indiceAnterior));
+    atualizarChipsFiltro();
   }};
+
+  // Chips de gestão/secretaria ao lado do título de cada slide (pedido do
+  // usuário em 17/11/2026): leem o MESMO estado dos seletores (botão
+  // .ativo de #seletor-gestao/#seletor-secretaria) — trocarGestao passa
+  // por trocarSecretaria, então os dois cliques chegam aqui. "Todas" = chip
+  // escondido.
+  function atualizarChipsFiltro() {{
+    var bGestao = document.querySelector('#seletor-gestao button.ativo');
+    var bSec = document.querySelector('#seletor-secretaria button.ativo');
+    var gestao = bGestao && bGestao.dataset.gestao !== 'todas' ? bGestao.textContent.trim() : '';
+    var sec = bSec && bSec.dataset.secretaria ? bSec.dataset.secretaria : '';
+    document.querySelectorAll('.chip-gestao').forEach(function (c) {{
+      c.textContent = gestao; c.hidden = !gestao; c.title = gestao ? 'Gestão: ' + gestao : '';
+    }});
+    document.querySelectorAll('.chip-secretaria').forEach(function (c) {{
+      c.textContent = sec; c.hidden = !sec; c.title = sec ? 'Secretaria: ' + sec : '';
+    }});
+  }}
 
   // Posição, na lista de slides recém-montada, do slide equivalente ao que
   // estava na tela: o mesmo elemento (slides comuns — Canva, organograma,
@@ -4656,6 +4755,7 @@ function gerarPdfCompleto() {{
   // Visibilidade inicial das secretarias já bate com a gestão ativa de
   // largada (normalmente "todas", que mostra todas).
   atualizarVisibilidadeSecretarias((variante() && variante().dataset.gestao) || 'todas');
+  atualizarChipsFiltro();   // chips já refletem a seleção inicial
 
   montarSlides();
   if (!slides.length) return;
@@ -4774,8 +4874,17 @@ CSS_SELETOR_GESTAO = """
       padding:8px 14px; font:700 13px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px; cursor:pointer; }
     #seletor-gestao button:hover { background:rgba(255,255,255,.12); color:#fff; }
     #seletor-gestao button.ativo { background:#4FA3E0; color:#0B1F3F; }
-    .selo-gestao { display:inline-block; background:#4FA3E0; color:#0B1F3F; font-weight:700; font-size:11px;
-      padding:1px 8px; border-radius:9px; margin-right:6px; letter-spacing:.3px; }
+    /* Chips de gestão/secretaria ao lado do título (pedido do usuário em
+       17/11/2026 — substituem o selo de gestão abaixo do subtítulo, no mesmo
+       estilo dele): gestão cheia, secretaria só com contorno; somem nas
+       opções "Todas" (ver atualizarChipsFiltro). */
+    .chips-filtro { display:inline-flex; flex-wrap:wrap; align-items:center; gap:8px; }
+    .chip-filtro { display:inline-block; font-weight:700; font-size:13px; line-height:1.2; padding:4px 12px;
+      border-radius:12px; letter-spacing:.3px; text-transform:uppercase; white-space:nowrap; border:1.5px solid #4FA3E0; }
+    .chip-filtro[hidden] { display:none; }
+    .chip-gestao { background:#4FA3E0; color:#0B1F3F; }
+    .chip-secretaria { background:transparent; color:#4FA3E0; }
+    .slide-monitoramento .chips-filtro { display:none; }
     @media print { #seletor-gestao { display:none !important; } }
     /* Filtro de Secretaria (pedido do usuário em 15/11/2026, trocando o
        filtro de Executor feito antes): troca a apresentação inteira — ver
