@@ -27,3 +27,10 @@ _sync_coam.log
 # Ambiente virtual em subpasta (.venv)
 .venv/
 
+
+# Log do vigia (VIGIAR_GITHUB.ps1) - muda a cada ciclo, nao e conteudo do projeto
+_vigia_sincronizacao.log
+
+# Copias de arquivos em conflito vindos do OneDrive (VIGIAR_GITHUB.ps1)
+_conflitos_onedrive/
+_CONFLITO_SINCRONIZACAO.txt
