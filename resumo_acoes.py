@@ -409,6 +409,13 @@ def _ra_base(caminho):
 RA_STATUS_ENTREGUE = "01 - Entregue"
 
 
+def _ra_sem_num(status):
+    """Status sem o prefixo numérico ("03 - Em obras" -> "Em obras"), SÓ pra
+    escrita (dash, HTML, .pptx); a ordenação continua usando o valor completo
+    — pedido do usuário em 17/11/2026."""
+    return re.sub(r"^\d+\s*-\s*", "", str(status if status is not None else ""))
+
+
 def _ra_juntar_entregues(base):
     """Cópia da base com os status de concluída/inaugurada trocados por
     RA_STATUS_ENTREGUE, e a lista dos status que foram juntados."""
@@ -595,7 +602,8 @@ def resumo_acoes_dados(caminho, filtros=None):
         def resumo_filtros(limite):
             return "; ".join(
                 ([RA_TOP30_FONTE] if top30 else [])
-                + [f"{rotulo}: " + (", ".join(sel[c]) if len(sel[c]) <= limite
+                + [f"{rotulo}: " + (", ".join(_ra_sem_num(v) if c == "status" else v for v in sel[c])
+                                    if len(sel[c]) <= limite
                                   else f"{len(sel[c])} selecionado(s)")
                  for c, _, rotulo in campos if c in sel]
                 + [f"{rotulo}: {faixa_txt(*sel_datas[c])}"
@@ -857,7 +865,7 @@ def gerar_pptx_resumo_acoes(dados, caminho):
     celula(tab.cell(0, n_col - 1), [("Total", fs_rot, branco, "b")], navy)
 
     for i, l in enumerate(linhas, 1):
-        celula(tab.cell(i, 0), [(l["status"], fs_st, navy, "n")], branco,
+        celula(tab.cell(i, 0), [(_ra_sem_num(l["status"]), fs_st, navy, "n")], branco,
                PP_ALIGN.LEFT)
         for j, c in enumerate(l["celulas"], 1):
             celula(tab.cell(i, j), conteudo(c, fs, RA_AZUL), branco)
@@ -967,7 +975,7 @@ def gerar_pptx_resumo_acoes(dados, caminho):
                 celula(tab.cell(0, n_col - 1), [("Total", 12, branco, "b")], navy)
 
             for r, l in enumerate(q["linhas"], 2):
-                celula(tab.cell(r, 0), [(l["status"], fs_st, navy, "n")], branco,
+                celula(tab.cell(r, 0), [(_ra_sem_num(l["status"]), fs_st, navy, "n")], branco,
                        PP_ALIGN.LEFT)
                 for j, i in enumerate(ix, 1):
                     celula(tab.cell(r, j), conteudo(l["celulas"][i], fs_v, RA_AZUL), branco)
@@ -1055,10 +1063,19 @@ def _dados_cards_acoes_top30(df):
     (ver detalhe_rank/cartao_municipio) — pedido do usuário em 15/11/2026.
     Município/status/objeto na MESMA forma usada pelos data-* do clique (ver
     _acoes_do_municipio), pra o filtro em JS bater certo com a linha."""
-    campos = ["mu", "st", "ob", "nome", "mun", "ex", "ds", "av", "pz", "val", "orc"]
     if "_top30" not in df.columns:
-        return {"campos": campos, "acoes": []}
-    parte = df[df["_top30"]]
+        return _dados_cards_acoes(df.iloc[0:0])
+    return _dados_cards_acoes(df[df["_top30"]])
+
+
+def _dados_cards_acoes(parte):
+    """Uma linha por ação de `parte` pra janela de cards (ver
+    _dados_cards_acoes_top30). "fs"/"ei"/"fx" = status (com o número, igual
+    às linhas dos quadros), eixo e executor brutos: usados pelo clique nas
+    células dos quadros Status × Eixo/Objeto — pedido do usuário em
+    17/11/2026."""
+    campos = ["mu", "st", "ob", "nome", "mun", "ex", "ds", "av", "pz", "val", "orc",
+              "fs", "ei", "fx"]
     if parte.empty:
         return {"campos": campos, "acoes": []}
     objeto = (parte["_f_objeto"] if "_f_objeto" in parte.columns
@@ -1079,19 +1096,25 @@ def _dados_cards_acoes_top30(df):
               else pd.Series(float("nan"), index=parte.index))
     prazo = (parte["_d_entrega"] if "_d_entrega" in parte.columns
              else pd.Series(pd.NaT, index=parte.index))
+    f_exec = (parte["_f_executor"] if "_f_executor" in parte.columns
+              else pd.Series("", index=parte.index))
+    municipio = (parte["Município"] if "Município" in parte.columns
+                 else pd.Series("", index=parte.index))
 
     acoes = []
     for i in parte.index:
         av, pz, nome = avanco.loc[i], prazo.loc[i], str(nome_acao.loc[i]).strip()
+        mu = municipio.loc[i]
         acoes.append([
-            _chave_municipio(parte.loc[i, "Município"]), status.loc[i], objeto.loc[i],
+            _chave_municipio(mu), status.loc[i], objeto.loc[i],
             nome or str(objeto.loc[i]),
-            str(parte.loc[i, "Município"]).strip() if pd.notna(parte.loc[i, "Município"]) else "",
+            str(mu).strip() if pd.notna(mu) else "",
             str(executor.loc[i]).strip(), " ".join(str(descricao.loc[i]).split()),
             round(float(av), 1) if pd.notna(av) else None,
             pz.strftime("%d/%m/%Y") if pd.notna(pz) else "A definir",
             _ra_rs(float(parte.loc[i, "_valor"])) + ("*" if bool(parte.loc[i, "_orc"]) else ""),
             bool(parte.loc[i, "_orc"]),
+            str(parte.loc[i, "_f_status"]), str(parte.loc[i, "_eixo"]), str(f_exec.loc[i]),
         ])
     return {"campos": campos, "acoes": acoes}
 
@@ -1720,14 +1743,26 @@ def _montar_blocos_monitoramento(caminho_base, dados):
     recorte_txt = (f"Filtros: {dados.get('filtros_txt') or ''}"
                    if dados["filtrado"] else "Base completa")
 
-    def cel(c, cls=""):
-        cl = f' class="{cls}"' if cls else ""
-        return (f"<td{cl}><b>{_esc(c['txt'])}</b><small>{_esc(c['qtd'])}</small></td>"
-                if c else f'<td{cl}><span class="tr">–</span></td>')
+    # Clique numa célula dos quadros abre a janela de cards com as ações
+    # daquele Status × Eixo/Objeto (linha TOTAL = todos os status; coluna
+    # Total = todos os eixos) — pedido do usuário em 17/11/2026. Os data-*
+    # casam com os campos "fs"/"ei"/"ob" de _dados_cards_acoes.
+    def cel(c, cls="", st="", ei="", ob=""):
+        if not c:
+            cl = f' class="{cls}"' if cls else ""
+            return f'<td{cl}><span class="tr">–</span></td>'
+        attrs = "".join(f' data-{k}="{_esc(v)}"' for k, v in (("st", st), ("ei", ei), ("ob", ob)) if v)
+        return (f'<td class="{(cls + " ra-cel-clic").strip()}"{attrs} role="button" tabindex="0" '
+                f'title="Ver os cards das ações"><b>{_esc(c["txt"])}</b><small>{_esc(c["qtd"])}</small></td>')
+
+    def st_de(l):
+        return "" if l is dados["total"] or l is (dados.get("quadro_objeto") or {}).get("total") else l["status"]
 
     def linha(l, cls=""):
-        return (f"<td>{_esc(l['status'])}</td>" + "".join(cel(c, cls) for c in l["celulas"])
-                + cel(l["total"], "tot"))
+        st = st_de(l)
+        return (f"<td>{_esc(_ra_sem_num(l['status']))}</td>"
+                + "".join(cel(c, cls, st, e) for c, e in zip(l["celulas"], dados["eixos"]))
+                + cel(l["total"], "tot", st))
 
     quadro = ('<table class="quadro"><thead><tr><th>Status</th>'
               + "".join(f"<th>{_esc(e)}</th>" for e in dados["eixos"])
@@ -1742,12 +1777,14 @@ def _montar_blocos_monitoramento(caminho_base, dados):
         for g in q["grupos"]:
             inicio.add(n)
             n += len(g["objetos"])
+        colunas_eo = [(g["eixo"], o) for g in q["grupos"] for o in g["objetos"]]
 
         def linha_obj(l, cls=""):
-            return (f"<td>{_esc(l['status'])}</td>"
-                    + "".join(cel(c, (cls + (" ig" if i in inicio else "")).strip())
-                              for i, c in enumerate(l["celulas"]))
-                    + cel(l["total"], "tot ig"))
+            st = st_de(l)
+            return (f"<td>{_esc(_ra_sem_num(l['status']))}</td>"
+                    + "".join(cel(c, (cls + (" ig" if i in inicio else "")).strip(), st, e, o)
+                              for i, (c, (e, o)) in enumerate(zip(l["celulas"], colunas_eo)))
+                    + cel(l["total"], "tot ig", st))
 
         quadro_obj = (
             '<table class="quadro quadro-obj"><thead><tr><th rowspan="2">Status</th>'
@@ -1946,6 +1983,8 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
    objeto clicável é parte do conteúdo normal (dentro de .mon-ra).*/
 .ra-obj-clic{{cursor:pointer;color:var(--azul);text-decoration:underline dotted;text-underline-offset:2px}}
 .ra-obj-clic:hover{{color:var(--navy);text-decoration-style:solid}}
+.quadro td.ra-cel-clic{{cursor:pointer}}
+.quadro td.ra-cel-clic:hover,.quadro td.ra-cel-clic:focus-visible{{background:#E3EEFA;outline:none;box-shadow:inset 0 0 0 2px #0B5CAD}}
 #ra-oc-fundo{{display:none;position:fixed;inset:0;z-index:1150;background:rgba(11,31,63,.55);align-items:center;justify-content:center;padding:24px}}
 #ra-oc-fundo.aberta{{display:flex}}
 #ra-oc-fundo .ra-oc-janela{{background:#fff;border-radius:12px;width:min(1200px,100%);max-height:100%;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)}}
@@ -2193,6 +2232,47 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
       ||'<div class="ra-oc-vazio">Nenhuma ação encontrada.</div>';
     fundo.classList.add("aberta");
   }});
+  // Clique numa célula dos quadros Status × Eixo/Objeto (pedido do usuário
+  // em 17/11/2026): ações de TODO o recorte ficam num bloco só, compactado
+  // (.ra-qd-dados, gzip + base64, fora do conteúdo trocado pelo seletor
+  // eixo × executor); o recorte visível (.ra-quadros data-fe/data-fx) e a
+  // célula (data-st/ei/ob) dizem quais mostrar.
+  var Q=null;
+  function dadosQuadros(td){{
+    if(Q)return Promise.resolve(Q);
+    var raiz=td.closest(".ra-sel-raiz")||document,el=raiz.querySelector(".ra-qd-dados");
+    if(!el||!window.DecompressionStream)return Promise.resolve({{campos:[],acoes:[]}});
+    var b=atob(el.textContent.trim()),u=new Uint8Array(b.length);
+    for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);
+    return new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream("gzip"))).json()
+      .then(function(d){{Q=d;return d;}});
+  }}
+  function semNumero(s){{return String(s||"").replace(/^\\d+\\s*-\\s*/,"");}}
+  function abrirCelula(td){{
+    var q=td.closest(".ra-quadros")||td,fe=q.dataset.fe||"",fx=q.dataset.fx||"";
+    var st=td.dataset.st||"",ei=td.dataset.ei||"",ob=td.dataset.ob||"";
+    dadosQuadros(td).then(function(d){{
+      D=d;C={{}};(D.campos||[]).forEach(function(k,i){{C[k]=i;}});
+      var lista=D.acoes.filter(function(a){{
+        return (!st||a[C.fs]===st)&&(!ei||a[C.ei]===ei)&&(!ob||a[C.ob]===ob)
+          &&(!fe||a[C.ei]===fe)&&(!fx||a[C.fx]===fx);
+      }});
+      document.getElementById("ra-oc-titulo").textContent=ob||ei||fe||"Todas as ações";
+      document.getElementById("ra-oc-sub").textContent=[ob?(ei||fe):"",st?semNumero(st):"Todos os status",fx,
+        lista.length+(lista.length===1?" ação":" ações")].filter(Boolean).join(" · ");
+      document.getElementById("ra-oc-corpo").innerHTML=lista.map(card).join("")
+        ||'<div class="ra-oc-vazio">Nenhuma ação encontrada.</div>';
+      fundo.classList.add("aberta");
+    }});
+  }}
+  document.addEventListener("click",function(ev){{
+    var td=ev.target.closest&&ev.target.closest(".ra-cel-clic");
+    if(td)abrirCelula(td);
+  }});
+  document.addEventListener("keydown",function(ev){{
+    var td=ev.target.closest&&ev.target.closest(".ra-cel-clic");
+    if(td&&(ev.key==="Enter"||ev.key===" ")){{ev.preventDefault();abrirCelula(td);}}
+  }});
   if(fundo)fundo.addEventListener("click",function(ev){{if(ev.target===fundo)window.raOcFechar();}});
   document.addEventListener("keydown",function(e){{
     if(!fundo||!fundo.classList.contains("aberta"))return;
@@ -2367,13 +2447,20 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
         if p is None:
             p = pv
         json_oc, _, _ = pv["oc_html"].partition('<div id="ra-oc-fundo">')
+        # Chave "30 MAIORES MUNICÍPIOS" desligada: só os dois quadros resumo
+        # (sem mapa, gráfico e cartões dos 30 maiores) — pedido do usuário
+        # em 17/11/2026.
+        secoes_top30 = (f'{pv["secao_mapa"]}{pv["secao_top30_grafico"]}{pv["secao_cartoes"]}{json_oc}'
+                        if dv.get("top30") else "")
         corpo = (
             f'<div class="filtros">{pv["filtros_html"]}'
             + (f'Gerado em {pv["agora"]:%d/%m/%Y às %Hh%M}.' if not sufixo else "") + '</div>'
             f'{pv["aviso_cards_html"]}'
             f'<div class="cards">{pv["cards_html"]}</div>'
-            f'{pv["secao_mapa"]}{pv["secao_top30_grafico"]}{pv["secao_cartoes"]}'
-            f'{pv["quadro_status_eixo_html"]}{pv["quadro_status_objeto_html"]}{json_oc}')
+            f'{secoes_top30}'
+            f'<div class="ra-quadros" data-fe="{_esc(eixos[ie]) if ie else ""}" '
+            f'data-fx="{_esc(executores[ix]) if ix else ""}">'
+            f'{pv["quadro_status_eixo_html"]}{pv["quadro_status_objeto_html"]}</div>')
         if sufixo:
             corpo = _sufixar_ids_monitoramento(corpo, sufixo)
         if (ie, ix) == (0, 0):
@@ -2397,6 +2484,16 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
                    f'<div class="sel-barra sel-barra-eixo">{b_eixo}</div></div>')
         guardados.append('<script type="application/json" class="ra-v-lista">'
                          + json.dumps(chaves) + "</script>")
+    # ações de todo o recorte (todas as combinações eixo × executor são
+    # subconjuntos dele) pra janela de cards das células dos quadros
+    base_qd = _ra_base(caminho_base)
+    if dados.get("entregue"):
+        base_qd, _ = _ra_juntar_entregues(base_qd)
+    json_qd = json.dumps(_dados_cards_acoes(base_qd.iloc[dados["ids"]]),
+                         ensure_ascii=False, separators=(",", ":"))
+    guardados.append('<script type="application/octet-stream" class="ra-qd-dados">'
+                     + base64.b64encode(gzip.compress(json_qd.encode("utf-8"), 9)).decode("ascii")
+                     + "</script>")
     html = (f'<div class="ra-sel-raiz">'
             f'<div class="ra-recorte" data-oc="{data_oc}">{inicial}</div>'
             f'{"".join(guardados)}</div>')
@@ -2881,6 +2978,10 @@ HTML_JANELA = r"""
       return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
     });
   }
+  // Status sem o prefixo numérico ("03 - Em obras" -> "Em obras") SÓ na
+  // escrita — o valor completo segue sendo usado pra ordenar e filtrar
+  // (pedido do usuário em 17/11/2026).
+  function semNum(t) { return String(t == null ? "" : t).replace(/^\d+\s*-\s*/, ""); }
   function norm(t) {
     return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   }
@@ -2975,7 +3076,7 @@ HTML_JANELA = r"""
       caixa.checked = marcados.indexOf(o.v) >= 0;
       caixa.onchange = function (e) { e.stopPropagation(); raAlternar(f.chave, o.v, caixa.checked); };
       var nome = document.createElement("span");
-      nome.textContent = o.v;
+      nome.textContent = f.chave === "status" ? semNum(o.v) : o.v;
       var qtd = document.createElement("small");
       qtd.textContent = o.n;
       rotulo.append(caixa, nome, qtd);
@@ -2992,7 +3093,7 @@ HTML_JANELA = r"""
       var chip = document.createElement("span");
       chip.className = "ra-chip";
       var nome = document.createElement("span");
-      nome.textContent = v; nome.title = v;
+      nome.textContent = f.chave === "status" ? semNum(v) : v; nome.title = nome.textContent;
       var x = document.createElement("button");
       x.type = "button"; x.textContent = "×"; x.title = "Remover";
       x.onclick = function (e) { e.stopPropagation(); raAlternar(f.chave, v, false); };
@@ -3186,6 +3287,7 @@ HTML_JANELA = r"""
       var p = v ? v.split("-") : null;
       return '<td class="centro">' + (p ? p[2] + "/" + p[1] + "/" + p[0] : "–") + "</td>";
     }
+    if (c.filtro === "status") v = semNum(v);
     return "<td>" + (v ? esc(v) : "–") + "</td>";
   }
   function raTabelaDesenhar() {
@@ -3281,7 +3383,7 @@ HTML_JANELA = r"""
       return;
     }
     var linha = function (l, classeExtra) {
-      return "<td>" + esc(l.status) + "</td>" +
+      return "<td>" + esc(semNum(l.status)) + "</td>" +
         l.celulas.map(function (c) { return raCelula(c, classeExtra); }).join("") +
         raCelula(l.total, "tot");
     };
@@ -3311,7 +3413,7 @@ HTML_JANELA = r"""
       return raCelula(c, cl.trim());
     };
     var linha = function (l, classeExtra) {
-      return "<td>" + esc(l.status) + "</td>" +
+      return "<td>" + esc(semNum(l.status)) + "</td>" +
         l.celulas.map(function (c, i) { return cel(c, i, classeExtra); }).join("") +
         raCelula(l.total, "tot ra-ini-grupo");
     };
