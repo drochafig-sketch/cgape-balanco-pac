@@ -120,6 +120,12 @@ if getattr(sys, "frozen", False):
     PASTA_BASE = os.path.dirname(sys.executable)
 else:
     PASTA_BASE = os.path.dirname(os.path.abspath(__file__))
+# Aberto pelo "ABRIR CGAPE - BALANCO PAC.vbs": o .exe roda de uma cópia no
+# computador da pessoa (assim ninguém prende o .exe da rede e ele pode ser
+# atualizado a qualquer hora) e CGAPE_PASTA aponta pra pasta da rede, onde
+# ficam as planilhas — pedido do usuário em 17/11/2026.
+if os.path.isdir(os.environ.get("CGAPE_PASTA") or ""):
+    PASTA_BASE = os.environ["CGAPE_PASTA"]
 
 
 def caminho_recurso(nome_arquivo):

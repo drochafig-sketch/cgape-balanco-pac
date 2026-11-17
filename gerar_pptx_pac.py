@@ -71,6 +71,8 @@ if getattr(sys, "frozen", False):
     PASTA_BASE = os.path.dirname(os.path.abspath(sys.executable))
 else:
     PASTA_BASE = os.path.dirname(os.path.abspath(__file__))
+if os.path.isdir(os.environ.get("CGAPE_PASTA") or ""):  # ver "ABRIR CGAPE - BALANCO PAC.vbs"
+    PASTA_BASE = os.environ["CGAPE_PASTA"]
 pac = None
 
 
