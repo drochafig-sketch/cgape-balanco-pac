@@ -110,7 +110,16 @@
       "Bash(awk '/class APIFiltros:/{start=NR} start && /^    class |^class /{if\\(NR!=start && start\\){print start\" \"NR; exit}}' \"CGAPE - BALANÇO PAC.py\")",
       "Bash(awk -F: '$1>16983 && $1<17290')",
       "Bash(python \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\extrair_dados_indice.py\")",
-      "Bash(python \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\gerar_memoria_calculo.py\")"
+      "Bash(python \"C:\\\\Users\\\\droch\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\e9c7513656c24f0b\\\\cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384\\\\scratchpad\\\\gerar_memoria_calculo.py\")",
+      "Bash(python \"/c/Users/droch/AppData/Local/Temp/claude/e9c7513656c24f0b/cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384/scratchpad/verificar_ordem_top30.py\")",
+      "Bash(python \"/c/Users/droch/AppData/Local/Temp/claude/e9c7513656c24f0b/cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384/scratchpad/verificar_colapso_top30.py\")",
+      "Bash(python \"/c/Users/droch/AppData/Local/Temp/claude/e9c7513656c24f0b/cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384/scratchpad/diagnostico_details.py\")",
+      "Bash(python \"/c/Users/droch/AppData/Local/Temp/claude/e9c7513656c24f0b/cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384/scratchpad/screenshot_colapso_final.py\")",
+      "Bash(python \"/c/Users/droch/AppData/Local/Temp/claude/e9c7513656c24f0b/cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384/scratchpad/verificar_btn_filtros.py\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('resumo_acoes.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('resumo_acoes.py', encoding='utf-8'\\).read\\(\\)\\); print\\('SYNTAX OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('resumo_acoes.py', encoding='utf-8'\\).read\\(\\)\\); ast.parse\\(open\\('gerar_pptx_pac.py', encoding='utf-8'\\).read\\(\\)\\); print\\('SYNTAX OK: both files'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('CGAPE - BALANÇO PAC.py', encoding='utf-8'\\).read\\(\\)\\); print\\('SYNTAX OK: CGAPE - BALANÇO PAC.py'\\)\")"
     ]
   }
 }
