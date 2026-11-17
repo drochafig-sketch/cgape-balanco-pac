@@ -17681,10 +17681,12 @@ def abrir_interface_filtros(df_base):
 
         def visualizar_html_analise_financeira(self, filtros=None, secoes=None, filtros_mon=None):
             # Botão "VER APRESENTAÇÃO (HTML)" no modo desktop — sem diálogo
-            # de salvar: é só uma conferência visual rápida, então grava
-            # sempre no mesmo arquivo (sobrescreve a cada clique) e abre
-            # direto no navegador padrão. Quem quiser guardar/enviar o
-            # arquivo pode "Salvar como" dali do próprio navegador.
+            # de salvar: grava em Downloads e abre direto no navegador
+            # padrão. Cada clique gera um arquivo NOVO, com data e hora no
+            # nome: antes era sempre o mesmo arquivo, e gerar um segundo
+            # HTML (outros filtros, inclusive do Monitoramento) apagava o
+            # anterior que ainda estava aberto — pedido do usuário em
+            # 17/11/2026.
             # filtros_mon: filtros do overlay de Monitoramento, ver
             # _construir_html_analise_financeira_bytes.
             try:
@@ -17694,8 +17696,10 @@ def abrir_interface_filtros(df_base):
                     PASTA_DOWNLOADS_PADRAO if os.path.isdir(
                         PASTA_DOWNLOADS_PADRAO) else PASTA_BASE
                 )
+                raiz_nome, ext_nome = os.path.splitext(NOME_ARQUIVO_HTML_APRESENTACAO)
                 caminho_html = os.path.join(
-                    pasta_destino, NOME_ARQUIVO_HTML_APRESENTACAO)
+                    pasta_destino,
+                    f"{raiz_nome} {datetime.now():%d-%m-%Y %Hh%Mmin%Ss}{ext_nome}")
                 with open(caminho_html, "wb") as f:
                     f.write(conteudo)
                 if os.name == "nt":

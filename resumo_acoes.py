@@ -2715,7 +2715,7 @@ def api_html(filtros=None, devolver_conteudo=False):
                     "mensagem": "HTML aberto em uma nova aba."}
         sufixo = "_Filtrado" if dados["filtrado"] else ""
         nome = ("Acoes_em_Monitoramento_"
-                f"{datetime.now():%d-%m-%Y_%Hh%Mmin}{sufixo}.html")
+                f"{datetime.now():%d-%m-%Y_%Hh%Mmin%Ss}{sufixo}.html")  # segundos: 2 no mesmo minuto não se sobrescrevem
         caminho = _caminho_livre(os.path.join(pasta_downloads(), nome))
         with open(caminho, "w", encoding="utf-8") as f:
             f.write(html)
