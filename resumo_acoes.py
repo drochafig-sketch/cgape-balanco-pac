@@ -2542,6 +2542,9 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
             '<details class="ra-top30-colapsavel">'
             '<summary>30 MAIORES MUNICÍPIOS (POPULAÇÃO)<span class="ra-top30-seta"></span></summary>'
             f'<div class="ra-top30-colapsavel-corpo">'
+            # cards de valor total (estado x 30 maiores) DENTRO da seção:
+            # só aparecem quando ela é aberta — pedido do usuário em 18/11/2026
+            f'{bloco_cards}'
             f'{pv["secao_mapa"]}{pv["secao_top30_grafico"]}{pv["secao_cartoes"]}</div></details>{json_oc}'
             if dv.get("top30") else "")
         bloco_quadros = (
@@ -2552,7 +2555,7 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
             f'<div class="filtros">{pv["filtros_html"]}'
             + (f'Gerado em {pv["agora"]:%d/%m/%Y às %Hh%M}.' if not sufixo else "") + '</div>')
         if dv.get("top30"):
-            corpo = f'{corpo_filtros}{bloco_quadros}{bloco_cards}{secoes_top30}'
+            corpo = f'{corpo_filtros}{bloco_quadros}{secoes_top30}'
         else:
             corpo = f'{corpo_filtros}{bloco_cards}{bloco_quadros}'
         if sufixo:
