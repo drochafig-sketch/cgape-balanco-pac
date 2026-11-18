@@ -3109,6 +3109,7 @@ HTML_JANELA = r"""
     border-radius:6px; padding:3px 6px; font-size:12px; font-family:inherit; }
   html[data-tema="escuro"] .ra-data-campos input { color-scheme:dark; }
   #raTabela { margin-top:18px; }
+  #raTabela:not(:empty) { min-height:calc(70vh + 90px); }
   .ra-tabela-topo { display:flex; align-items:center; gap:12px; margin-bottom:8px;
     font-size:12px; color:var(--cor-texto-secundario); }
   .ra-tabela-topo b { color:var(--cor-texto-primario); letter-spacing:.5px; }
@@ -3488,6 +3489,9 @@ HTML_JANELA = r"""
     if (focado && focado.classList && focado.classList.contains("ra-col-busca") && alvo.contains(focado)) {
       focoRot = focado.dataset.rot; focoIni = focado.selectionStart; focoFim = focado.selectionEnd;
     }
+    // posição de rolagem lateral da tabela: redesenhar não volta pro começo
+    var wrapAntes = alvo.querySelector(".ra-tabela-wrap");
+    var esqAntes = wrapAntes ? wrapAntes.scrollLeft : 0;
     var bcol = raFiltros.bcol || {};
     var cols = raBase.colunas, L = raBase.linhas;
     var ids = raIds.slice();
@@ -3526,6 +3530,8 @@ HTML_JANELA = r"""
         '">Nenhuma ação com a busca e os filtros escolhidos.</td></tr>') + "</tbody></table></div>" +
       (resto > 0 ? '<button type="button" class="ra-mais">Mostrar mais ' + Math.min(RA_PASSO, resto) +
         " (faltam " + resto.toLocaleString("pt-BR") + ")</button>" : "");
+    var wrapNovo = alvo.querySelector(".ra-tabela-wrap");
+    if (wrapNovo && esqAntes) wrapNovo.scrollLeft = esqAntes;
     alvo.querySelectorAll(".ra-col-busca").forEach(function (inp) {
       inp.onclick = function (e) { e.stopPropagation(); };
       inp.onkeydown = function (e) {
@@ -3538,7 +3544,7 @@ HTML_JANELA = r"""
         raDefinirBuscaColuna(inp.dataset.rot, inp.value);
       };
       if (focoRot !== null && inp.dataset.rot === focoRot) {
-        inp.focus();
+        try { inp.focus({preventScroll: true}); } catch (e) { inp.focus(); }
         try { inp.setSelectionRange(focoIni, focoFim); } catch (e) { /* ignora */ }
       }
     });
@@ -3564,7 +3570,21 @@ HTML_JANELA = r"""
       .finally(function () { var b = document.getElementById("raXlsx"); if (b) b.disabled = false; });
   }
 
+  // Digitando numa busca de coluna (ou mexendo na tabela), o cabeçalho da
+  // tabela fica parado na tela: o que muda de altura acima dela (filtros,
+  // cards, quadros) é compensado na rolagem — pedido do usuário em
+  // 18/11/2026 (sem "sobressaltos" na página).
   function raMontar(d) {
+    var corpoEl = document.querySelector("#ra-overlay .ra-corpo");
+    var tab = document.getElementById("raTabela");
+    var ancorar = corpoEl && tab && document.activeElement && tab.contains(document.activeElement);
+    var topoAntes = ancorar ? tab.getBoundingClientRect().top : 0;
+    try { raMontarConteudo(d); }
+    finally {
+      if (ancorar) corpoEl.scrollTop += tab.getBoundingClientRect().top - topoAntes;
+    }
+  }
+  function raMontarConteudo(d) {
     raDesenharFiltros(d.filtros, d.datas);
     raTabelaAtualizar(d);
     if (d.vazio) {
