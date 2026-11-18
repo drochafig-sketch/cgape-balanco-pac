@@ -3213,10 +3213,12 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
             titulo, "§PAG§", m["total_slides"], partes_monitoramento["secoes"][chave],
             recorte=partes_monitoramento["recorte"], classe_extra="slide-continua slide-monitoramento",
             chips=("eixo", "secretaria"))
-        # "PAC + ..." em vez do "PAC - ..." padrão (pedido do usuário em
-        # 15/11/2026): só nesta página, que soma o Monitoramento ao PAC em
-        # vez de ser uma seção interna dele.
-        html = html.replace(f"PAC - {_html_esc(titulo)}", f"PAC + {_html_esc(titulo)}", 1)
+        # Título desta página é SÓ "AÇÕES EM MONITORAMENTO", sem nenhum
+        # prefixo "PAC" (nem "PAC -", nem "PAC +") — pedido do usuário em
+        # 18/11/2026, que reforçou: "NUNCA mude esse título, SEMPRE SERÁ
+        # 'AÇÕES EM MONITORAMENTO'". NÃO alterar esta linha sem pedido
+        # explícito do usuário.
+        html = html.replace(f"PAC - {_html_esc(titulo)}", _html_esc(titulo), 1)
         texto_pac = texto_base_atualizada()
         texto_mon = partes_monitoramento.get("data_atualizacao_texto") or ""
         if texto_pac and texto_mon:
@@ -4025,8 +4027,11 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
        Secretaria no PAC; Eixo/Secretaria no Monitoramento) — pedido do
        usuário em 17/11/2026, no lugar de "mostra perto da borda inferior":
        fica sempre visível (acompanha a rolagem por ser position:fixed) e
-       só abre com um clique (ver body.filtros-abertos). */
-    .btn-filtros { position:fixed; right:16px; bottom:14px; z-index:1001; width:44px; height:44px;
+       só abre com um clique (ver body.filtros-abertos). Posição (top) logo
+       abaixo da faixa do cabeçalho do slide ativo, calculada em JS (ver
+       posicionarBotaoFiltros, chamada também a cada troca de slide) porque
+       a altura do cabeçalho varia — pedido do usuário em 18/11/2026. */
+    .btn-filtros { position:fixed; left:14px; top:var(--topo-filtros,16px); z-index:1001; width:44px; height:44px;
       border-radius:50%; border:none; background:rgba(11,31,63,.85); color:#C9D6EA; cursor:pointer;
       display:flex; align-items:center; justify-content:center; padding:0; box-shadow:0 4px 16px rgba(0,0,0,.3);
       transition:background .2s, color .2s; }
@@ -4448,12 +4453,15 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
         _CTX_HTML.registro = None
     corpo = "".join(blocos)
     corpo_sec = "".join(blocos_sec)
-    seletor_html = (f'<div id="seletor-gestao" role="group" aria-label="Gestão">{"".join(botoes)}</div>'
-                    if len(botoes) > 1 else "")
+    seletor_html = (
+        '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Gestão</div>'
+        f'<div id="seletor-gestao" role="group" aria-label="Gestão">{"".join(botoes)}</div></div>'
+        if len(botoes) > 1 else "")
     seletor_secretaria_html = (
+        '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Secretaria</div>'
         f'<div id="seletor-secretaria" role="group" aria-label="Secretaria">'
         f'<button type="button" data-secretaria="" class="ativo" onclick="trocarSecretaria(\'\')">'
-        f'Todas as secretarias</button>{"".join(botoes_sec)}</div>'
+        f'Todas as secretarias</button>{"".join(botoes_sec)}</div></div>'
         if botoes_sec else "")
     slides_comuns = "".join(h for lista in comuns.values() for h in lista)
     defs_html = _html_defs_compartilhadas(registro)
@@ -4516,8 +4524,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
 <button type="button" id="btn-filtros" class="btn-filtros" title="Mostrar/ocultar filtros" aria-expanded="false">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="4 4 20 4 14 12 14 19 10 21 10 12 4 4"></polygon></svg>
 </button>
+<div id="painel-filtros-pac" role="group" aria-label="Gestão e secretaria">
 {seletor_secretaria_html}
 {seletor_html}
+</div>
 {defs_html}
 <div id="corpo-gestoes">{corpo}</div>
 <div id="corpo-secretarias">{corpo_sec}</div>
@@ -4666,7 +4676,7 @@ function gerarPdfCompleto() {{
     var seletorSecretaria = document.getElementById('seletor-secretaria');
     if (seletorGestao) seletorGestao.style.display = ehMonitoramento ? 'none' : '';
     if (seletorSecretaria) seletorSecretaria.style.display = ehMonitoramento ? 'none' : '';
-    // e no lugar entram as barras Eixo x Secretaria/Executor do próprio
+    // e no lugar entram as barras Eixo x Secretaria do próprio
     // Monitoramento (mesmo desenho — pedido do usuário em 16/11/2026)
     var seletorMon = document.querySelector('.sel-recorte');
     if (seletorMon) seletorMon.style.display = ehMonitoramento ? '' : 'none';
@@ -4680,6 +4690,7 @@ function gerarPdfCompleto() {{
     if (contador) contador.textContent = (atual + 1) + '/' + slides.length;
     history.replaceState(null, '', '#' + (atual + 1));
     atualizarSeletoresMonitoramento(slides[atual]);
+    if (window.posicionarBotaoFiltros) window.posicionarBotaoFiltros();
   }}
 
   // Esconde, no seletor de Secretaria, quem não existe na gestão escolhida
@@ -4887,6 +4898,20 @@ function gerarPdfCompleto() {{
     }});
   }}
 
+  // Botão .btn-filtros logo abaixo da faixa do cabeçalho do slide ativo
+  // (pedido do usuário em 18/11/2026): a altura do cabeçalho varia (título
+  // com chips, subtítulo...), então é medida em JS em vez de um valor fixo
+  // no CSS. Idêntica à de resumo_acoes.py (JS_SELETOR_RECORTE) — cada
+  // página calcula a sua; aqui recalcula também a cada troca de slide
+  // (ver mostrar()), já que cada slide tem seu próprio cabeçalho.
+  window.posicionarBotaoFiltros = window.posicionarBotaoFiltros || function () {{
+    var cab = document.querySelector('.slide.ativo .cabecalho') || document.querySelector('header');
+    var topo = cab ? cab.getBoundingClientRect().bottom + 10 : 16;
+    document.documentElement.style.setProperty('--topo-filtros', Math.max(10, topo) + 'px');
+  }};
+  window.posicionarBotaoFiltros();
+  window.addEventListener('resize', window.posicionarBotaoFiltros);
+
   // Botão .btn-filtros: liga/desliga o painel de filtros (body.filtros-
   // abertos) com um clique; clicar fora do botão e do painel aberto fecha
   // de novo — pedido do usuário em 17/11/2026.
@@ -4900,7 +4925,7 @@ function gerarPdfCompleto() {{
     }};
     document.addEventListener('click', function (e) {{
       if (!document.body.classList.contains('filtros-abertos')) return;
-      if (e.target.closest('#seletor-gestao, #seletor-secretaria, .sel-recorte, .btn-filtros')) return;
+      if (e.target.closest('#painel-filtros-pac, .sel-recorte, .btn-filtros')) return;
       document.body.classList.remove('filtros-abertos');
       btnFiltros.classList.remove('ativo');
       btnFiltros.setAttribute('aria-expanded', 'false');
@@ -4942,14 +4967,27 @@ function gerarPdfCompleto() {{
 # cobria conteúdo da página ao rolar — pedido do usuário em 17/11/2026.
 CSS_SELETOR_GESTAO = """
     .variante-gestao:not(.ativa), #slides-comuns { display:none; }
-    #seletor-gestao { position:fixed; left:50%; transform:translateX(-50%); bottom:10px; z-index:1000; display:flex; gap:4px;
-      background:rgba(11,31,63,.92); padding:5px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.3);
-      opacity:0; pointer-events:none; transition:opacity .25s; }
-    body.filtros-abertos #seletor-gestao { opacity:1; pointer-events:auto; }
-    #seletor-gestao button { background:transparent; color:#C9D6EA; border:none; border-radius:7px;
-      padding:8px 14px; font:700 13px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px; cursor:pointer; }
-    #seletor-gestao button:hover { background:rgba(255,255,255,.12); color:#fff; }
+    /* Painel lateral (esquerda) no lugar das barras flutuantes no rodapé —
+       pedido do usuário em 18/11/2026: cobriam conteúdo da página perto do
+       fim da tela. Um painel só (#painel-filtros-pac), com Gestão e
+       Secretaria empilhadas dentro, desliza por cima do conteúdo (não
+       empurra), com rolagem própria se a lista for comprida. */
+    #painel-filtros-pac { position:fixed; left:0; top:0; height:100vh; width:260px; max-width:82vw; z-index:1000;
+      display:flex; flex-direction:column; gap:16px; background:rgba(11,31,63,.97);
+      padding:calc(var(--topo-filtros,16px) + 54px) 14px 16px;
+      overflow-y:auto; box-shadow:4px 0 18px rgba(0,0,0,.35); transform:translateX(-100%); transition:transform .25s;
+      pointer-events:none; }
+    body.filtros-abertos #painel-filtros-pac { transform:translateX(0); pointer-events:auto; }
+    .sel-recorte-grupo { display:flex; flex-direction:column; gap:2px; }
+    .sel-recorte-titulo { color:#8FA6C9; font:700 11px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.8px;
+      text-transform:uppercase; margin:0 0 4px 10px; }
+    #seletor-gestao, #seletor-secretaria { display:flex; flex-direction:column; gap:2px; }
+    #seletor-gestao button, #seletor-secretaria button { background:transparent; color:#C9D6EA; border:none;
+      border-radius:7px; padding:9px 12px; font:700 13px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px;
+      cursor:pointer; text-align:left; }
+    #seletor-gestao button:hover, #seletor-secretaria button:hover { background:rgba(255,255,255,.12); color:#fff; }
     #seletor-gestao button.ativo { background:#4FA3E0; color:#0B1F3F; }
+    #seletor-secretaria button.ativo { background:#E68A00; color:#fff; }
     /* Chips de gestão/secretaria ao lado do título (pedido do usuário em
        17/11/2026 — substituem o selo de gestão abaixo do subtítulo, no mesmo
        estilo dele): gestão cheia, secretaria só com contorno; somem nas
@@ -4960,7 +4998,7 @@ CSS_SELETOR_GESTAO = """
     .chip-filtro[hidden] { display:none; }
     .chip-gestao, .chip-eixo { background:#4FA3E0; color:#0B1F3F; }
     .chip-secretaria { background:transparent; color:#4FA3E0; }
-    @media print { #seletor-gestao { display:none !important; } }
+    @media print { #painel-filtros-pac { display:none !important; } }
     /* Filtro de Secretaria (pedido do usuário em 15/11/2026, trocando o
        filtro de Executor feito antes): troca a apresentação inteira — ver
        trocarSecretaria() no JS. Não se cruza com o seletor de Gestão (cada
@@ -4968,16 +5006,6 @@ CSS_SELETOR_GESTAO = """
        #corpo-gestoes e mostra #corpo-secretarias (e vice-versa ao escolher
        Todas as secretarias/trocar de gestão). */
     #corpo-secretarias, #corpo-secretarias .variante-secretaria:not(.ativa) { display:none; }
-    #seletor-secretaria { position:fixed; left:50%; transform:translateX(-50%); bottom:54px; z-index:1000;
-      display:flex; gap:4px; flex-wrap:wrap; justify-content:center; max-width:94vw;
-      background:rgba(11,31,63,.92); padding:5px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.3);
-      opacity:0; pointer-events:none; transition:opacity .25s; }
-    body.filtros-abertos #seletor-secretaria { opacity:1; pointer-events:auto; }
-    #seletor-secretaria button { background:transparent; color:#C9D6EA; border:none; border-radius:7px;
-      padding:7px 12px; font:700 12px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px; cursor:pointer; }
-    #seletor-secretaria button:hover { background:rgba(255,255,255,.12); color:#fff; }
-    #seletor-secretaria button.ativo { background:#E68A00; color:#fff; }
-    @media print { #seletor-secretaria { display:none !important; } }
 """
 
 # Janela de cards ao clicar num objeto/executor das tabelas de detalhamento

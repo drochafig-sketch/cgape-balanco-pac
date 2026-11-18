@@ -140,7 +140,8 @@ app.add_url_rule(
 )
 # Janela "Resumo das ações prioritárias e PAC" do dash (resumo_acoes.py).
 for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
-                 "resumo_acoes_xlsx", "resumo_acoes_html", "resumo_acoes_atualizar_conder"):
+                 "resumo_acoes_xlsx", "resumo_acoes_html", "resumo_acoes_atualizar_conder",
+                 "resumo_acoes_qualidade_secretaria", "resumo_acoes_abrir_de_para"):
     app.add_url_rule("/api/" + _nome_ra, endpoint="api_" + _nome_ra,
                      view_func=_rota_json(getattr(pac, "_api_" + _nome_ra)),
                      methods=["POST"])

@@ -31,6 +31,16 @@ def configurar(modulo):
     pac = modulo
 
 
+def _modulo_hierarquia_secretaria():
+    # Hierarquia SECRETARIA -> EXECUTOR desta base (ver hierarquia_secretaria.py),
+    # espelhando a já existente SECRETARIA_LIMPA -> EXECUTOR do PAC — mesmo
+    # padrão de satélite independente usado pelos outros módulos (nunca
+    # "pac._modulo_X()"; cada satélite define o seu próprio).
+    import hierarquia_secretaria
+    hierarquia_secretaria.configurar(pac)
+    return hierarquia_secretaria
+
+
 RA_PLANILHA = "Ações do Cronograma.xlsx"
 RA_COL_EIXO, RA_COL_STATUS = "Eixo", "Status"
 RA_COL_VALOR, RA_COL_ORCAMENTO = "Valor de Investimento", "Valor do Orçamento"
@@ -47,6 +57,7 @@ RA_FILTROS = [("eixo", RA_COL_EIXO, "Eixo"),
               ("status", RA_COL_STATUS, "Status"),
               ("territorio", "Território Identidade", "Território"),
               ("municipio", "Município", "Município"),
+              ("secretaria", "Secretaria", "Secretaria"),
               ("executor", "Executor", "Executor"),
               ("programa", "Programa de Transferência de Recursos", "Programa"),
               ("escopo", "Escopo", "Escopo"),
@@ -390,6 +401,12 @@ def _ra_base(caminho):
     orcamento = df[RA_COL_ORCAMENTO].map(_ra_numero)
     df["_orc"] = (investimento == 0) & (orcamento > 0)
     df["_valor"] = investimento.where(~df["_orc"], orcamento)
+    # Secretaria derivada do Executor (esta base não tem essa coluna própria)
+    # — pedido do usuário em 18/11/2026, ver hierarquia_secretaria.py.
+    if "Executor" in df.columns:
+        hier = _modulo_hierarquia_secretaria()
+        hier.garantir_de_para_e_avisar(df, "Executor", RA_COL_EIXO)
+        df["Secretaria"] = hier.secretaria_de_serie(df["Executor"], df[RA_COL_EIXO])
     for chave, coluna, _ in RA_FILTROS:
         if coluna in df.columns:
             df["_f_" + chave] = _ra_opcao_filtro(df[coluna])
@@ -1071,9 +1088,10 @@ def _dados_cards_acoes_top30(df):
 def _dados_cards_acoes(parte):
     """Uma linha por ação de `parte` pra janela de cards (ver
     _dados_cards_acoes_top30). "fs"/"ei"/"fx" = status (com o número, igual
-    às linhas dos quadros), eixo e executor brutos: usados pelo clique nas
-    células dos quadros Status × Eixo/Objeto — pedido do usuário em
-    17/11/2026."""
+    às linhas dos quadros), eixo e SECRETARIA (não Executor — tem que bater
+    com a dimensão do recorte em .ra-quadros data-fx, ver _montar_recortes):
+    usados pelo clique nas células dos quadros Status × Eixo/Objeto —
+    pedido do usuário em 17/11/2026 (secretaria a partir de 18/11/2026)."""
     campos = ["mu", "st", "ob", "nome", "mun", "ex", "ds", "av", "pz", "val", "orc",
               "fs", "ei", "fx"]
     if parte.empty:
@@ -1096,8 +1114,8 @@ def _dados_cards_acoes(parte):
               else pd.Series(float("nan"), index=parte.index))
     prazo = (parte["_d_entrega"] if "_d_entrega" in parte.columns
              else pd.Series(pd.NaT, index=parte.index))
-    f_exec = (parte["_f_executor"] if "_f_executor" in parte.columns
-              else pd.Series("", index=parte.index))
+    f_sec = (parte["_f_secretaria"] if "_f_secretaria" in parte.columns
+             else pd.Series("", index=parte.index))
     municipio = (parte["Município"] if "Município" in parte.columns
                  else pd.Series("", index=parte.index))
 
@@ -1114,7 +1132,7 @@ def _dados_cards_acoes(parte):
             pz.strftime("%d/%m/%Y") if pd.notna(pz) else "A definir",
             _ra_rs(float(parte.loc[i, "_valor"])) + ("*" if bool(parte.loc[i, "_orc"]) else ""),
             bool(parte.loc[i, "_orc"]),
-            str(parte.loc[i, "_f_status"]), str(parte.loc[i, "_eixo"]), str(f_exec.loc[i]),
+            str(parte.loc[i, "_f_status"]), str(parte.loc[i, "_eixo"]), str(f_sec.loc[i]),
         ])
     return {"campos": campos, "acoes": acoes}
 
@@ -2330,22 +2348,29 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 
 
 CSS_SELETOR_RECORTE = """
-.sel-recorte{position:fixed;left:50%;transform:translateX(-50%);bottom:10px;z-index:1000;display:flex;flex-direction:column;align-items:center;gap:6px;width:max-content;max-width:94vw;opacity:0;pointer-events:none;transition:opacity .25s}
-body.filtros-abertos .sel-recorte{opacity:1;pointer-events:auto}
-.sel-barra{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;background:rgba(11,31,63,.92);padding:5px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.3)}
-.sel-barra button{background:transparent;color:#C9D6EA;border:none;border-radius:7px;padding:7px 12px;font:700 12px 'Roboto','Segoe UI',Arial,sans-serif;letter-spacing:.3px;cursor:pointer}
+/* Painel lateral (esquerda) no lugar da barra flutuante no rodapé — pedido
+   do usuário em 18/11/2026: cobria conteúdo da página ao abrir perto do
+   fim da tela, e misturava com o resto do conteúdo. Desliza por cima do
+   conteúdo (não empurra), com rolagem própria se a lista for comprida. */
+.sel-recorte{position:fixed;left:0;top:0;height:100vh;width:260px;max-width:82vw;z-index:1000;display:flex;flex-direction:column;gap:16px;background:rgba(11,31,63,.97);padding:calc(var(--topo-filtros,16px) + 54px) 14px 16px;overflow-y:auto;box-shadow:4px 0 18px rgba(0,0,0,.35);transform:translateX(-100%);transition:transform .25s;pointer-events:none}
+body.filtros-abertos .sel-recorte{transform:translateX(0);pointer-events:auto}
+.sel-recorte-grupo{display:flex;flex-direction:column;gap:2px}
+.sel-recorte-titulo{color:#8FA6C9;font:700 11px 'Roboto','Segoe UI',Arial,sans-serif;letter-spacing:.8px;text-transform:uppercase;margin:0 0 4px 10px}
+.sel-barra{display:flex;flex-direction:column;gap:2px}
+.sel-barra button{background:transparent;color:#C9D6EA;border:none;border-radius:7px;padding:9px 12px;font:700 13px 'Roboto','Segoe UI',Arial,sans-serif;letter-spacing:.3px;cursor:pointer;text-align:left}
 .sel-barra button:hover{background:rgba(255,255,255,.12);color:#fff}
 .sel-barra button.oculto{display:none}
-.sel-barra-eixo button{padding:8px 14px;font-size:13px}
 .sel-barra-eixo button.ativo{background:#4FA3E0;color:#0B1F3F}
 .sel-barra-sec button.ativo{background:#E68A00;color:#fff}
 @media print{.sel-recorte{display:none!important}}
-/* Botão que liga/desliga o painel acima (só existe na página autônoma —
-   embutida na Apresentação CGAPE, o botão é o dela, .btn-filtros também,
-   e já controla o mesmo body.filtros-abertos) — pedido do usuário em
+/* Botão que liga/desliga o painel (só existe na página autônoma — embutida
+   na Apresentação CGAPE, o botão é o dela, .btn-filtros também, e já
+   controla o mesmo body.filtros-abertos) — pedido do usuário em
    17/11/2026, no lugar da régua de proximidade da borda inferior, que
-   cobria conteúdo da página ao rolar. */
-.btn-filtros{position:fixed;right:16px;bottom:14px;z-index:1001;width:44px;height:44px;border-radius:50%;border:none;background:rgba(11,31,63,.85);color:#C9D6EA;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 4px 16px rgba(0,0,0,.3);transition:background .2s,color .2s}
+   cobria conteúdo da página ao rolar. Posição (top) logo abaixo da faixa
+   do cabeçalho, calculada em JS (ver posicionarBotaoFiltros) porque a
+   altura do cabeçalho varia — pedido do usuário em 18/11/2026. */
+.btn-filtros{position:fixed;left:14px;top:var(--topo-filtros,16px);z-index:1001;width:44px;height:44px;border-radius:50%;border:none;background:rgba(11,31,63,.85);color:#C9D6EA;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 4px 16px rgba(0,0,0,.3);transition:background .2s,color .2s}
 .btn-filtros svg{width:20px;height:20px}
 .btn-filtros:hover{background:rgba(11,31,63,1);color:#fff}
 .btn-filtros.ativo{background:#4FA3E0;color:#0B1F3F}
@@ -2354,7 +2379,7 @@ body.filtros-abertos .sel-recorte{opacity:1;pointer-events:auto}
 
 JS_SELETOR_RECORTE = """
 (function(){
-  // Seletor EIXO x SECRETARIA/EXECUTOR (pedido do usuário em 16/11/2026),
+  // Seletor EIXO x SECRETARIA (pedido do usuário em 16/11/2026),
   // no mesmo desenho dos seletores de Gestão/Secretaria do PAC: barras
   // flutuantes no rodapé, que só aparecem com um clique no botão
   // .btn-filtros (body.filtros-abertos — pedido do usuário em 17/11/2026,
@@ -2373,12 +2398,27 @@ JS_SELETOR_RECORTE = """
   var cont=raiz.querySelector(".ra-recorte");
   var bEixo=Array.prototype.slice.call(barra.querySelectorAll(".sel-eixo-btn"));
   var bSec=Array.prototype.slice.call(barra.querySelectorAll(".sel-sec-btn"));
+  // Botão .btn-filtros logo abaixo da faixa do cabeçalho (pedido do usuário
+  // em 18/11/2026): a altura do cabeçalho varia (título, subtítulo, "base
+  // atualizada em"), então é medida em JS em vez de um valor fixo no CSS.
+  // Grava em --topo-filtros (document.documentElement): o botão usa direto
+  // (top:var(--topo-filtros)) e o painel lateral soma a altura do botão pra
+  // não cobrir o primeiro item da lista (ver .sel-recorte no CSS).
+  // Compartilhada com a Apresentação CGAPE (gerar_pptx_pac.py define a
+  // mesma função, idêntica — ver lá): cada página calcula a sua.
+  window.posicionarBotaoFiltros=window.posicionarBotaoFiltros||function(){
+    var cab=document.querySelector(".slide.ativo .cabecalho")||document.querySelector("header");
+    var topo=cab?cab.getBoundingClientRect().bottom+10:16;
+    document.documentElement.style.setProperty("--topo-filtros",Math.max(10,topo)+"px");
+  };
   // página autônoma: o botão .btn-filtros é dela (na Apresentação CGAPE o
   // botão e o clique-fora-fecha já são do carrossel, que liga o mesmo
   // body.filtros-abertos — ver JS em gerar_pptx_pac.py).
   if(!document.getElementById("nav-carrossel")){
     var btnFiltros=document.getElementById("btn-filtros");
     if(btnFiltros){
+      window.posicionarBotaoFiltros();
+      window.addEventListener("resize",window.posicionarBotaoFiltros);
       btnFiltros.onclick=function(ev){
         ev.stopPropagation();
         var aberto=document.body.classList.toggle("filtros-abertos");
@@ -2433,28 +2473,30 @@ JS_SELETOR_RECORTE = """
 
 
 def _variantes_recorte(caminho_base, dados, filtros):
-    """Combinações EIXO x SECRETARIA/EXECUTOR do recorte para o seletor —
-    pedido do usuário em 16/11/2026. Devolve (eixos, executores,
-    combinações) com eixos = ["TODOS OS EIXOS", ...], executores =
-    ["TODAS AS SECRETARIAS / EXECUTORES", ...] e combinações = [(i_eixo,
-    i_executor, filtros)] só das que têm ação; o índice 0 é sempre "todos"."""
+    """Combinações EIXO x SECRETARIA do recorte para o seletor — pedido do
+    usuário em 16/11/2026 (SECRETARIA no lugar de EXECUTOR a partir de
+    18/11/2026, pra não multiplicar demais as combinações pré-renderizadas;
+    por Executor continua dando pra filtrar pelo painel de filtros). Devolve
+    (eixos, secretarias, combinações) com eixos = ["TODOS OS EIXOS", ...],
+    secretarias = ["TODAS AS SECRETARIAS", ...] e combinações = [(i_eixo,
+    i_secretaria, filtros)] só das que têm ação; o índice 0 é sempre "todos"."""
     eixos = ["TODOS OS EIXOS"]
-    executores = ["TODOS"]
+    secretarias = ["TODOS"]
     if filtros is None:
-        return eixos, executores, [(0, 0, None)]
+        return eixos, secretarias, [(0, 0, None)]
     base = _ra_base(caminho_base)
     linhas = base.iloc[dados["ids"]]
-    if "_f_executor" not in linhas.columns:
-        linhas = linhas.assign(_f_executor="")
+    if "_f_secretaria" not in linhas.columns:
+        linhas = linhas.assign(_f_secretaria="")
     eixos += [e for e, c in zip(dados["eixos"], dados["total"]["celulas"]) if c]
-    executores += sorted(set(linhas["_f_executor"]) - {""}, key=_ra_ordem)
-    pares = set(zip(linhas["_eixo"], linhas["_f_executor"]))
+    secretarias += sorted(set(linhas["_f_secretaria"]) - {""}, key=_ra_ordem)
+    pares = set(zip(linhas["_eixo"], linhas["_f_secretaria"]))
     eixos_com = {e for e, _ in pares}
-    execs_com = {x for _, x in pares}
+    secs_com = {x for _, x in pares}
     combos = []
     for ie, e in enumerate(eixos):
-        for ix, x in enumerate(executores):
-            if (ie and e not in eixos_com) or (ix and x not in execs_com):
+        for ix, x in enumerate(secretarias):
+            if (ie and e not in eixos_com) or (ix and x not in secs_com):
                 continue
             if ie and ix and (e, x) not in pares:
                 continue
@@ -2462,21 +2504,21 @@ def _variantes_recorte(caminho_base, dados, filtros):
             if ie:
                 f["eixo"] = [e]
             if ix:
-                f["executor"] = [x]
+                f["secretaria"] = [x]
             combos.append((ie, ix, f))
-    if len(eixos) < 3 and len(executores) < 3:
-        return eixos, executores, [(0, 0, None)]
-    return eixos, executores, combos
+    if len(eixos) < 3 and len(secretarias) < 3:
+        return eixos, secretarias, [(0, 0, None)]
+    return eixos, secretarias, combos
 
 
 def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
     """(html, seletor, p) — conteúdo do recorte inicial + as demais
     combinações compactadas (dentro de .ra-sel-raiz), as barras flutuantes
-    EIXO x SECRETARIA/EXECUTOR (.sel-recorte, fora do conteúdo: ficam
+    EIXO x SECRETARIA (.sel-recorte, fora do conteúdo: ficam
     fixas no rodapé — ver JS_SELETOR_RECORTE) e p = peças do recorte
     inicial (CSS/JS/janela/mapa). `sufixo`: ids de cada recorte sufixados (página
     embutida na Apresentação CGAPE — ver _sufixar_ids_monitoramento)."""
-    eixos, executores, combos = _variantes_recorte(caminho_base, dados, filtros)
+    eixos, secretarias, combos = _variantes_recorte(caminho_base, dados, filtros)
     p, inicial, guardados, chaves = None, "", [], []
     for ie, ix, f in combos:
         dv = dados if (ie, ix) == (0, 0) else resumo_acoes_dados(caminho_base, f)
@@ -2504,7 +2546,7 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
             if dv.get("top30") else "")
         bloco_quadros = (
             f'<div class="ra-quadros" data-fe="{_esc(eixos[ie]) if ie else ""}" '
-            f'data-fx="{_esc(executores[ix]) if ix else ""}">'
+            f'data-fx="{_esc(secretarias[ix]) if ix else ""}">'
             f'{pv["quadro_status_eixo_html"]}{pv["quadro_status_objeto_html"]}</div>')
         corpo_filtros = (
             f'<div class="filtros">{pv["filtros_html"]}'
@@ -2530,13 +2572,15 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
         b_sec = "".join(
             f'<button type="button" class="sel-sec-btn{" ativo" if i == 0 else ""}" data-x="{i}">'
             f'{_esc("Todas as secretarias" if i == 0 else x)}</button>'
-            for i, x in enumerate(executores))
-        seletor = ('<div class="sel-recorte" role="group" aria-label="Eixo e secretaria/executor">'
-                   f'<div class="sel-barra sel-barra-sec">{b_sec}</div>'
-                   f'<div class="sel-barra sel-barra-eixo">{b_eixo}</div></div>')
+            for i, x in enumerate(secretarias))
+        seletor = ('<div class="sel-recorte" role="group" aria-label="Eixo e secretaria">'
+                   '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Secretaria</div>'
+                   f'<div class="sel-barra sel-barra-sec">{b_sec}</div></div>'
+                   '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Eixo</div>'
+                   f'<div class="sel-barra sel-barra-eixo">{b_eixo}</div></div></div>')
         guardados.append('<script type="application/json" class="ra-v-lista">'
                          + json.dumps(chaves) + "</script>")
-    # ações de todo o recorte (todas as combinações eixo × executor são
+    # ações de todo o recorte (todas as combinações eixo × secretaria são
     # subconjuntos dele) pra janela de cards das células dos quadros
     base_qd = _ra_base(caminho_base)
     if dados.get("entregue"):
@@ -2556,7 +2600,7 @@ def gerar_html_resumo_acoes(caminho_base, dados, filtros=None):
     """Página única (abre sem internet) com cards, mapa e gráfico/avaliação
     dos 30 maiores municípios por população, cartões por município e os
     quadros Status × Eixo/Objeto do recorte atual. Com `filtros`, ganha no
-    topo o seletor EIXO (botões) x SECRETARIA/EXECUTOR (lista)."""
+    topo o seletor EIXO (botões) x SECRETARIA (lista)."""
     html_recortes, seletor, p = _montar_recortes(caminho_base, dados, filtros)
     fundo_oc = '<div id="ra-oc-fundo">' + p["oc_html"].partition('<div id="ra-oc-fundo">')[2]
     guarda_mapa = f'<div class="ra-mapa-guarda">{p["mapa_svg"]}</div>' if p.get("mapa_svg") else ""
@@ -2601,7 +2645,7 @@ def montar_partes_html_monitoramento(caminho_base, dados, filtros=None):
     página MON_ACOES da Apresentação CGAPE (ver gerar_pptx_pac.py) — pedido
     do usuário em 15/11/2026. Mesma estrutura da página autônoma
     (gerar_html_resumo_acoes), inclusive o seletor EIXO x
-    SECRETARIA/EXECUTOR (pedido do usuário em 16/11/2026: os seletores de
+    SECRETARIA (pedido do usuário em 16/11/2026: os seletores de
     Gestão/Secretaria da apresentação, que são do PAC, somem nesta página).
     Base e filtros do Monitoramento são independentes dos do PAC; a página
     MON_ACOES é renderizada uma única vez, fora das variantes de
@@ -2631,7 +2675,7 @@ def montar_partes_html_monitoramento(caminho_base, dados, filtros=None):
         "css": css_isolado,
         "secoes": secoes,
         "js": js_isolado,
-        # barras EIXO x SECRETARIA/EXECUTOR: fora de qualquer slide (fixas no
+        # barras EIXO x SECRETARIA: fora de qualquer slide (fixas no
         # rodapé), visíveis só na página do Monitoramento — ver
         # atualizarSeletoresMonitoramento() em gerar_pptx_pac.py
         "dica_html": '<div id="mon-dica"></div>' + seletor,
@@ -2666,6 +2710,50 @@ def api_base():
         return {"ok": True, **resumo_acoes_tabela(caminho)}
     except Exception as exc:
         return {"ok": False, "mensagem": f"Erro ao ler '{RA_PLANILHA}': {exc}"}
+
+
+def api_qualidade_secretaria():
+    """Controle de qualidade da Secretaria derivada do Executor (ver
+    hierarquia_secretaria.py) — pedido do usuário em 18/11/2026: quantas
+    ações ficaram como "NÃO IDENTIFICADA" e quais pares (Executor, Eixo)
+    causam isso, pra saber o que ainda falta completar no de-para."""
+    try:
+        caminho = caminho_planilha()
+        if not caminho:
+            return {"ok": False, "mensagem": _sem_planilha()}
+        base = _ra_base(caminho)
+        if "Secretaria" not in base.columns:
+            return {"ok": True, "total": 0, "pares": []}
+        hier = _modulo_hierarquia_secretaria()
+        nao_identificada = base[base["Secretaria"] == hier.NAO_IDENTIFICADA]
+        agrupado = (nao_identificada.groupby(["Executor", RA_COL_EIXO], dropna=False)
+                   .size().reset_index(name="qtd").sort_values("qtd", ascending=False))
+        pares = [{"executor": "" if pd.isna(r["Executor"]) else str(r["Executor"]),
+                 "eixo": "" if pd.isna(r[RA_COL_EIXO]) else str(r[RA_COL_EIXO]),
+                 "qtd": int(r["qtd"])} for _, r in agrupado.iterrows()]
+        return {"ok": True, "total": int(len(nao_identificada)), "pares": pares,
+               "caminho_de_para": hier.caminho_de_para()}
+    except Exception as exc:
+        return {"ok": False, "mensagem": f"Erro ao apurar a qualidade da Secretaria: {exc}"}
+
+
+def api_abrir_de_para():
+    """Abre a planilha "DE-PARA SECRETARIA EXECUTOR.xlsx" no Excel (desktop
+    apenas — no servidor web ela fica na máquina do servidor, não na do
+    usuário)."""
+    if pac and getattr(pac, "MODO_WEB", False):
+        return {"ok": False, "mensagem": "O de-para fica na máquina do servidor; "
+                                         "peça pra quem administra o programa desktop."}
+    try:
+        hier = _modulo_hierarquia_secretaria()
+        caminho = hier.caminho_de_para()
+        if not os.path.exists(caminho):
+            return {"ok": False, "mensagem": "O de-para ainda não foi criado — "
+                                             "abra a tela de Ações em Monitoramento uma vez."}
+        _abrir(caminho)
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "mensagem": f"Erro ao abrir o de-para: {exc}"}
 
 
 def api_atualizar_conder():
@@ -2799,6 +2887,7 @@ HTML_JANELA = r"""
       <div class="ra-botoes">
         <button type="button" class="ra-inicio" id="raInicio" title="Voltar à tela inicial">← Início</button>
         <button type="button" id="raConder" title="Baixa agora a planilha Ações do Cronograma do serviço da CONDER (o mesmo conteúdo do botão Exportar para planilha do site app.conder.ba.gov.br/cronogramaacoes)">ATUALIZAR DA CONDER</button>
+        <button type="button" id="raQualidadeSecretaria" title="Quantas ações ainda não têm Secretaria identificada (ver DE-PARA SECRETARIA EXECUTOR.xlsx) e abre esse arquivo pra completar">QUALIDADE SECRETARIA</button>
         <button type="button" id="raHtml" title="Gera uma página HTML com o gráfico de investimento dos 30 maiores municípios por população, a avaliação da carteira e o quadro Status × Eixo do recorte atual">GERAR HTML</button>
         <button type="button" id="raIncluirApresentacao" title="Abre a Apresentação CGAPE (HTML) já com as páginas do Monitoramento marcadas — você escolhe quais páginas do PAC entram junto">INCLUIR NA APRESENTAÇÃO</button>
         <button type="button" id="raGerar" title="Lê de novo a planilha Ações do Cronograma e gera o slide em Downloads">GERAR APRESENTAÇÃO</button>
@@ -3566,6 +3655,27 @@ HTML_JANELA = r"""
     }).catch(function (e) {
       msg.textContent = "Erro ao atualizar pela CONDER: " + e;
     }).finally(function () { botao.disabled = false; });
+  };
+  // "QUALIDADE SECRETARIA" (pedido do usuário em 18/11/2026): quantas ações
+  // ficaram como "NÃO IDENTIFICADA" na Secretaria derivada do Executor (ver
+  // hierarquia_secretaria.py) e oferece abrir o de-para pra completar.
+  document.getElementById("raQualidadeSecretaria").onclick = function () {
+    var msg = document.getElementById("raMsg");
+    api("resumo_acoes_qualidade_secretaria").then(function (r) {
+      if (!r.ok) { msg.textContent = r.mensagem; return; }
+      if (!r.total) { msg.textContent = "Nenhuma ação sem Secretaria identificada."; return; }
+      var linhas = r.pares.slice(0, 15).map(function (p) {
+        return "  " + (p.qtd) + "× " + (p.executor || "(sem executor)") + " | " + (p.eixo || "(sem eixo)");
+      }).join("\n");
+      var texto = r.total + " ação(ões) sem Secretaria identificada:\n" + linhas
+        + (r.pares.length > 15 ? "\n  … e mais " + (r.pares.length - 15) + " par(es)." : "")
+        + "\n\nAbrir a planilha DE-PARA SECRETARIA EXECUTOR.xlsx agora?";
+      if (window.confirm(texto)) {
+        api("resumo_acoes_abrir_de_para").then(function (r2) {
+          if (!r2.ok) msg.textContent = r2.mensagem;
+        });
+      }
+    }).catch(function (e) { msg.textContent = "Erro ao apurar a qualidade da Secretaria: " + e; });
   };
   // "INCLUIR NA APRESENTAÇÃO" — abre a mesma janela de seleção de slides
   // da Apresentação CGAPE (definida no script do painel, injetado nesta

@@ -17308,6 +17308,16 @@ def _api_resumo_acoes_html(filtros=None):
     return _modulo_resumo_acoes().api_html(filtros, devolver_conteudo=MODO_WEB)
 
 
+def _api_resumo_acoes_qualidade_secretaria():
+    # Controle de qualidade da Secretaria derivada do Executor — pedido do
+    # usuário em 18/11/2026 (ver hierarquia_secretaria.py).
+    return _modulo_resumo_acoes().api_qualidade_secretaria()
+
+
+def _api_resumo_acoes_abrir_de_para():
+    return _modulo_resumo_acoes().api_abrir_de_para()
+
+
 def _api_mon_dados_painel():
     # Grade de filtros do MONITORAMENTO: lida na primeira troca do seletor.
     try:
@@ -17578,6 +17588,12 @@ def abrir_interface_filtros(df_base):
 
         def resumo_acoes_atualizar_conder(self):
             return _api_resumo_acoes_atualizar_conder()
+
+        def resumo_acoes_qualidade_secretaria(self):
+            return _api_resumo_acoes_qualidade_secretaria()
+
+        def resumo_acoes_abrir_de_para(self):
+            return _api_resumo_acoes_abrir_de_para()
 
         def cards_acoes(self, filtros, recorte):
             return _api_cards_acoes(filtros, recorte)

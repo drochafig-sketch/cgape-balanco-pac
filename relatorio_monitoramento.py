@@ -42,6 +42,14 @@ def configurar(modulo):
     pac = modulo
 
 
+def _modulo_hierarquia_secretaria():
+    # Hierarquia SECRETARIA -> EXECUTOR desta base (ver hierarquia_secretaria.py)
+    # — mesmo padrão de satélite independente usado pelos outros módulos.
+    import hierarquia_secretaria
+    hierarquia_secretaria.configurar(pac)
+    return hierarquia_secretaria
+
+
 ARQUIVO_PLANILHA = "Ações do Cronograma.xlsx"
 ABA_DADOS = "Dados"
 ROTULO_SECAO = "MONITORAMENTO"   # rótulo da numeração ("MONITORAMENTO - Página 01 de 40")
@@ -105,6 +113,7 @@ CAMPOS_FILTRO = [
     ("EIXO", "EIXO", "Eixo"),
     ("SITUACAO", "GRUPO_STATUS", "Situação"),
     ("RESPONSAVEL", "RESPONSAVEL", "Responsável Informação"),
+    ("SECRETARIA", "SECRETARIA", "Secretaria"),
     ("EXECUTOR", "EXECUTOR", "Executor"),
     ("PROGRAMA", "PROGRAMA", "Programa de Transferência de Recursos"),
     ("OBJETO", "OBJETO", "Objeto"),
@@ -325,6 +334,15 @@ def ler_base(caminho=None):
     out["STATUS"] = _com_padrao(df["Status"])
     out["EIXO"] = _com_padrao(df["Eixo"])
     out["RESPONSAVEL"] = _com_padrao(df["Responsável Informação"])
+
+    # Secretaria derivada do Executor (esta base não tem essa coluna própria)
+    # — pedido do usuário em 18/11/2026, ver hierarquia_secretaria.py. Usa o
+    # Executor/Eixo CRUS (antes do _com_padrao, que troca vazio por "NÃO
+    # INFORMADO" e criaria um par falso no de-para) — mesma convenção de
+    # resumo_acoes.py, que também ignora o Executor em branco.
+    hier = _modulo_hierarquia_secretaria()
+    hier.garantir_de_para_e_avisar(df, "Executor", "Eixo")
+    out["SECRETARIA"] = hier.secretaria_de_serie(df["Executor"], df["Eixo"])
 
     codigo = out["STATUS"].str[:2]
     out["CODIGO_STATUS"] = codigo

@@ -119,7 +119,14 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('resumo_acoes.py', encoding='utf-8'\\).read\\(\\)\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('resumo_acoes.py', encoding='utf-8'\\).read\\(\\)\\); print\\('SYNTAX OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('resumo_acoes.py', encoding='utf-8'\\).read\\(\\)\\); ast.parse\\(open\\('gerar_pptx_pac.py', encoding='utf-8'\\).read\\(\\)\\); print\\('SYNTAX OK: both files'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('CGAPE - BALANÇO PAC.py', encoding='utf-8'\\).read\\(\\)\\); print\\('SYNTAX OK: CGAPE - BALANÇO PAC.py'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('CGAPE - BALANÇO PAC.py', encoding='utf-8'\\).read\\(\\)\\); print\\('SYNTAX OK: CGAPE - BALANÇO PAC.py'\\)\")",
+      "Bash(python \"/c/Users/droch/AppData/Local/Temp/claude/e9c7513656c24f0b/cd1bb89a-8b5c-42cb-ae2b-1c8581d8e384/scratchpad/verificar_titulo_monitoramento.py\")",
+      "Bash(tasklist)",
+      "Bash(taskkill //PID 29552)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('gerar_pptx_pac.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(git rev-list *)",
+      "Bash(grep -i \"\\\\.xlsx$\")",
+      "Bash(git check-ignore *)"
     ]
   }
 }
