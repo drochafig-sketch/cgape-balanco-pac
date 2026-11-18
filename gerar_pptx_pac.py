@@ -4335,9 +4335,12 @@ def _html_visao_geral_dash(df):
             cols.append(
                 f'<div class="vgd-col" title="{_html_esc(it["rotulo"])}: {it["qtd"]} '
                 f'{"ação" if it["qtd"] == 1 else "ações"}">'
-                f'<div class="vgd-col-valor">{it["qtd"]}</div>'
-                f'<div class="vgd-col-trilho"><div class="vgd-col-barra" '
-                f'style="height:{it["qtd"] / maior * 100:.1f}%;background:{cor}"></div></div>'
+                # número logo acima da barra, acompanhando a altura dela —
+                # pedido do usuário em 18/11/2026 (a barra usa a altura toda
+                # menos a faixa do número, pra o maior nunca vazar)
+                f'<div class="vgd-col-trilho"><div class="vgd-col-valor">{it["qtd"]}</div>'
+                f'<div class="vgd-col-barra" '
+                f'style="height:calc((100% - 22px) * {it["qtd"] / maior:.4f});background:{cor}"></div></div>'
                 f'<div class="vgd-col-rotulo">{_html_esc(it["rotulo"])}</div></div>')
         return f'<div class="vgd-barras{" vgd-muitas" if len(itens) > 8 else ""}">{"".join(cols)}</div>'
 
@@ -4424,8 +4427,8 @@ CSS_VISAO_GERAL_DASH = """
     .vgd-chave input:focus-visible + .vgd-trilho { outline:2px solid #0B5CAD; outline-offset:2px; }
     .vgd-barras { display:flex; align-items:flex-end; justify-content:space-around; gap:8px; height:190px; padding-top:6px; }
     .vgd-col { flex:1; min-width:0; max-width:70px; height:100%; display:flex; flex-direction:column; align-items:center; }
-    .vgd-col-valor { font-size:14px; font-weight:800; color:#0B1F3F; margin-bottom:4px; }
-    .vgd-col-trilho { flex:1; width:100%; display:flex; align-items:flex-end; justify-content:center; }
+    .vgd-col-valor { font-size:14px; font-weight:800; color:#0B1F3F; line-height:18px; margin-bottom:4px; }
+    .vgd-col-trilho { flex:1; width:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; min-height:0; }
     .vgd-col-barra { width:62%; min-height:2px; border-radius:3px 3px 0 0; }
     .vgd-col-rotulo { font-size:12.5px; color:#5B6576; margin-top:6px; text-align:center; white-space:nowrap; }
     .vgd-muitas { height:210px; }
