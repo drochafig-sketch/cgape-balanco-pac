@@ -655,6 +655,9 @@ def resumo_acoes_dados(caminho, filtros=None):
             "entregue": bool(juntados), "aviso_cards": aviso_cards, "filtros_txt": filtros_txt,
             "top30_fonte": RA_TOP30_FONTE,
             "ids": [int(i) for i in df.index],
+            # dia/hora da base, ao lado de "base Ações do Cronograma" no
+            # cabeçalho (pedido do usuário em 18/11/2026)
+            "atualizado_em": f"{datetime.fromtimestamp(os.path.getmtime(caminho)):%d/%m/%Y às %Hh%M}",
             "versao": str(os.path.getmtime(caminho))}
 
 
@@ -2889,7 +2892,7 @@ HTML_JANELA = r"""
   <div id="ra-janela" role="dialog" aria-label="Ações em monitoramento">
     <div class="ra-cabecalho">
       <h2>AÇÕES EM MONITORAMENTO
-        <small>base Ações do Cronograma</small></h2>
+        <small>base Ações do Cronograma<span id="raAtualizado"></span></small></h2>
       <div class="ra-botoes">
         <button type="button" class="ra-inicio" id="raInicio" title="Voltar à tela inicial">← Início</button>
         <div class="ra-busca-geral">
@@ -3585,6 +3588,8 @@ HTML_JANELA = r"""
     }
   }
   function raMontarConteudo(d) {
+    var atu = document.getElementById("raAtualizado");
+    if (atu) atu.textContent = d.atualizado_em ? " · atualizada em " + d.atualizado_em : "";
     raDesenharFiltros(d.filtros, d.datas);
     raTabelaAtualizar(d);
     if (d.vazio) {

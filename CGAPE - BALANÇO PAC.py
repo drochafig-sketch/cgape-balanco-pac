@@ -11602,6 +11602,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     width: 100%;
     box-sizing: border-box;
   }
+  /* Telas largas 16:9 (1600px ou mais, ex.: 1920x1080): o dash usa quase
+     toda a largura em vez de ficar numa coluna de 1400px com faixas vazias
+     dos lados — pedido do usuário em 18/11/2026. */
+  @media (min-width: 1600px) {
+    #preview-corpo { max-width: 1880px; padding: 18px 28px 32px 28px; }
+  }
 
   /* Impressão manual (Ctrl+P do navegador) — garante que as cores do tema
      escuro sejam preservadas e que todo o conteúdo apareça, sem cortar
