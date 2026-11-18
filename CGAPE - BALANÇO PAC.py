@@ -12911,10 +12911,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
            fica destacado (ver configurarAccordionSecoes() no JS). -->
       <nav class="preview-nav-rapida" id="preview-nav-rapida" aria-label="Seções do dashboard">
         <button type="button" data-alvo="secao-visao-geral"><span class="nav-num">01</span>Visão geral</button>
-        <button type="button" data-alvo="secao-clausulas"><span class="nav-num">02</span>Cláusulas</button>
-        <button type="button" data-alvo="secao-secretaria"><span class="nav-num">03</span>Secretaria | Executor</button>
-        <button type="button" data-alvo="secao-desempenho"><span class="nav-num">04</span>Desempenho</button>
-        <button type="button" data-alvo="secao-financeiro"><span class="nav-num">05</span>Financeiro</button>
+        <button type="button" data-alvo="secao-financeiro"><span class="nav-num">02</span>Financeiro</button>
+        <button type="button" data-alvo="secao-clausulas"><span class="nav-num">03</span>Cláusulas</button>
+        <button type="button" data-alvo="secao-secretaria"><span class="nav-num">04</span>Secretaria | Executor</button>
+        <button type="button" data-alvo="secao-desempenho"><span class="nav-num">05</span>Desempenho</button>
         <button type="button" data-alvo="secao-mapa"><span class="nav-num">06</span>Mapa</button>
       </nav>
       <div id="preview-nota-secretaria"></div>
@@ -12957,16 +12957,24 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         </div>
       </section>
 
+      <!-- Logo abaixo da Visão geral — pedido do usuário em 18/11/2026 -->
+      <section class="preview-secao" id="secao-financeiro">
+        <h3 class="preview-secao-titulo"><span class="secao-num">02</span><span class="secao-textos"><span class="secao-nome">Detalhamento Financeiro</span><span class="secao-desc">Investimento total, recursos contratados e a contratar por fonte, status das ações e composição por fase, eixo/executor e executor/objeto. Clique nos cards para abrir o detalhamento.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <div class="preview-secao-corpo">
+          <div id="preview-panorama-carteira"></div>
+        </div>
+      </section>
+
       <!-- Antes do Panorama por Secretaria — pedido do usuário em 10/11/2026 -->
       <section class="preview-secao" id="secao-clausulas">
-        <h3 class="preview-secao-titulo"><span class="secao-num">02</span><span class="secao-textos"><span class="secao-nome">Cláusulas Suspensivas por Executor</span><span class="secao-desc">Ações com cláusula suspensiva ainda não retirada, agrupadas por executor, com a situação da vigência (vencida, vence em até 90 dias, no prazo, sem data) e filtro por fase.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">03</span><span class="secao-textos"><span class="secao-nome">Cláusulas Suspensivas por Executor</span><span class="secao-desc">Ações com cláusula suspensiva ainda não retirada, agrupadas por executor, com a situação da vigência (vencida, vence em até 90 dias, no prazo, sem data) e filtro por fase.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div id="preview-clausulas"></div>
         </div>
       </section>
 
       <section class="preview-secao" id="secao-secretaria">
-        <h3 class="preview-secao-titulo"><span class="secao-num">03</span><span class="secao-textos"><span class="secao-nome">Panorama por Secretaria | Executor</span><span class="secao-desc">Distribuição do investimento por fase em cada combinação Secretaria | Executor, separada por gestão estadual e federal.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">04</span><span class="secao-textos"><span class="secao-nome">Panorama por Secretaria | Executor</span><span class="secao-desc">Distribuição do investimento por fase em cada combinação Secretaria | Executor, separada por gestão estadual e federal.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div class="preview-legenda-fases">
             <span class="preview-legenda-fases-item"><span class="preview-legenda-fases-swatch" data-paleta="vermelho"></span>Selecionada</span>
@@ -12979,7 +12987,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       </section>
 
       <section class="preview-secao" id="secao-desempenho">
-        <h3 class="preview-secao-titulo"><span class="secao-num">04</span><span class="secao-textos"><span class="secao-nome">Índice de Desempenho por Secretaria</span><span class="secao-desc">Nota de 0 a 100 de cada Secretaria | Executor, da melhor para a pior. Combina status, fase, cláusula suspensiva, prazos, volume de ações e valor contratado.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">05</span><span class="secao-textos"><span class="secao-nome">Índice de Desempenho por Secretaria</span><span class="secao-desc">Nota de 0 a 100 de cada Secretaria | Executor, da melhor para a pior. Combina status, fase, cláusula suspensiva, prazos, volume de ações e valor contratado.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
           <div class="preview-texto-explicativo">
             O índice combina Status, Fase, Cláusula Suspensiva, o tempo entre aviso de licitação, O.S. e
@@ -12988,13 +12996,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
             SECRETARIA | EXECUTOR, separada por gestão, ordenada da melhor pra pior.
           </div>
           <div id="preview-desempenho-container"></div>
-        </div>
-      </section>
-
-      <section class="preview-secao" id="secao-financeiro">
-        <h3 class="preview-secao-titulo"><span class="secao-num">05</span><span class="secao-textos"><span class="secao-nome">Detalhamento Financeiro</span><span class="secao-desc">Investimento total, recursos contratados e a contratar por fonte, status das ações e composição por fase, eixo/executor e executor/objeto. Clique nos cards para abrir o detalhamento.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
-        <div class="preview-secao-corpo">
-          <div id="preview-panorama-carteira"></div>
         </div>
       </section>
 
@@ -15363,6 +15364,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   function montarPanoramaCarteira(p) {
     var container = document.getElementById("preview-panorama-carteira");
     if (!p || !p.html) {
+      container._htmlPanorama = null;
       container.innerHTML = '<div class="preview-sem-dados">' +
         (p && p.erro ? "Não foi possível montar o detalhamento financeiro: " + p.erro : "Sem dados no filtro atual") + "</div>";
       return;
@@ -15374,6 +15376,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       document.head.appendChild(estilo);
     }
     if (p.css && estilo.textContent !== p.css) estilo.textContent = p.css;
+    // mesmo conteúdo (ex.: só trocou o tema claro/escuro, que redesenha o
+    // dash inteiro): não remonta, pra não recolher os cards e tabelas que
+    // estavam abertos — pedido do usuário em 18/11/2026. As cores vêm do
+    // CSS, então o tema novo vale sem remontar.
+    if (container._htmlPanorama === p.html) return;
+    container._htmlPanorama = p.html;
     container.innerHTML = p.html;
   }
   window.alternarDetalhamento = window.alternarDetalhamento || function (botao, idAlvo) {
