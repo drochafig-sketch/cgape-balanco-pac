@@ -2557,7 +2557,10 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
         if dv.get("top30"):
             corpo = f'{corpo_filtros}{bloco_quadros}{secoes_top30}'
         else:
-            corpo = f'{corpo_filtros}{bloco_cards}{bloco_quadros}'
+            # chave desligada: só os dois quadros, sem o card de valor total
+            # (os cards macro só existem dentro da seção dos 30 maiores) —
+            # pedido do usuário em 18/11/2026
+            corpo = f'{corpo_filtros}{bloco_quadros}'
         if sufixo:
             corpo = _sufixar_ids_monitoramento(corpo, sufixo)
         if (ie, ix) == (0, 0):
