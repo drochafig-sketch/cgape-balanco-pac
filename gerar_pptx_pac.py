@@ -3946,13 +3946,13 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .fc-nome { font-size:19px; font-weight:700; color:#0B1F3F; }
     .fc-seta { font-size:16px; color:#5B6576; }
     .fase-card.aberto .fc-seta { color:#0B1F3F; }
-    .fc-total { font-size:30px; font-weight:900; color:#0B1F3F; line-height:1.1; margin-top:-4px; }
+    .fc-total { font-size:32px; font-weight:900; color:#0B1F3F; line-height:1.1; margin-top:-4px; }
     .fc-fontes { display:flex; flex-direction:column; gap:10px; border-top:1px solid #F0F2F6; padding-top:10px; }
     .fc-fonte-cab { display:flex; justify-content:space-between; gap:8px; font-size:14px; }
     .fc-fonte-nome { font-weight:400; color:#0B1F3F; }
-    .fc-fonte-total { font-weight:400; color:#0B1F3F; white-space:nowrap; }
+    .fc-fonte-total { font-weight:400; color:#0B1F3F; white-space:nowrap; font-size:16px; }
     .fc-fonte .barra-trilho { flex:none; height:13px; margin:4px 0 3px; }
-    .fc-fonte-valores { display:flex; justify-content:space-between; gap:8px; font-size:13px; font-weight:400; }
+    .fc-fonte-valores { display:flex; justify-content:space-between; gap:8px; font-size:15px; font-weight:400; }
     .fc-legenda { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:#5B6576; margin-top:auto;
       border-top:1px solid #F0F2F6; padding-top:8px; }
     .fc-legenda i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
@@ -4210,6 +4210,11 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
                                                          classe_extra="slide-institucional")],
                  "FLUXO_TRABALHO": [_html_cabecalho_rodape("FLUXO DE TRABALHO", _html_fluxo_trabalho(),
                                                            classe_extra="slide-institucional")],
+                 # Visão Geral do dash (só HTML) — pedido do usuário em 18/11/2026;
+                 # calculada só se a página foi escolhida (roda por gestão/secretaria)
+                 "VISAO_DASH": ([_html_cabecalho_rodape("VISÃO GERAL", _html_visao_geral_dash(df),
+                                                        classe_extra="slide-continua")]
+                                if "VISAO_DASH" in escolhidas else []),
                  "PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": [],
                  "STATUS_FASE": [slide2b],
                  "EIXO_FONTE": slides_eixo_fonte, "FONTE_EIXO": slides_fonte_eixo, "EXECUCAO": [slide3],
@@ -4298,6 +4303,155 @@ def _recortes_gestao(df):
 
 
 CAMPOS_CARD_ACAO = ["o", "f", "e", "x", "t", "g", "mu", "ex", "ds", "lk", "av", "dt", "fase", "inv", "fi", "v", "se"]
+
+
+def _mi_bi_dash(valor):
+    # mesmo formato de formatarMiBi no JS do dash ("R$ 7.41 Bi")
+    if valor >= 1e9:
+        return f"R$ {valor / 1e9:.2f} Bi"
+    if valor >= 1e6:
+        return f"R$ {valor / 1e6:.2f} Mi"
+    return "R$ " + f"{valor:,.0f}".replace(",", ".")
+
+
+def _html_visao_geral_dash(df):
+    """Conteúdo da página "Visão Geral" da Apresentação HTML: a mesma Visão
+    Geral do dash (cards de quantidade/investimento, previsão de conclusão
+    da fase com a chave Semestral, resumo financeiro com "Detalhar
+    contratado", panorama das fases e termo de compromisso), com os mesmos
+    números (pac._dados_pre_visualizacao) e cores (pac.cores_visao_geral) —
+    pedido do usuário em 18/11/2026. Só no HTML (VISAO_DASH)."""
+    d = pac._dados_pre_visualizacao(df, so_visao_geral=True)
+    cores = pac.cores_visao_geral()
+
+    def barras(itens, ultima_vermelha=False):
+        if not itens:
+            return '<div class="vgd-vazio">Sem dados no filtro atual</div>'
+        maior = max(i["qtd"] for i in itens) or 1
+        cols = []
+        for n, it in enumerate(itens):
+            vermelha = it["rotulo"] == "A definir" or (ultima_vermelha and n == len(itens) - 1)
+            cor = cores["vermelho"] if vermelha else cores["azul"]
+            cols.append(
+                f'<div class="vgd-col" title="{_html_esc(it["rotulo"])}: {it["qtd"]} '
+                f'{"ação" if it["qtd"] == 1 else "ações"}">'
+                f'<div class="vgd-col-valor">{it["qtd"]}</div>'
+                f'<div class="vgd-col-trilho"><div class="vgd-col-barra" '
+                f'style="height:{it["qtd"] / maior * 100:.1f}%;background:{cor}"></div></div>'
+                f'<div class="vgd-col-rotulo">{_html_esc(it["rotulo"])}</div></div>')
+        return f'<div class="vgd-barras{" vgd-muitas" if len(itens) > 8 else ""}">{"".join(cols)}</div>'
+
+    def pizza(itens, cor_de):
+        itens = [i for i in itens if i["valor"] > 0]
+        if not itens:
+            return '<div class="vgd-vazio">Sem investimento no filtro atual</div>'
+        total = sum(i["valor"] for i in itens)
+        partes, acum, folga = [], 0.0, 0.8
+        for n, it in enumerate(itens):
+            cor = cor_de.get(it["rotulo"], "#888888")
+            ini = acum / total * 360
+            acum += it["valor"]
+            fim = acum / total * 360
+            partes.append(f"{cor} {ini + (folga if n else 0):.2f}deg {fim - (folga if n < len(itens) - 1 else 0):.2f}deg")
+            if n < len(itens) - 1:
+                partes.append(f"#fff {fim - folga:.2f}deg {fim + folga:.2f}deg")
+        legenda = "".join(
+            f'<div class="vgd-leg-item"><span class="vgd-leg-bola" style="background:{cor_de.get(it["rotulo"], "#888888")}"></span>'
+            f'<span><span class="vgd-leg-valor">{_html_esc(_mi_bi_dash(it["valor"]))} '
+            f'<span class="vgd-leg-pct">({it["valor"] / total * 100:.1f}%)</span></span>'
+            f'<span class="vgd-leg-rotulo">{_html_esc(it["rotulo"])}'
+            + (f' <b>({it["qtd"]})</b>' if "qtd" in it else "") + '</span></span></div>'
+            for it in itens)
+        return (f'<div class="vgd-pizza-wrap"><div class="vgd-pizza" style="background:conic-gradient({", ".join(partes)})">'
+                f'</div><div class="vgd-legenda">{legenda}</div></div>')
+
+    def chave(rotulo, titulo):
+        return (f'<label class="vgd-chave" title="{_html_esc(titulo)}"><span>{_html_esc(rotulo)}</span>'
+                '<input type="checkbox" role="switch"><span class="vgd-trilho"><span></span></span></label>')
+
+    return f'''<div class="vgd">
+      <div class="vgd-kpis">
+        <div class="vgd-kpi"><span>QTD TOTAL</span><b>{d["qtd"]}</b></div>
+        <div class="vgd-kpi"><span>INVESTIMENTO</span><b>{_html_esc(_mi_bi_dash(d["investimento"]))}</b></div>
+      </div>
+      <div class="vgd-grade">
+        <div class="vgd-card vgd-alterna">
+          <div class="vgd-cab"><h4>Previsão de Conclusão da Fase</h4>
+            {chave("Semestral", "Alterna entre a visão por trimestre e a semestral (até dezembro do ano atual, "
+                                "1º semestre do ano seguinte e depois disso, junto com as ações com data a definir)")}</div>
+          <div class="vgd-vista-a">{barras(d["prazo"])}</div>
+          <div class="vgd-vista-b">{barras(d["prazoSemestre"], ultima_vermelha=True)}</div>
+        </div>
+        <div class="vgd-card vgd-alterna">
+          <div class="vgd-cab"><h4><span class="vgd-vista-a">Resumo Financeiro</span><span class="vgd-vista-b">Contratado por Fonte</span></h4>
+            {chave("Detalhar contratado", "Mostra o Valor Contratado dividido entre OGU, Financiamento e Recurso Estadual")}</div>
+          <div class="vgd-vista-a">{pizza(d["financeiro"], cores["financeiro"])}</div>
+          <div class="vgd-vista-b">{pizza(d["financeiroContratado"], cores["financeiro"])}</div>
+        </div>
+        <div class="vgd-card"><div class="vgd-cab"><h4>Panorama Geral das Fases</h4></div>
+          {pizza(d["panorama"], cores["fase"])}</div>
+        <div class="vgd-card"><div class="vgd-cab"><h4>Situação do Termo de Compromisso</h4></div>
+          {pizza(d["termo"], cores["termo"])}</div>
+      </div>
+    </div>'''
+
+
+# Página "Visão Geral" (_html_visao_geral_dash) — mesmo desenho dos cards do
+# dash, no tema claro da apresentação.
+CSS_VISAO_GERAL_DASH = """
+    .vgd { display:flex; flex-direction:column; gap:22px; }
+    .vgd-kpis { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+    .vgd-kpi { background:#fff; border:1px solid #D8DCE3; border-radius:12px; padding:18px; text-align:center;
+      box-shadow:0 2px 10px rgba(11,31,63,.06); }
+    .vgd-kpi span { display:block; font-size:14px; font-weight:700; color:#5B6576; letter-spacing:.4px; }
+    .vgd-kpi b { display:block; font-size:34px; font-weight:900; color:#0B5CAD; margin-top:4px; }
+    .vgd-grade { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+    .vgd-card { background:#fff; border:1px solid #D8DCE3; border-radius:12px; padding:18px 20px;
+      box-shadow:0 2px 10px rgba(11,31,63,.06); min-width:0; }
+    .vgd-cab { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+    .vgd-cab h4 { margin:0; font-size:15px; font-weight:800; color:#0B1F3F; text-transform:uppercase; letter-spacing:.3px; }
+    .vgd-alterna .vgd-vista-b, .vgd-alterna.vgd-b .vgd-vista-a { display:none; }
+    .vgd-alterna.vgd-b .vgd-vista-b { display:block; }
+    .vgd-alterna.vgd-b h4 .vgd-vista-b { display:inline; }
+    .vgd-chave { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:#5B6576; cursor:pointer;
+      user-select:none; white-space:nowrap; }
+    .vgd-chave input { position:absolute; opacity:0; pointer-events:none; }
+    .vgd-trilho { position:relative; width:34px; height:19px; border-radius:10px; background:#C9D0DA; transition:background .15s; }
+    .vgd-trilho span { position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:#fff;
+      transition:transform .15s; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    .vgd-chave input:checked + .vgd-trilho { background:#0B5CAD; }
+    .vgd-chave input:checked + .vgd-trilho span { transform:translateX(15px); }
+    .vgd-chave input:focus-visible + .vgd-trilho { outline:2px solid #0B5CAD; outline-offset:2px; }
+    .vgd-barras { display:flex; align-items:flex-end; justify-content:space-around; gap:8px; height:190px; padding-top:6px; }
+    .vgd-col { flex:1; min-width:0; max-width:70px; height:100%; display:flex; flex-direction:column; align-items:center; }
+    .vgd-col-valor { font-size:14px; font-weight:800; color:#0B1F3F; margin-bottom:4px; }
+    .vgd-col-trilho { flex:1; width:100%; display:flex; align-items:flex-end; justify-content:center; }
+    .vgd-col-barra { width:62%; min-height:2px; border-radius:3px 3px 0 0; }
+    .vgd-col-rotulo { font-size:12.5px; color:#5B6576; margin-top:6px; text-align:center; white-space:nowrap; }
+    .vgd-muitas { height:210px; }
+    .vgd-muitas .vgd-col-rotulo { transform:rotate(-40deg); transform-origin:center; height:34px; margin-top:12px; }
+    .vgd-pizza-wrap { display:flex; align-items:center; gap:22px; }
+    .vgd-pizza { position:relative; flex:none; width:170px; height:170px; border-radius:50%; }
+    .vgd-pizza::after { content:""; position:absolute; inset:24%; background:#fff; border-radius:50%; }
+    .vgd-legenda { display:flex; flex-direction:column; gap:9px; min-width:0; }
+    .vgd-leg-item { display:flex; align-items:flex-start; gap:9px; }
+    .vgd-leg-bola { flex:none; width:11px; height:11px; border-radius:50%; margin-top:5px; }
+    .vgd-leg-valor { display:block; font-size:15px; font-weight:800; color:#0B5CAD; }
+    .vgd-leg-pct { font-weight:400; color:#5B6576; font-size:13px; }
+    .vgd-leg-rotulo { display:block; font-size:12.5px; color:#0B1F3F; text-transform:uppercase; }
+    .vgd-vazio { color:#5B6576; font-size:14px; padding:30px 0; text-align:center; }
+    @media (max-width:900px) { .vgd-grade, .vgd-kpis { grid-template-columns:1fr; } }
+    @media print { .vgd-card, .vgd-kpi { break-inside:avoid; box-shadow:none; } .vgd-chave { display:none; } }
+"""
+
+JS_VISAO_GERAL_DASH = """
+document.addEventListener('change', function (ev) {
+  var chave = ev.target.closest && ev.target.closest('.vgd-chave');
+  if (!chave) return;
+  var card = chave.closest('.vgd-alterna');
+  if (card) card.classList.toggle('vgd-b', ev.target.checked);
+});
+"""
 
 
 def montar_panorama_dash(df, filtros=None):
@@ -4536,7 +4690,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
 <head>
 <meta charset="utf-8">
 <title>Apresentação CGAPE</title>
-<style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}{CSS_CARDS_OBJETO}{css_monitoramento}</style>
+<style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}{CSS_CARDS_OBJETO}{CSS_VISAO_GERAL_DASH}{css_monitoramento}</style>
 </head>
 <body>
 <button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()">Gerar PDF</button>
@@ -4978,6 +5132,7 @@ function gerarPdfCompleto() {{
 </script>
 <script>{JS_CLAUSULAS}</script>
 <script>{JS_CARDS_OBJETO.replace("__ICONE__", json.dumps(_SVG_ICONE_LOCALIZACAO))}</script>
+<script>{JS_VISAO_GERAL_DASH}</script>
 {js_monitoramento}
 </body>
 </html>''')
@@ -5262,6 +5417,9 @@ SLIDES_APRESENTACAO = [
     # usuário em 11/11/2026) — no HTML a capa é a página 1 do Canva.
     {"chave": "ORGANOGRAMA", "titulo": "Organograma da CGAPE", "layout": "cards_tabela"},
     {"chave": "FLUXO_TRABALHO", "titulo": "Fluxo de Trabalho", "layout": "texto"},
+    # Visão Geral do dash, só no HTML (ver SLIDES_SO_NO_HTML e
+    # _html_visao_geral_dash) — pedido do usuário em 18/11/2026.
+    {"chave": "VISAO_DASH", "titulo": "Visão Geral", "layout": "cards_tabela"},
     {"chave": "PANORAMA", "titulo": "Panorama da Carteira", "layout": "cards_tabela"},
     {"chave": "VISAO_GERAL", "titulo": "Visão Geral da Carteira", "layout": "cards_tabela"},
     {"chave": "COMP_ORIGEM", "titulo": "Composição por Origem do Recurso", "layout": "barras"},
@@ -5308,11 +5466,11 @@ SLIDES_OCULTOS_NO_HTML = {"VISAO_GERAL", "COMP_FASE", "TABELA_RESUMO", "QUADRO_F
 # E o contrário: seções que só existem no HTML (cards de cláusula suspensiva,
 # pedido do usuário em 10/11/2026; e o Monitoramento, pedido do usuário em
 # 15/11/2026) — não entram no PPTX nem no seu catálogo.
-SLIDES_SO_NO_HTML = {"CLAUSULAS"} | CHAVES_MONITORAMENTO
+SLIDES_SO_NO_HTML = {"CLAUSULAS", "VISAO_DASH"} | CHAVES_MONITORAMENTO
 
 
 def _paginas_por_chave(m):
-    return {"CLAUSULAS": 0,
+    return {"CLAUSULAS": 0, "VISAO_DASH": 0,
             "COMP_FASE": len(_paginas_composicao_fase(m)),
             "EIXO_FONTE": len(_paginar_grupos(_grupos_eixo_fonte(m))),
             "FONTE_EIXO": len(_paginar_grupos(_grupos_fonte_eixo(m))),

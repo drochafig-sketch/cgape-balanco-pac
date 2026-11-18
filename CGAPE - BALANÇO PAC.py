@@ -2094,6 +2094,28 @@ def calcular_trimestre(data, hoje=None):
     return str(data.year)
 
 
+def rotulos_prazo_semestre(hoje=None):
+    # Visão semestral da Previsão de Conclusão da Fase (chave no card do
+    # dash — pedido do usuário em 18/11/2026): até dezembro do ano vigente,
+    # 1º semestre do ano seguinte e depois disso junto com "A definir".
+    # Relativo ao ano corrente, como calcular_trimestre (em 2026: até
+    # dez/2026, 1º sem/2027, após jun/2027).
+    ano = (hoje or agora_bahia()).year
+    return (f"Até dez/{ano}", f"1º sem/{ano + 1}", f"Após jun/{ano + 1} e a definir")
+
+
+def calcular_semestre_prazo(data, hoje=None):
+    ate_dez, primeiro_sem, depois = rotulos_prazo_semestre(hoje)
+    if pd.isna(data) or not isinstance(data, (pd.Timestamp, datetime)):
+        return depois
+    ano = (hoje or agora_bahia()).year
+    if data.year <= ano:
+        return ate_dez
+    if data.year == ano + 1 and data.month <= 6:
+        return primeiro_sem
+    return depois
+
+
 def ordenar_trimestre(rotulo):
     if rotulo == "A definir":
         return (9999, 9)
@@ -6179,6 +6201,7 @@ df["SINALIZACAO_TC"] = df[col_tc].apply(classificar_termo_compromisso)
 df["EIXO_SORT"] = df[col_eixo].apply(remover_acentos)
 df["PRAZO_FASE_TEXTO"] = df[col_prazo].apply(formatar_prazo)
 df["PRAZO_TRIMESTRE"] = df[col_prazo].apply(calcular_trimestre)
+df["PRAZO_SEMESTRE"] = df[col_prazo].apply(calcular_semestre_prazo)
 df[col_vigencia] = pd.to_datetime(df[col_vigencia], errors="coerce")
 df["CLAUSULA_SUSPENSIVA_ORDEM"] = df[col_clausula_suspensiva].apply(
     extrair_ordem_clausula_suspensiva)
@@ -6811,7 +6834,30 @@ def _montar_aviso_qualidade(df):
     return None
 
 
-def _dados_pre_visualizacao(df):
+def cores_visao_geral():
+    # Mesmas cores dos gráficos da Visão Geral do dash (CORES_FASE,
+    # CORES_FINANCEIRO e o termo, no JS), pra página "Visão Geral" da
+    # Apresentação HTML sair igual — pedido do usuário em 18/11/2026.
+    azul, vermelho = dessaturar_hex("#4E92BA"), dessaturar_hex("#BB6060")
+    verde, amarelo = dessaturar_hex("#49925C"), dessaturar_hex("#BC9E2C")
+    return {
+        "azul": azul, "vermelho": vermelho,
+        "fase": {"SELECIONADA": vermelho, "LICITAÇÃO": amarelo,
+                 "EXECUÇÃO DO OBJETO": verde, "CONCLUÍDA": azul},
+        "financeiro": {"VALOR CONTRATADO": verde,
+                       "OGU": TONS_FINANCEIRO["apoiado"]["contratado"],
+                       "FINANCIAMENTO": TONS_FINANCEIRO["financiamento"]["contratado"],
+                       "RECURSO ESTADUAL": TONS_FINANCEIRO["estadual"]["contratado"],
+                       "NÃO DISCRIMINADO": "#8C8C8C"},
+        "termo": {"Termo Assinado": verde, "Termo Não Assinado": "#E68A00"},
+    }
+
+
+def _dados_pre_visualizacao(df, so_visao_geral=False):
+    # so_visao_geral=True: só os gráficos da Visão Geral (cards, prazo,
+    # financeiro, panorama das fases e termo), sem o resto do dash — usado
+    # pela página "Visão Geral" da Apresentação HTML (pedido do usuário em
+    # 18/11/2026), que roda uma vez por gestão/secretaria.
     # Prepara os MESMOS agrupamentos usados nos gráficos do Painel Geral do
     # PDF (gerar_grafico_prazo/financeiro/panorama/termo_compromisso), só
     # que devolvendo números simples (não desenhos do ReportLab) — o painel
@@ -6861,6 +6907,23 @@ def _dados_pre_visualizacao(df):
         prazo.append({"rotulo": trimestre_nome, "qtd": int(
             r["QTD"]), "objetos": objetos_prazo,
             "recorte": {"PRAZO_TRIMESTRE": trimestre_nome}})
+
+    # Mesma previsão em 3 colunas semestrais (chave "Semestral" do card) —
+    # pedido do usuário em 18/11/2026; coluna vazia aparece com 0.
+    prazo_semestre = []
+    for rotulo_sem in rotulos_prazo_semestre():
+        parte_sem = df[df["PRAZO_SEMESTRE"] == rotulo_sem]
+        resumo_sem = (
+            parte_sem.groupby(col_objeto)
+            .agg(QTD=(col_objeto, "count"), VALOR=("_INVESTIMENTO_AJUSTADO", "sum"))
+            .reset_index()
+            .sort_values("VALOR", ascending=False)
+        )
+        prazo_semestre.append({
+            "rotulo": rotulo_sem, "qtd": int(len(parte_sem)),
+            "objetos": [{"objeto": str(o[col_objeto]), "qtd": int(o["QTD"]), "valor": float(o["VALOR"])}
+                        for _, o in resumo_sem.iterrows()],
+            "recorte": {"PRAZO_SEMESTRE": rotulo_sem}})
 
     # --- Resumo financeiro ---
     financeiro_bruto = [
@@ -6953,6 +7016,11 @@ def _dados_pre_visualizacao(df):
             }
         )
 
+    if so_visao_geral:
+        return {"qtd": int(len(df)), "investimento": float(df["_INVESTIMENTO_AJUSTADO"].sum()),
+                "prazo": prazo, "prazoSemestre": prazo_semestre, "financeiro": financeiro,
+                "financeiroContratado": financeiro_contratado, "panorama": panorama, "termo": termo}
+
     # --- Secretaria/Executor único no filtro atual ---
     # Quando o filtro deixa só uma combinação de SECRETARIA/EXECUTOR, esse
     # dado é destacado no topo da pré-visualização (fica fácil esquecer
@@ -7039,6 +7107,7 @@ def _dados_pre_visualizacao(df):
         "qtd": int(len(df)),
         "investimento": investimento_total,
         "prazo": prazo,
+        "prazoSemestre": prazo_semestre,
         "financeiro": financeiro,
         "financeiroContratado": financeiro_contratado,
         "panorama": panorama,
@@ -12849,7 +12918,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       <div id="preview-cards"></div>
       <div class="preview-grid">
         <div class="preview-grafico-card">
-          <h4>Previsão de Conclusão da Fase</h4>
+          <div class="preview-grafico-card-cabecalho">
+            <h4>Previsão de Conclusão da Fase</h4>
+            <label class="chave-financeiro" title="Alterna entre a visão por trimestre e a visão semestral: até dezembro do ano atual, 1º semestre do ano seguinte e depois disso (junto com as ações com data a definir).">
+              <span class="chave-financeiro-texto">Semestral</span>
+              <input type="checkbox" id="chave-prazo-semestre" role="switch">
+              <span class="chave-financeiro-trilho"><span class="chave-financeiro-bolinha"></span></span>
+            </label>
+          </div>
           <div id="preview-grafico-prazo"></div>
         </div>
         <div class="preview-grafico-card">
@@ -14438,6 +14514,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     if (r.SECRETARIA_LIMPA) partes.push(r.SECRETARIA_LIMPA + " | " + r.EXECUTOR);
     if (r.FASE_TEXTO) partes.push(r.FASE_TEXTO);
     if (r.PRAZO_TRIMESTRE) partes.push("Conclusão prevista: " + r.PRAZO_TRIMESTRE);
+    if (r.PRAZO_SEMESTRE) partes.push("Conclusão prevista: " + r.PRAZO_SEMESTRE);
     if (r.SINALIZACAO_TC) partes.push(item.rotulo);
     if (r.municipio) partes.push(r.municipio);
     return partes.join(" · ") || item.rotulo || "Ações";
@@ -14615,6 +14692,30 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     });
   }
 
+  // Previsão de Conclusão da Fase: chave "Semestral" alterna entre o gráfico
+  // por trimestre (dados.prazo) e o semestral (dados.prazoSemestre: até dez
+  // do ano atual, 1º sem do seguinte, depois disso + a definir) — pedido do
+  // usuário em 18/11/2026. A escolha vale até fechar o programa e sobrevive
+  // à troca de filtros.
+  var _dadosPrazo = null;
+  function desenharGraficoPrazo(dados) {
+    if (dados) _dadosPrazo = dados;
+    if (!_dadosPrazo) return;
+    var chave = document.getElementById("chave-prazo-semestre");
+    var semestral = !!(chave && chave.checked && _dadosPrazo.prazoSemestre);
+    var itens = semestral ? _dadosPrazo.prazoSemestre.map(function (item, i, lista) {
+      // última coluna (depois do 1º semestre + a definir) em vermelho, como
+      // o "A definir" do gráfico por trimestre
+      return i === lista.length - 1 ? Object.assign({ cor: COR_VERMELHO }, item) : item;
+    }) : _dadosPrazo.prazo;
+    criarGraficoBarras("preview-grafico-prazo", itens);
+    var alvo = document.getElementById("preview-grafico-prazo");
+    if (alvo) alvo.classList.toggle("prazo-semestral", semestral);
+  }
+  document.addEventListener("change", function (ev) {
+    if (ev.target && ev.target.id === "chave-prazo-semestre") desenharGraficoPrazo();
+  });
+
   function criarGraficoBarras(idAlvo, itens) {
     var container = document.getElementById(idAlvo);
     container.innerHTML = "";
@@ -14630,7 +14731,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       var coluna = document.createElement("div");
       coluna.className = "grafico-barra-coluna";
       var alturaPct = maiorQtd > 0 ? (item.qtd / maiorQtd) * 100 : 0;
-      var cor = item.rotulo === "A definir" ? COR_VERMELHO : COR_AZUL;
+      var cor = item.cor || (item.rotulo === "A definir" ? COR_VERMELHO : COR_AZUL);
       coluna.innerHTML =
         '<div class="grafico-barra-valor">' + item.qtd + '</div>' +
         '<div class="grafico-barra" style="height:' + alturaPct + '%;background:' + cor + ';"></div>' +
@@ -15037,7 +15138,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       '<div class="preview-card-resumo"><div class="rotulo">QTD Total</div><div class="valor">' + dados.qtd + '</div></div>' +
       '<div class="preview-card-resumo"><div class="rotulo">Investimento</div><div class="valor">' + formatarMiBi(dados.investimento) + '</div></div>';
 
-    criarGraficoBarras("preview-grafico-prazo", dados.prazo);
+    desenharGraficoPrazo(dados);
     _dadosFinanceiroAtuais = dados;
     desenharGraficoFinanceiro();
     criarGraficoPizza("preview-grafico-panorama", dados.panorama, CORES_FASE);
