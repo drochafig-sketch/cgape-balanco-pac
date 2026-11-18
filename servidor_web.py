@@ -138,6 +138,9 @@ app.add_url_rule(
 app.add_url_rule(
     "/api/cards_acoes", view_func=_rota_json(pac._api_cards_acoes), methods=["POST"]
 )
+app.add_url_rule(
+    "/api/cards_panorama", view_func=_rota_json(pac._api_cards_panorama), methods=["POST"]
+)
 # Janela "Resumo das ações prioritárias e PAC" do dash (resumo_acoes.py).
 for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
                  "resumo_acoes_xlsx", "resumo_acoes_html", "resumo_acoes_atualizar_conder",

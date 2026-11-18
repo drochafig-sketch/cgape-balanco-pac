@@ -3137,7 +3137,7 @@ def _html_entregas_execucao(m, fichas_cartoes):
 
 def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_gestao="",
                           chave_gestao="todas", metricas_saida=None, secretaria=None,
-                          partes_monitoramento=None):
+                          partes_monitoramento=None, panorama_saida=None):
     """Slides de UMA gestão (ou de todas), já numerados. Slides que não
     dependem dos dados (institucionais, páginas do Canva) entram uma vez só
     em `comuns` e aqui viram só um marcador (.slide-ref). Devolve
@@ -3675,6 +3675,10 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     # rodapé quando os detalhamentos estão abertos — pedido do usuário em
     # 08/11/2026.
     slide1 = _html_cabecalho_rodape("PANORAMA DA CARTEIRA", panorama_html, classe_extra="slide-continua")
+    # o dash reaproveita este mesmo conteúdo na seção "Detalhamento
+    # Financeiro" (ver montar_panorama_dash) — pedido do usuário em 18/11/2026
+    if panorama_saida is not None:
+        panorama_saida["html"] = panorama_html
 
     css = '''
     * { box-sizing: border-box; }
@@ -4294,6 +4298,27 @@ def _recortes_gestao(df):
 
 
 CAMPOS_CARD_ACAO = ["o", "f", "e", "x", "t", "g", "mu", "ex", "ds", "lk", "av", "dt", "fase", "inv", "fi", "v", "se"]
+
+
+def montar_panorama_dash(df, filtros=None):
+    """(html, css) do conteúdo do PANORAMA DA CARTEIRA do HTML (investimento
+    total, contratado x a contratar, cartões de status e as três composições
+    em cards), pra seção "Detalhamento Financeiro" do dash — pedido do
+    usuário em 18/11/2026. Mesmo código do HTML (_montar_html_variante), então
+    números e desenho saem idênticos. Sem o atalho do card "EM OBRAS" (no
+    dash não há a página de Execução do Objeto pra onde ele levava)."""
+    registro = {"gauge": False, "poligonos": {}}
+    _CTX_HTML.registro = registro
+    try:
+        saida = {}
+        _, css = _montar_html_variante(df, filtros, ["PANORAMA"], _FichasCompartilhadas(), {},
+                                       panorama_saida=saida)
+    finally:
+        _CTX_HTML.registro = None
+    html = re.sub(r"\s*onclick=\"mostrarPorId\('[^']*'\)\" role=\"button\" tabindex=\"0\"", "",
+                  saida.get("html", ""))
+    html = html.replace("cartao-status cartao-status-link", "cartao-status")
+    return _sufixar_ids(html, "dash"), css
 
 
 def _dados_cards_acoes(m, fichas_cartoes):

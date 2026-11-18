@@ -7057,7 +7057,30 @@ def _dados_pre_visualizacao(df):
         "mapa": _dados_mapa_municipios(df),
         "clausulas": _dados_clausulas_dash(df),
         "secretaria_unica": secretaria_unica,
+        "panoramaCarteira": _panorama_carteira_dash(df),
     }
+
+
+_CSS_PANORAMA_DASH = None
+
+
+def _panorama_carteira_dash(df):
+    # Seção "05 · Detalhamento Financeiro" do dash (pedido do usuário em
+    # 18/11/2026): no lugar do gráfico por secretaria, o mesmo conteúdo do
+    # PANORAMA DA CARTEIRA do HTML (gerar_pptx_pac.montar_panorama_dash),
+    # com o CSS do HTML isolado em #preview-panorama-carteira pra não vazar
+    # no resto do dash. O CSS não muda entre filtros: calculado uma vez só.
+    global _CSS_PANORAMA_DASH
+    try:
+        html, css = _modulo_apresentacao().montar_panorama_dash(df)
+        if _CSS_PANORAMA_DASH is None:
+            import resumo_acoes
+            _CSS_PANORAMA_DASH = resumo_acoes._escopar_css(css, "#preview-panorama-carteira")
+        return {"html": html, "css": _CSS_PANORAMA_DASH}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"html": "", "css": "", "erro": str(erro)}
 
 
 # Seção "Cláusulas Suspensivas" do dash — mesma regra da seção da
@@ -12202,6 +12225,63 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     border-radius: 2px;
     display: inline-block;
   }
+  /* 05 · Detalhamento Financeiro = PANORAMA DA CARTEIRA do HTML (CSS do
+     HTML isolado em #preview-panorama-carteira, ver montarPanoramaCarteira).
+     No tema escuro só as cores fixas do HTML (navy, branco, cinzas claros)
+     viram tokens do tema — pedido do usuário em 18/11/2026. */
+  html[data-tema="escuro"] #preview-panorama-carteira .valor-principal[style*="0B1F3F"],
+  html[data-tema="escuro"] #preview-panorama-carteira .cs-investimento,
+  html[data-tema="escuro"] #preview-panorama-carteira .fc-nome,
+  html[data-tema="escuro"] #preview-panorama-carteira .fc-total,
+  html[data-tema="escuro"] #preview-panorama-carteira .fc-fonte-nome,
+  html[data-tema="escuro"] #preview-panorama-carteira .fc-fonte-total,
+  html[data-tema="escuro"] #preview-panorama-carteira .fase-detalhe-titulo,
+  html[data-tema="escuro"] #preview-panorama-carteira .fase-card.aberto .fc-seta,
+  html[data-tema="escuro"] #preview-panorama-carteira table.pac-tabela td:not(.obj-clic) {
+    color: var(--cor-texto-primario) !important;
+  }
+  html[data-tema="escuro"] #preview-panorama-carteira .rotulo-secao,
+  html[data-tema="escuro"] #preview-panorama-carteira .texto-secundario,
+  html[data-tema="escuro"] #preview-panorama-carteira .cs-rotulo,
+  html[data-tema="escuro"] #preview-panorama-carteira .nota-rodape,
+  html[data-tema="escuro"] #preview-panorama-carteira .fc-seta,
+  html[data-tema="escuro"] #preview-panorama-carteira .cc-sub,
+  html[data-tema="escuro"] #preview-panorama-carteira .label-detalhamento {
+    color: var(--cor-texto-secundario);
+  }
+  html[data-tema="escuro"] #preview-panorama-carteira .cartao-status,
+  html[data-tema="escuro"] #preview-panorama-carteira .fase-card,
+  html[data-tema="escuro"] #preview-panorama-carteira .fase-detalhe {
+    background: var(--cor-card);
+    border-color: var(--cor-card-elevado);
+  }
+  html[data-tema="escuro"] #preview-panorama-carteira .fase-card.clicavel:hover,
+  html[data-tema="escuro"] #preview-panorama-carteira .fase-card.clicavel:focus-visible,
+  html[data-tema="escuro"] #preview-panorama-carteira .fase-card.aberto {
+    border-color: var(--cor-acento-teal-texto);
+    border-top-color: var(--cor-acento-teal-texto);
+    box-shadow: var(--sombra-card);
+  }
+  html[data-tema="escuro"] #preview-panorama-carteira .fase-detalhe { border-top-color: var(--cor-acento-teal); }
+  html[data-tema="escuro"] #preview-panorama-carteira .fc-fontes { border-top-color: var(--cor-card-elevado); }
+  html[data-tema="escuro"] #preview-panorama-carteira .barra-trilho { background: var(--cor-card-elevado); }
+  html[data-tema="escuro"] #preview-panorama-carteira table.pac-tabela td { background: var(--cor-card); }
+  html[data-tema="escuro"] #preview-panorama-carteira table.pac-tabela tr:nth-child(even) td { background: var(--cor-card-elevado); }
+  html[data-tema="escuro"] #preview-panorama-carteira table.pac-tabela th[style*="0B1F3F"] { background: var(--cor-card-elevado) !important; }
+  html[data-tema="escuro"] #preview-panorama-carteira table.pac-tabela tr.linha-bold td { border-top-color: var(--cor-texto-secundario); }
+  #preview-panorama-carteira table.pac-tabela td.obj-clic {
+    cursor: pointer;
+    color: var(--cor-acento-teal-texto) !important;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+  #preview-panorama-carteira table.pac-tabela td.obj-clic:hover { text-decoration-style: solid; }
+  html[data-tema="escuro"] #preview-panorama-carteira .btn-icone-detalhamento {
+    background: var(--cor-card-elevado);
+    border-color: var(--cor-texto-terciario);
+    color: var(--cor-texto-primario);
+  }
+  html[data-tema="escuro"] #preview-panorama-carteira .btn-icone-detalhamento:hover { background: var(--cor-acento-teal); }
   .grafico-secretaria-wrap {
     background: var(--cor-card);
     border-radius: var(--raio-md);
@@ -12830,9 +12910,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       </section>
 
       <section class="preview-secao" id="secao-financeiro">
-        <h3 class="preview-secao-titulo"><span class="secao-num">05</span><span class="secao-textos"><span class="secao-nome">Detalhamento Financeiro por Secretaria</span><span class="secao-desc">Investimento de cada secretaria aberto por fonte: valor contratado, OGU, financiamento e recurso estadual.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">05</span><span class="secao-textos"><span class="secao-nome">Detalhamento Financeiro</span><span class="secao-desc">Investimento total, recursos contratados e a contratar por fonte, status das ações e composição por fase, eixo/executor e executor/objeto. Clique nos cards para abrir o detalhamento.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
-          <div id="preview-detalhamento-secretaria"></div>
+          <div id="preview-panorama-carteira"></div>
         </div>
       </section>
 
@@ -14353,6 +14433,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     _cardsPedido++;
   }
   function _tituloCards(item) {
+    if (item.titulo) return item.titulo;
     var r = item.recorte || {}, partes = [];
     if (r.SECRETARIA_LIMPA) partes.push(r.SECRETARIA_LIMPA + " | " + r.EXECUTOR);
     if (r.FASE_TEXTO) partes.push(r.FASE_TEXTO);
@@ -14369,7 +14450,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     fundo._acoes = null;
     fundo.classList.add("aberta");
     var r;
-    try { r = await chamarAPI("cards_acoes", montarFiltrosAtuais(), item.recorte); }
+    try { r = await chamarAPI(item.api || "cards_acoes", montarFiltrosAtuais(), item.recorte); }
     catch (e) { r = { ok: false, erro: String(e) }; }
     if (pedido !== _cardsPedido) return;   // fechada ou trocada enquanto carregava
     if (!r || !r.ok) {
@@ -14970,7 +15051,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     });
     montarPanoramaSecretaria(dados.secretaria);
     montarIndiceDesempenho(dados.desempenho);
-    montarDetalhamentoSecretaria(dados.detalhamentoSecretaria);
+    montarPanoramaCarteira(dados.panoramaCarteira);
     montarMapa(dados.mapa);
     montarClausulas(dados.clausulas);
   }
@@ -15165,6 +15246,78 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       { nome: "Financiamento", valor: item.financiamento, cor: TONS_FINANCEIRO.financiamento.contratado },
     ];
   }
+
+  // ---- 05 · Detalhamento Financeiro (pedido do usuário em 18/11/2026) ----
+  // Mesmo conteúdo e desenho do PANORAMA DA CARTEIRA do HTML, montado no
+  // servidor (gerar_pptx_pac.montar_panorama_dash) com o CSS do HTML isolado
+  // em #preview-panorama-carteira; aqui só entram o comportamento (botões
+  // "+", cards que abrem o detalhamento, um por vez) e o clique nos
+  // objetos/executores das tabelas, que abre a janela de cards do dash.
+  function montarPanoramaCarteira(p) {
+    var container = document.getElementById("preview-panorama-carteira");
+    if (!p || !p.html) {
+      container.innerHTML = '<div class="preview-sem-dados">' +
+        (p && p.erro ? "Não foi possível montar o detalhamento financeiro: " + p.erro : "Sem dados no filtro atual") + "</div>";
+      return;
+    }
+    var estilo = document.getElementById("estilo-panorama-carteira");
+    if (!estilo) {
+      estilo = document.createElement("style");
+      estilo.id = "estilo-panorama-carteira";
+      document.head.appendChild(estilo);
+    }
+    if (p.css && estilo.textContent !== p.css) estilo.textContent = p.css;
+    container.innerHTML = p.html;
+  }
+  window.alternarDetalhamento = window.alternarDetalhamento || function (botao, idAlvo) {
+    var alvo = document.getElementById(idAlvo);
+    if (!alvo) return;
+    var vaiAbrir = alvo.classList.contains("oculto");
+    alvo.classList.toggle("oculto", !vaiAbrir);
+    if (botao.classList.contains("btn-icone-detalhamento")) {
+      botao.textContent = vaiAbrir ? "–" : "+";
+      botao.title = botao.title.indexOf("Ver") === 0 ? botao.title.replace("Ver", "Ocultar")
+                                                      : botao.title.replace("Ocultar", "Ver");
+    }
+  };
+  function panoramaCardAlternar(card) {
+    var grade = card.parentNode;
+    var vaiAbrir = card.getAttribute("aria-expanded") !== "true";
+    grade.querySelectorAll(".fase-card.clicavel").forEach(function (c) {
+      var alvo = document.getElementById(c.dataset.detalhe);
+      var abrir = vaiAbrir && c === card;
+      if (alvo) alvo.classList.toggle("oculto", !abrir);
+      c.classList.toggle("aberto", abrir);
+      c.setAttribute("aria-expanded", abrir ? "true" : "false");
+      var seta = c.querySelector(".fc-seta");
+      if (seta) seta.textContent = abrir ? "▴" : "▾";
+      c.title = c.title.replace(abrir ? "Ver" : "Ocultar", abrir ? "Ocultar" : "Ver");
+    });
+    var aberto = vaiAbrir && document.getElementById(card.dataset.detalhe);
+    if (aberto && aberto.scrollIntoView) aberto.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  (function () {
+    function dentro(ev) { return ev.target.closest && ev.target.closest("#preview-panorama-carteira"); }
+    document.addEventListener("click", function (ev) {
+      if (!dentro(ev)) return;
+      var obj = ev.target.closest(".obj-clic");
+      if (obj) {
+        var f = JSON.parse(obj.dataset.cards || "{}");
+        var tabela = obj.closest("table"), cab = tabela ? tabela.querySelector("th") : null;
+        var sub = [cab ? cab.textContent.replace(/^(OBJETO|EXECUTOR) /, "") : "", f.f, f.e, f.o ? f.x : null]
+          .filter(Boolean).join(" · ");
+        abrirCardsAcoes({ api: "cards_panorama", recorte: f, titulo: (f.o || f.x) + (sub ? " · " + sub : "") });
+        return;
+      }
+      var card = ev.target.closest(".fase-card.clicavel");
+      if (card) panoramaCardAlternar(card);
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (!dentro(ev)) return;
+      var card = ev.target.closest(".fase-card.clicavel");
+      if (card && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); panoramaCardAlternar(card); }
+    });
+  })();
 
   function montarDetalhamentoSecretaria(lista) {
     var container = document.getElementById("preview-detalhamento-secretaria");
@@ -16984,34 +17137,70 @@ def _api_cards_acoes(filtros, recorte):
                 df = df[df[coluna].astype(str) == str(valor)]
             else:
                 return {"ok": False, "erro": f"Recorte desconhecido: {coluna}"}
-        investimento = _serie_investimento_ajustado(df)
-        acoes = []
-        for idx, r in df.iterrows():
-            try:
-                ficha = _montar_dados_ficha_acao(r)
-            except Exception:
-                ficha = {}
-            na_exec = remover_acentos(str(r.get("FASE_TEXTO", ""))).upper() == "EXECUCAO DO OBJETO"
-            data = pd.to_datetime(r[col_prazo] if na_exec else r[col_prazo_atual], errors="coerce")
-            avanco = pd.to_numeric(r.get(col_avanco), errors="coerce")
-            acoes.append({
-                "o": str(r[col_objeto]) if pd.notna(r[col_objeto]) else "",
-                "mu": str(r[col_municipio]) if pd.notna(r[col_municipio]) else "",
-                "ex": ficha.get("executor") or "",
-                "ds": ficha.get("descricao") or "",
-                "lk": ficha.get("link_localizacao") or "",
-                "av": round(float(avanco), 1) if pd.notna(avanco) else None,
-                "dt": data.strftime("%d/%m/%Y") if pd.notna(data) else "A definir",
-                "fase": 1 if na_exec else 0,
-                "v": round(float(investimento.loc[idx]), 2),
-                "ficha": ficha,
-            })
-        acoes.sort(key=lambda a: -a["v"])
-        return {"ok": True, "acoes": acoes}
+        return {"ok": True, "acoes": _acoes_para_cards(df)}
     except Exception as erro:
         import traceback
         traceback.print_exc()
         return {"ok": False, "erro": str(erro)}
+
+
+def _api_cards_panorama(filtros, filtro):
+    # Clique num objeto/executor das tabelas do Detalhamento Financeiro do
+    # dash (o PANORAMA DA CARTEIRA do HTML — pedido do usuário em
+    # 18/11/2026): mesmo critério da janela de cards do HTML (ver
+    # gerar_pptx_pac._dados_cards_acoes e o data-cards de _html_tabela):
+    # o/f/e/x = objeto/fase/eixo/executor, t = 0 T.C. firmado / 1 não
+    # firmado, g = gestão, se = secretaria.
+    try:
+        df = _filtrar_dataframe(filtros)
+        gp = _modulo_apresentacao()
+        base = gp.calcular_metricas(df)["_acoes_base"]
+        federal = (df["GESTAO"].astype(str).str.upper().str.contains("FEDERAL", na=False)
+                   if "GESTAO" in df.columns else pd.Series(False, index=df.index))
+        f = filtro or {}
+        marca = pd.Series(True, index=base.index)
+        for k in ("o", "f", "e", "x", "se"):
+            if k in f:
+                marca &= base[k].astype(str) == str(f[k])
+        if "t" in f:
+            t = base.apply(lambda b: 0 if b["c"] >= 0.5 else (1 if b["a"] >= 0.5 else -1), axis=1)
+            marca &= t == int(f["t"])
+        if "g" in f:
+            marca &= federal.reindex(base.index).map(lambda v: "federal" if v else "estadual") == f["g"]
+        return {"ok": True, "acoes": _acoes_para_cards(df.loc[base.index[marca]])}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
+def _acoes_para_cards(df):
+    # Uma entrada por ação, no formato da janela de cards do dash (ver
+    # _api_cards_acoes), da maior pra menor pelo investimento.
+    investimento = _serie_investimento_ajustado(df)
+    acoes = []
+    for idx, r in df.iterrows():
+        try:
+            ficha = _montar_dados_ficha_acao(r)
+        except Exception:
+            ficha = {}
+        na_exec = remover_acentos(str(r.get("FASE_TEXTO", ""))).upper() == "EXECUCAO DO OBJETO"
+        data = pd.to_datetime(r[col_prazo] if na_exec else r[col_prazo_atual], errors="coerce")
+        avanco = pd.to_numeric(r.get(col_avanco), errors="coerce")
+        acoes.append({
+            "o": str(r[col_objeto]) if pd.notna(r[col_objeto]) else "",
+            "mu": str(r[col_municipio]) if pd.notna(r[col_municipio]) else "",
+            "ex": ficha.get("executor") or "",
+            "ds": ficha.get("descricao") or "",
+            "lk": ficha.get("link_localizacao") or "",
+            "av": round(float(avanco), 1) if pd.notna(avanco) else None,
+            "dt": data.strftime("%d/%m/%Y") if pd.notna(data) else "A definir",
+            "fase": 1 if na_exec else 0,
+            "v": round(float(investimento.loc[idx]), 2),
+            "ficha": ficha,
+        })
+    acoes.sort(key=lambda a: -a["v"])
+    return acoes
 
 
 def _api_pre_visualizar(filtros):
@@ -17597,6 +17786,9 @@ def abrir_interface_filtros(df_base):
 
         def cards_acoes(self, filtros, recorte):
             return _api_cards_acoes(filtros, recorte)
+
+        def cards_panorama(self, filtros, filtro):
+            return _api_cards_panorama(filtros, filtro)
 
         def escolher_local_e_gerar(self, filtros, secoes=None):
             # Segunda etapa: reaplica os mesmos filtros (barato — é só
