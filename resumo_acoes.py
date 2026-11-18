@@ -2892,21 +2892,26 @@ HTML_JANELA = r"""
         <small>base Ações do Cronograma</small></h2>
       <div class="ra-botoes">
         <button type="button" class="ra-inicio" id="raInicio" title="Voltar à tela inicial">← Início</button>
-        <button type="button" id="raConder" title="Baixa agora a planilha Ações do Cronograma do serviço da CONDER (o mesmo conteúdo do botão Exportar para planilha do site app.conder.ba.gov.br/cronogramaacoes)">ATUALIZAR DA CONDER</button>
-        <button type="button" id="raQualidadeSecretaria" title="Quantas ações ainda não têm Secretaria identificada (ver DE-PARA SECRETARIA EXECUTOR.xlsx) e abre esse arquivo pra completar">QUALIDADE SECRETARIA</button>
+        <div class="ra-busca-geral">
+          <input type="search" id="raBuscaGeral" autocomplete="off"
+            placeholder="Buscar em todas as colunas (código, ação, município, executor, objeto…)"
+            title="Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha Ações do Cronograma">
+          <button type="button" id="raBuscaGeralLimpar" title="Limpar a busca">×</button>
+        </div>
+        <div class="ra-menu" id="raMenu">
+          <button type="button" class="ra-menu-btn" id="raMenuBtn" aria-haspopup="true" aria-expanded="false" title="Mais opções: atualizar da CONDER, qualidade da Secretaria e gerar apresentação"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.2"/></svg></button>
+          <div class="ra-menu-lista" id="raMenuLista" role="menu">
+            <button type="button" id="raConder" title="Baixa agora a planilha Ações do Cronograma do serviço da CONDER (o mesmo conteúdo do botão Exportar para planilha do site app.conder.ba.gov.br/cronogramaacoes)">ATUALIZAR DA CONDER</button>
+            <button type="button" id="raQualidadeSecretaria" title="Quantas ações ainda não têm Secretaria identificada (ver DE-PARA SECRETARIA EXECUTOR.xlsx) e abre esse arquivo pra completar">QUALIDADE SECRETARIA</button>
+            <button type="button" id="raGerar" title="Lê de novo a planilha Ações do Cronograma e gera o slide em Downloads">GERAR APRESENTAÇÃO</button>
+          </div>
+        </div>
         <button type="button" id="raHtml" title="Gera uma página HTML com o gráfico de investimento dos 30 maiores municípios por população, a avaliação da carteira e o quadro Status × Eixo do recorte atual">GERAR HTML</button>
         <button type="button" id="raIncluirApresentacao" title="Abre a Apresentação CGAPE (HTML) já com as páginas do Monitoramento marcadas — você escolhe quais páginas do PAC entram junto">INCLUIR NA APRESENTAÇÃO</button>
-        <button type="button" id="raGerar" title="Lê de novo a planilha Ações do Cronograma e gera o slide em Downloads">GERAR APRESENTAÇÃO</button>
         <button type="button" class="ra-fechar" id="raFechar">FECHAR</button>
       </div>
     </div>
     <div class="ra-corpo">
-      <div class="ra-busca-geral">
-        <input type="search" id="raBuscaGeral" autocomplete="off"
-          placeholder="Buscar em todas as colunas da base (código, ação, município, executor, objeto, observações…)"
-          title="Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha Ações do Cronograma">
-        <button type="button" id="raBuscaGeralLimpar" title="Limpar a busca">×</button>
-      </div>
       <div class="ra-filtros" id="raFiltros"></div>
       <div class="ra-msg" id="raMsg"></div>
       <div id="raQuadro"></div>
@@ -2926,7 +2931,10 @@ HTML_JANELA = r"""
   .ra-cabecalho h2 { margin:0; font-size:16px; letter-spacing:.5px; }
   .ra-cabecalho h2 small { font-weight:400; font-size:12px; margin-left:8px;
     color:var(--cor-texto-terciario); letter-spacing:0; }
-  .ra-botoes { display:flex; gap:8px; align-items:center; }
+  .ra-botoes { display:flex; gap:8px; align-items:center; flex:1 1 auto; justify-content:flex-end; }
+  .ra-cabecalho h2 { white-space:nowrap; flex-shrink:0; }
+  .ra-cabecalho { flex-wrap:wrap; }
+  .ra-botoes > button { white-space:nowrap; flex-shrink:0; }
   .ra-botoes button, #raLimpar, .ra-mais { background:transparent;
     border:1px solid var(--cor-texto-terciario); color:var(--cor-texto-primario);
     border-radius:6px; padding:6px 14px; font-size:12px; cursor:pointer;
@@ -2937,10 +2945,25 @@ HTML_JANELA = r"""
      identidade única do projeto; #10251F (quase preto) não tinha mais
      contraste nenhum em cima dele (fazia sentido só com o teal claro
      antigo) — corrigido a pedido do usuário em 14/11/2026. */
-  #raGerar, #raXlsx { background:var(--cor-acento-teal); color:#fff;
+  #raXlsx { background:var(--cor-acento-teal); color:#fff;
     border-color:var(--cor-acento-teal); font-weight:700; }
-  #raGerar:hover, #raXlsx:hover { background:var(--cor-acento-teal-hover);
+  #raXlsx:hover { background:var(--cor-acento-teal-hover);
     color:#fff; }
+  /* Menu (ícone de grade) com ATUALIZAR DA CONDER, QUALIDADE SECRETARIA e
+     GERAR APRESENTAÇÃO — pedido do usuário em 18/11/2026. */
+  .ra-menu { position:relative; display:inline-flex; }
+  .ra-botoes .ra-menu-btn { padding:5px 9px; display:inline-flex; align-items:center; }
+  .ra-menu-btn svg { fill:currentColor; }
+  .ra-menu.aberto .ra-menu-btn { border-color:var(--cor-acento-teal); color:var(--cor-acento-teal-texto); }
+  .ra-menu-lista { display:none; position:absolute; top:calc(100% + 6px); right:0;
+    z-index:20; min-width:220px; flex-direction:column; gap:2px; padding:6px;
+    background:var(--cor-card); border:1px solid var(--cor-texto-terciario);
+    border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.25); }
+  .ra-menu.aberto .ra-menu-lista { display:flex; }
+  .ra-botoes .ra-menu-lista button { border:none; text-align:left; width:100%;
+    padding:8px 12px; border-radius:5px; white-space:nowrap; }
+  .ra-botoes .ra-menu-lista button:hover:not(:disabled) {
+    background:var(--cor-fundo); color:var(--cor-acento-teal-texto); }
   #raGerar:disabled, #raXlsx:disabled, #raHtml:disabled, #raConder:disabled { opacity:.6; cursor:default; }
   .ra-corpo { flex:1; overflow:auto; padding:14px 18px 40px; }
   .ra-msg { font-size:13px; color:var(--cor-texto-secundario); min-height:18px;
@@ -3026,7 +3049,7 @@ HTML_JANELA = r"""
   .ra-ms-botao::after { content:"\25BE"; position:absolute; right:8px; top:5px;
     color:var(--cor-texto-terciario); }
   .ra-ms.marcado .ra-ms-botao { border-color:var(--cor-acento-teal); }
-  .ra-ms-lista { display:none; position:absolute; z-index:5; top:100%; left:0;
+  .ra-ms-lista { display:none; position:absolute; z-index:30; top:100%; left:0;
     min-width:100%; width:max-content; max-width:340px; margin-top:4px;
     background:var(--cor-card); border:1px solid var(--cor-card-elevado);
     border-radius:8px; box-shadow:var(--sombra-card); padding:6px; }
@@ -3107,10 +3130,12 @@ HTML_JANELA = r"""
     box-shadow:inset 0 -2px 0 var(--cor-acento-teal); }
   .ra-mais { display:block; margin:10px auto 0; }
   /* Buscas digitadas (pedido do usuário em 17/11/2026) */
-  .ra-busca-geral { position:relative; margin-bottom:10px; }
+  /* Busca geral no cabeçalho, ao lado de "← Início" — fica sempre visível
+     (pedido do usuário em 18/11/2026). */
+  .ra-busca-geral { position:relative; flex:1 1 320px; max-width:620px; min-width:180px; }
   #raBuscaGeral { width:100%; box-sizing:border-box; background:var(--cor-card);
     color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado);
-    border-radius:8px; padding:10px 36px 10px 38px; font-size:13px; font-family:inherit;
+    border-radius:8px; padding:7px 36px 7px 38px; font-size:13px; font-family:inherit;
     box-shadow:var(--sombra-card); outline:none;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23889' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E");
     background-repeat:no-repeat; background-position:12px center; }
@@ -3118,7 +3143,7 @@ HTML_JANELA = r"""
   #raBuscaGeral:focus, .ra-busca-geral.ativo #raBuscaGeral { border-color:var(--cor-acento-teal); }
   #raBuscaGeralLimpar { position:absolute; right:8px; top:50%; transform:translateY(-50%);
     background:none; border:none; color:var(--cor-texto-secundario); font-size:18px;
-    line-height:1; cursor:pointer; padding:2px 6px; display:none; }
+    line-height:1; cursor:pointer; padding:2px 6px; display:none; border-radius:0; }
   .ra-busca-geral.ativo #raBuscaGeralLimpar { display:block; }
   .ra-acoes th .ra-col-busca { display:block; width:100%; min-width:70px; box-sizing:border-box;
     margin-top:5px; background:var(--cor-fundo); color:var(--cor-texto-primario);
@@ -3215,7 +3240,14 @@ HTML_JANELA = r"""
       e.stopPropagation();
       var abrir = !bloco.classList.contains("aberto");
       document.querySelectorAll("#ra-overlay .ra-ms.aberto").forEach(function (b) { b.classList.remove("aberto"); });
-      if (abrir) { bloco.classList.add("aberto"); bloco.querySelector(".ra-ms-lista input").focus(); }
+      if (abrir) {
+        // a lista abre logo abaixo do botão (não abaixo das etiquetas dos
+        // itens escolhidos): marcar itens não empurra a lista, que fica por
+        // cima das etiquetas — pedido do usuário em 18/11/2026
+        var bt = bloco.querySelector(".ra-ms-botao");
+        bloco.querySelector(".ra-ms-lista").style.top = (bt.offsetTop + bt.offsetHeight) + "px";
+        bloco.classList.add("aberto"); bloco.querySelector(".ra-ms-lista input").focus();
+      }
     };
     bloco.querySelector(".ra-ms-lista").onclick = function (e) { e.stopPropagation(); };
     bloco.querySelector(".ra-ms-lista input").oninput = function () { raBuscar(bloco); };
@@ -3645,6 +3677,26 @@ HTML_JANELA = r"""
   }
   document.getElementById("raFechar").onclick = fechar;
   document.getElementById("raGerar").onclick = raGerar;
+  // Menu de grade (CONDER / Qualidade / Gerar apresentação): abre/fecha no
+  // ícone, fecha ao escolher um item ou ao clicar fora.
+  (function () {
+    var menu = document.getElementById("raMenu");
+    var btn = document.getElementById("raMenuBtn");
+    function fecharMenu() { menu.classList.remove("aberto"); btn.setAttribute("aria-expanded", "false"); }
+    btn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      var abrir = !menu.classList.contains("aberto");
+      menu.classList.toggle("aberto", abrir);
+      btn.setAttribute("aria-expanded", abrir ? "true" : "false");
+    });
+    document.getElementById("raMenuLista").addEventListener("click", function (ev) {
+      if (ev.target.closest("button")) fecharMenu();
+    });
+    document.addEventListener("click", function (ev) {
+      if (!menu.contains(ev.target)) fecharMenu();
+    });
+    document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") fecharMenu(); });
+  })();
   document.getElementById("raHtml").onclick = raHtml;
   // "ATUALIZAR DA CONDER" (pedido do usuário em 17/11/2026): baixa a base
   // do serviço da CONDER e relê tudo (a tabela recarrega pela versão nova)

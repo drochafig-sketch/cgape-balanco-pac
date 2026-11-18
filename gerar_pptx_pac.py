@@ -4212,7 +4212,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
                                                            classe_extra="slide-institucional")],
                  # Visão Geral do dash (só HTML) — pedido do usuário em 18/11/2026;
                  # calculada só se a página foi escolhida (roda por gestão/secretaria)
-                 "VISAO_DASH": ([_html_cabecalho_rodape("VISÃO GERAL", _html_visao_geral_dash(df),
+                 "VISAO_DASH": ([_html_cabecalho_rodape("VISÃO GERAL", _html_visao_geral_dash(df, filtro_gestao),
                                                         classe_extra="slide-continua")]
                                 if "VISAO_DASH" in escolhidas else []),
                  "PANORAMA": [slide1], "VISAO_GERAL": [], "COMP_ORIGEM": [slide2], "COMP_FASE": [],
@@ -4302,7 +4302,10 @@ def _recortes_gestao(df):
     return variantes
 
 
-CAMPOS_CARD_ACAO = ["o", "f", "e", "x", "t", "g", "mu", "ex", "ds", "lk", "av", "dt", "fase", "inv", "fi", "v", "se"]
+# pt/ps/tc = trimestre, semestre e situação do T.C. (SIM/NÃO) da previsão de
+# conclusão: clique nos gráficos da página Visão Geral (pedido do usuário em 18/11/2026)
+CAMPOS_CARD_ACAO = ["o", "f", "e", "x", "t", "g", "mu", "ex", "ds", "lk", "av", "dt", "fase", "inv", "fi", "v", "se",
+                    "pt", "ps", "tc"]
 
 
 def _mi_bi_dash(valor):
@@ -4314,7 +4317,7 @@ def _mi_bi_dash(valor):
     return "R$ " + f"{valor:,.0f}".replace(",", ".")
 
 
-def _html_visao_geral_dash(df):
+def _html_visao_geral_dash(df, filtro_base=None):
     """Conteúdo da página "Visão Geral" da Apresentação HTML: a mesma Visão
     Geral do dash (cards de quantidade/investimento, previsão de conclusão
     da fase com a chave Semestral, resumo financeiro com "Detalhar
@@ -4323,8 +4326,16 @@ def _html_visao_geral_dash(df):
     pedido do usuário em 18/11/2026. Só no HTML (VISAO_DASH)."""
     d = pac._dados_pre_visualizacao(df, so_visao_geral=True)
     cores = pac.cores_visao_geral()
+    filtro_base = filtro_base or {}
 
-    def barras(itens, ultima_vermelha=False):
+    def clique(chave, valor, titulo):
+        # mesmo mecanismo do clique nas tabelas (data-cards + janela #oc-fundo,
+        # ver JS_CARDS_OBJETO): abre os cards das ações daquele recorte
+        filtro = dict(filtro_base, **{chave: valor})
+        return (f' data-cards="{_html_esc(json.dumps(filtro, ensure_ascii=False))}" '
+                f'data-titulo="{_html_esc(titulo)}"')
+
+    def barras(itens, ultima_vermelha=False, chave_filtro="pt"):
         if not itens:
             return '<div class="vgd-vazio">Sem dados no filtro atual</div>'
         maior = max(i["qtd"] for i in itens) or 1
@@ -4333,8 +4344,10 @@ def _html_visao_geral_dash(df):
             vermelha = it["rotulo"] == "A definir" or (ultima_vermelha and n == len(itens) - 1)
             cor = cores["vermelho"] if vermelha else cores["azul"]
             cols.append(
-                f'<div class="vgd-col" title="{_html_esc(it["rotulo"])}: {it["qtd"]} '
-                f'{"ação" if it["qtd"] == 1 else "ações"}">'
+                f'<div class="vgd-col{" vgd-clic" if it["qtd"] else ""}" title="{_html_esc(it["rotulo"])}: {it["qtd"]} '
+                f'{"ação" if it["qtd"] == 1 else "ações"} — clique para ver as ações"'
+                + (clique(chave_filtro, it["rotulo"], "Conclusão prevista: " + it["rotulo"]) if it["qtd"] else "")
+                + '>'
                 # número logo acima da barra, acompanhando a altura dela —
                 # pedido do usuário em 18/11/2026 (a barra usa a altura toda
                 # menos a faixa do número, pra o maior nunca vazar)
@@ -4344,7 +4357,7 @@ def _html_visao_geral_dash(df):
                 f'<div class="vgd-col-rotulo">{_html_esc(it["rotulo"])}</div></div>')
         return f'<div class="vgd-barras{" vgd-muitas" if len(itens) > 8 else ""}">{"".join(cols)}</div>'
 
-    def pizza(itens, cor_de):
+    def pizza(itens, cor_de, chave_filtro=None):
         itens = [i for i in itens if i["valor"] > 0]
         if not itens:
             return '<div class="vgd-vazio">Sem investimento no filtro atual</div>'
@@ -4359,7 +4372,9 @@ def _html_visao_geral_dash(df):
             if n < len(itens) - 1:
                 partes.append(f"#fff {fim - folga:.2f}deg {fim + folga:.2f}deg")
         legenda = "".join(
-            f'<div class="vgd-leg-item"><span class="vgd-leg-bola" style="background:{cor_de.get(it["rotulo"], "#888888")}"></span>'
+            f'<div class="vgd-leg-item{" vgd-clic" if chave_filtro else ""}"'
+            + (clique(chave_filtro, it.get("situacao", it["rotulo"]), it["rotulo"]) if chave_filtro else "")
+            + f'><span class="vgd-leg-bola" style="background:{cor_de.get(it["rotulo"], "#888888")}"></span>'
             f'<span><span class="vgd-leg-valor">{_html_esc(_mi_bi_dash(it["valor"]))} '
             f'<span class="vgd-leg-pct">({it["valor"] / total * 100:.1f}%)</span></span>'
             f'<span class="vgd-leg-rotulo">{_html_esc(it["rotulo"])}'
@@ -4383,7 +4398,7 @@ def _html_visao_geral_dash(df):
             {chave("Semestral", "Alterna entre a visão por trimestre e a semestral (até dezembro do ano atual, "
                                 "1º semestre do ano seguinte e depois disso, junto com as ações com data a definir)")}</div>
           <div class="vgd-vista-a">{barras(d["prazo"])}</div>
-          <div class="vgd-vista-b">{barras(d["prazoSemestre"], ultima_vermelha=True)}</div>
+          <div class="vgd-vista-b">{barras(d["prazoSemestre"], ultima_vermelha=True, chave_filtro="ps")}</div>
         </div>
         <div class="vgd-card vgd-alterna">
           <div class="vgd-cab"><h4><span class="vgd-vista-a">Resumo Financeiro</span><span class="vgd-vista-b">Contratado por Fonte</span></h4>
@@ -4392,9 +4407,9 @@ def _html_visao_geral_dash(df):
           <div class="vgd-vista-b">{pizza(d["financeiroContratado"], cores["financeiro"])}</div>
         </div>
         <div class="vgd-card"><div class="vgd-cab"><h4>Panorama Geral das Fases</h4></div>
-          {pizza(d["panorama"], cores["fase"])}</div>
+          {pizza(d["panorama"], cores["fase"], "f")}</div>
         <div class="vgd-card"><div class="vgd-cab"><h4>Situação do Termo de Compromisso</h4></div>
-          {pizza(d["termo"], cores["termo"])}</div>
+          {pizza(d["termo"], cores["termo"], "tc")}</div>
       </div>
     </div>'''
 
@@ -4442,6 +4457,10 @@ CSS_VISAO_GERAL_DASH = """
     .vgd-leg-valor { display:block; font-size:15px; font-weight:800; color:#0B5CAD; }
     .vgd-leg-pct { font-weight:400; color:#5B6576; font-size:13px; }
     .vgd-leg-rotulo { display:block; font-size:12.5px; color:#0B1F3F; text-transform:uppercase; }
+    .vgd-clic { cursor:pointer; }
+    .vgd-col.vgd-clic:hover .vgd-col-barra { filter:brightness(1.12); }
+    .vgd-leg-item.vgd-clic { border-radius:6px; padding:2px 4px; margin:-2px -4px; }
+    .vgd-leg-item.vgd-clic:hover { background:#F2F4F7; }
     .vgd-vazio { color:#5B6576; font-size:14px; padding:30px 0; text-align:center; }
     @media (max-width:900px) { .vgd-grade, .vgd-kpis { grid-template-columns:1fr; } }
     @media print { .vgd-card, .vgd-kpi { break-inside:avoid; box-shadow:none; } .vgd-chave { display:none; } }
@@ -4488,9 +4507,10 @@ def _dados_cards_acoes(m, fichas_cartoes):
                if "GESTAO" in df.columns else pd.Series(False, index=df.index))
     linhas = []
     for idx, b in base.iterrows():
+        # t = None (sem valor firmado nem a firmar): a ação entra mesmo assim,
+        # pra os gráficos da Visão Geral contarem todas; as tabelas filtram
+        # por t = 0/1 e continuam sem ela (pedido do usuário em 18/11/2026)
         t = 0 if b["c"] >= 0.5 else (1 if b["a"] >= 0.5 else None)
-        if t is None:
-            continue
         r = df.loc[idx]
         try:
             ficha = pac._montar_dados_ficha_acao(r)
@@ -4506,7 +4526,8 @@ def _dados_cards_acoes(m, fichas_cartoes):
             round(float(avanco), 1) if pd.notna(avanco) else None,
             data.strftime("%d/%m/%Y") if pd.notna(data) else "A definir",
             1 if na_exec else 0,
-            abreviar_moeda(b["inv"]), _indice_ficha(fichas_cartoes, ficha), round(float(b["inv"]), 2), b["se"]])
+            abreviar_moeda(b["inv"]), _indice_ficha(fichas_cartoes, ficha), round(float(b["inv"]), 2), b["se"],
+            str(r.get("PRAZO_TRIMESTRE", "")), str(r.get("PRAZO_SEMESTRE", "")), str(r.get("SINALIZACAO_TC", ""))])
     return {"campos": CAMPOS_CARD_ACAO, "acoes": linhas}
 
 
@@ -5243,14 +5264,14 @@ JS_CARDS_OBJETO = r"""
   }
   window.ocFechar = function () { fundo.classList.remove('aberta'); };
   document.addEventListener('click', function (ev) {
-    var alvo = ev.target.closest('.obj-clic');
+    var alvo = ev.target.closest('.obj-clic, .vgd-clic');
     if (alvo) {
       var f = JSON.parse(alvo.dataset.cards);
       var lista = D.acoes.filter(function (a) {
         return Object.keys(f).every(function (k) { return a[C[k]] === f[k]; });
       }).sort(function (x, y) { return y[C.v] - x[C.v]; });
       var total = lista.reduce(function (s, a) { return s + a[C.v]; }, 0);
-      document.getElementById('oc-titulo').textContent = f.o || f.x;
+      document.getElementById('oc-titulo').textContent = alvo.dataset.titulo || f.o || f.x;
       var tabela = alvo.closest('table'), cab = tabela ? tabela.querySelector('th') : null;
       document.getElementById('oc-sub').textContent = [cab ? cab.textContent.replace(/^(OBJETO|EXECUTOR) /, '') : '',
         f.f, f.e, f.o ? f.x : null, lista.length + (lista.length === 1 ? ' ação' : ' ações')]
