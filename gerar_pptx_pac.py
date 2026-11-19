@@ -4432,9 +4432,16 @@ def _html_visao_geral_dash(df, filtro_base=None):
                 '<input type="checkbox" role="switch"><span class="vgd-trilho"><span></span></span></label>')
 
     return f'''<div class="vgd">
-      <div class="vgd-kpis">
-        <div class="vgd-kpi"><span>QTD TOTAL</span><b>{d["qtd"]}</b></div>
-        <div class="vgd-kpi"><span>INVESTIMENTO</span><b>{_html_esc(_mi_bi_dash(d["investimento"]))}</b></div>
+      <div class="vgd-destaque">
+        <div>
+          <div class="vgd-destaque-rotulo">INVESTIMENTO TOTAL DA CARTEIRA</div>
+          <div class="vgd-destaque-valor">{_html_esc(abreviar_moeda(d["investimento"]).upper())}</div>
+        </div>
+        <div class="vgd-destaque-qtd">
+          <div class="vgd-destaque-rotulo">{"AÇÃO DO PAC" if d["qtd"] == 1 else "AÇÕES DO PAC"}</div>
+          <div class="vgd-destaque-valor">{d["qtd"]}</div>
+          <div class="vgd-destaque-sub">{"acompanhada" if d["qtd"] == 1 else "acompanhadas"} pelo Estado da Bahia</div>
+        </div>
       </div>
       <div class="vgd-grade">
         <div class="vgd-card vgd-alterna">
@@ -4467,6 +4474,14 @@ CSS_VISAO_GERAL_DASH = """
       box-shadow:0 2px 10px rgba(11,31,63,.06); }
     .vgd-kpi span { display:block; font-size:14px; font-weight:700; color:#5B6576; letter-spacing:.4px; }
     .vgd-kpi b { display:block; font-size:34px; font-weight:900; color:#0B5CAD; margin-top:4px; }
+    /* bloco de destaque igual ao do dash (19/11/2026): investimento grande
+       à esquerda, quantidade de ações um pouco menor à direita */
+    .vgd-destaque { display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px 44px; }
+    .vgd-destaque-rotulo { font-size:16px; font-weight:800; color:#5B6576; letter-spacing:.3px; }
+    .vgd-destaque-valor { font-size:68px; font-weight:900; line-height:1.05; color:#0B1F3F; margin:2px 0 4px; }
+    .vgd-destaque-qtd { padding-left:44px; border-left:2px solid #D8DCE3; }
+    .vgd-destaque-qtd .vgd-destaque-valor { font-size:44px; color:#0B5CAD; }
+    .vgd-destaque-sub { font-size:15px; color:#5B6576; }
     .vgd-grade { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
     .vgd-card { background:#fff; border:1px solid #D8DCE3; border-radius:12px; padding:18px 20px;
       box-shadow:0 2px 10px rgba(11,31,63,.06); min-width:0; }
@@ -4507,7 +4522,7 @@ CSS_VISAO_GERAL_DASH = """
     .vgd-leg-item.vgd-clic:hover { background:#F2F4F7; }
     .vgd-vazio { color:#5B6576; font-size:14px; padding:30px 0; text-align:center; }
     @media (max-width:900px) { .vgd-grade, .vgd-kpis { grid-template-columns:1fr; } }
-    @media print { .vgd-card, .vgd-kpi { break-inside:avoid; box-shadow:none; } .vgd-chave { display:none; } }
+    @media print { .vgd-card, .vgd-kpi, .vgd-destaque { break-inside:avoid; box-shadow:none; } .vgd-chave { display:none; } }
 """
 
 JS_VISAO_GERAL_DASH = """
@@ -4584,7 +4599,9 @@ def _sufixar_ids(html, sufixo):
                 # cards da Composição por Fase apontam o detalhamento por
                 # atributo (ver _html_card_fase)
                 .replace(f'aria-controls="{id_html}"', f'aria-controls="{id_html}--{sufixo}"')
-                .replace(f'data-detalhe="{id_html}"', f'data-detalhe="{id_html}--{sufixo}"'))
+                .replace(f'data-detalhe="{id_html}"', f'data-detalhe="{id_html}--{sufixo}"')
+                # cards de executor das Cláusulas Suspensivas (clAlternarExecutor)
+                .replace(f'data-alvo="{id_html}"', f'data-alvo="{id_html}--{sufixo}"'))
     return html
 
 
