@@ -690,12 +690,15 @@ def resumo_acoes_dados(caminho, filtros=None):
         return (f"* Inclui {RA_COL_ORCAMENTO} em {_ra_qtd(len(orc))} sem {RA_COL_VALOR} "
                 f"({_ra_rs(float(orc['_valor'].sum()))}).")
 
+    # "n": quantidade em número, pro bloco de destaque (valor grande +
+    # quantidade de ações ao lado) — pedido do usuário em 19/11/2026
     cards = [{"rotulo": "VALOR TOTAL · ESTADO" if top30 else "VALOR TOTAL", "cor": RA_COR_TOTAL,
-              **(celula(df_estado) or vazio_card), "nota": nota_asterisco(df_estado)}]
+              **(celula(df_estado) or vazio_card), "n": int(len(df_estado)),
+              "nota": nota_asterisco(df_estado)}]
     aviso_cards = ""
     if top30:
         cards.append({"rotulo": "VALOR TOTAL · 30 MAIORES MUNICÍPIOS", "cor": RA_CORES_TOP3[2],
-                      **(celula(df) or vazio_card), "nota": nota_asterisco(df)})
+                      **(celula(df) or vazio_card), "n": int(len(df)), "nota": nota_asterisco(df)})
         aviso_cards = ("O total do estado não segue a chave dos 30 maiores municípios; o total "
                        "dos 30 maiores, o mapa, os quadros e a lista seguem.")
 
@@ -1843,12 +1846,23 @@ def _montar_blocos_monitoramento(caminho_base, dados):
             f'<script type="application/json" class="ra-mapa-dados">{json_mapa}</script></section>'
         )
 
-    cards_html = "".join(
-        f'<div><div class="card" style="--c:#{c["cor"]}"><span>{_esc(c["rotulo"])}</span>'
-        f'<b>{_esc(c["txt"])}</b><small>{_esc(c["qtd"])}</small></div>'
-        + (f'<div class="card-nota">{_esc(c["nota"])}</div>' if c.get("nota") else "")
-        + "</div>"
-        for c in dados["cards"])
+    # Bloco de destaque no mesmo desenho da Visão Geral do PAC (pedido do
+    # usuário em 19/11/2026): valor grande à esquerda e a quantidade de
+    # ações, um pouco menor, à direita.
+    def _qtd_destaque(c):
+        n = c.get("n", 0)
+        return (f'<div class="destaque-bloco destaque-qtd"><span class="destaque-rot">'
+                f'{"AÇÃO" if n == 1 else "AÇÕES"}</span><b class="destaque-valor">{n:,}</b>'.replace(",", ".")
+                + f'<small>{"acompanhada" if n == 1 else "acompanhadas"} pelo Estado da Bahia</small></div>')
+    def _bloco_destaque(c):
+        return (f'<div><div class="destaque"><div class="destaque-bloco"><span class="destaque-rot">{_esc(c["rotulo"])}</span>'
+                f'<b class="destaque-valor">{_esc(c["txt"])}</b></div>{_qtd_destaque(c)}</div>'
+                + (f'<div class="card-nota">{_esc(c["nota"])}</div>' if c.get("nota") else "")
+                + "</div>")
+    cards_html = "".join(_bloco_destaque(c) for c in dados["cards"])
+    # valor e quantidade macro do recorte, SEMPRE no topo da página (antes
+    # só existiam dentro da seção dos 30 maiores) — pedido de 19/11/2026
+    card_total_html = _bloco_destaque(dados["cards"][0]) if dados["cards"] else ""
     filtros_html = (f'<b>Recorte filtrado.</b> Filtros: {_esc(dados.get("filtros_txt") or "")}. '
                     if dados["filtrado"] else "<b>Base completa.</b> ")
     aviso_cards_html = (f'<div class="aviso-cards">{_esc(dados.get("aviso_cards"))}</div>'
@@ -1941,7 +1955,13 @@ main{{max-width:1500px;margin:0 auto;padding:20px 36px 36px}}
 .filtros b{{color:var(--navy)}}
 .card-nota{{font-size:12px;font-style:italic;color:var(--cinza);margin-top:6px;padding-left:4px}}
 .aviso-cards{{display:inline-block;background:#FDECD2;border:1px solid #E68A00;color:#7A4A00;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;margin-bottom:10px}}
-.cards{{display:grid;grid-template-columns:repeat({len(dados["cards"])},minmax(0,440px));gap:16px;margin-bottom:22px}}
+.cards{{display:flex;flex-wrap:wrap;gap:18px 64px;margin-bottom:22px}}
+.destaque{{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 40px}}
+.destaque-rot{{display:block;font-size:16px;font-weight:800;color:var(--cinza);letter-spacing:.3px}}
+.destaque-valor{{display:block;font-size:64px;font-weight:900;line-height:1.05;color:#0B1F3F;margin:2px 0 4px;white-space:nowrap}}
+.destaque-qtd{{padding-left:40px;border-left:2px solid #D8DCE3}}
+.destaque-qtd .destaque-valor{{font-size:42px;color:var(--azul)}}
+.destaque small{{display:block;font-size:15px;color:var(--cinza)}}
 .card{{background:var(--claro);border-radius:10px;padding:14px 20px;border-left:6px solid var(--c)}}
 .card span{{display:block;font-size:13px;font-weight:700;color:var(--cinza)}}
 .card b{{display:block;font-size:34px;font-weight:900;color:var(--azul);margin:4px 0;white-space:nowrap}}
@@ -2428,6 +2448,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
 
     return {
         "cards_html": cards_html,
+        "card_total_html": card_total_html,
         "aviso_cards_html": aviso_cards_html,
         "filtros_html": filtros_html,
         "secao_mapa": secao_mapa,
@@ -2652,13 +2673,14 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
         corpo_filtros = (
             f'<div class="filtros">{pv["filtros_html"]}'
             + (f'Gerado em {pv["agora"]:%d/%m/%Y às %Hh%M}.' if not sufixo else "") + '</div>')
+        # valor + quantidade macro do recorte logo abaixo dos filtros, com ou
+        # sem a chave dos 30 maiores (pedido do usuário em 19/11/2026; antes,
+        # com a chave desligada, não havia card nenhum)
+        bloco_total = f'<div class="cards">{pv["card_total_html"]}</div>' if pv.get("card_total_html") else ""
         if dv.get("top30"):
-            corpo = f'{corpo_filtros}{bloco_quadros}{secoes_top30}'
+            corpo = f'{corpo_filtros}{bloco_total}{bloco_quadros}{secoes_top30}'
         else:
-            # chave desligada: só os dois quadros, sem o card de valor total
-            # (os cards macro só existem dentro da seção dos 30 maiores) —
-            # pedido do usuário em 18/11/2026
-            corpo = f'{corpo_filtros}{bloco_quadros}'
+            corpo = f'{corpo_filtros}{bloco_total}{bloco_quadros}'
         if sufixo:
             corpo = _sufixar_ids_monitoramento(corpo, sufixo)
         if (ie, ix) == (0, 0):
@@ -3101,6 +3123,15 @@ HTML_JANELA = r"""
   .ra-aviso-cards { display:inline-block; margin-bottom:8px; padding:5px 10px; border-radius:6px;
     font-size:12px; font-weight:600; color:#F2B632; background:rgba(242,182,50,.12);
     border:1px solid rgba(242,182,50,.5); }
+  .ra-destaques { display:flex; flex-wrap:wrap; gap:18px 64px; margin-bottom:18px; }
+  .ra-destaque { display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px 40px; }
+  .ra-destaque-rot { display:block; font-size:15px; font-weight:800; letter-spacing:.3px;
+    text-transform:uppercase; color:var(--cor-texto-secundario); }
+  .ra-destaque-valor { display:block; font-size:60px; font-weight:900; line-height:1.05;
+    color:var(--cor-texto-primario); margin:2px 0 4px; white-space:nowrap; }
+  .ra-destaque-qtd { padding-left:40px; border-left:2px solid var(--cor-card-elevado); }
+  .ra-destaque-qtd .ra-destaque-valor { font-size:40px; color:var(--cor-acento-mint-texto); }
+  .ra-destaque small { display:block; font-size:14px; color:var(--cor-texto-secundario); }
   .ra-card { background:var(--cor-card); border-radius:8px; padding:12px 16px;
     border-left:5px solid var(--ra-cor, var(--cor-acento-teal));
     box-shadow:var(--sombra-card); }
@@ -3864,10 +3895,16 @@ HTML_JANELA = r"""
     };
     document.getElementById("raQuadro").innerHTML =
       (d.aviso_cards ? '<div class="ra-aviso-cards">' + esc(d.aviso_cards) + "</div>" : "") +
-      '<div class="ra-cards" style="grid-template-columns:repeat(' + d.cards.length + ', minmax(0, 360px))">' +
+      // bloco de destaque (valor grande + quantidade de ações ao lado),
+      // mesmo desenho da Visão Geral do PAC — pedido de 19/11/2026
+      '<div class="ra-cards ra-destaques">' +
       d.cards.map(function (c) {
-        return '<div class="ra-card" style="--ra-cor:#' + esc(c.cor) + '"><span>' + esc(c.rotulo) +
-          "</span><b>" + esc(c.txt) + "</b><span>" + esc(c.qtd) + "</span></div>";
+        var n = c.n || 0;
+        return '<div class="ra-destaque"><div><span class="ra-destaque-rot">' + esc(c.rotulo) + '</span>' +
+          '<b class="ra-destaque-valor">' + esc(c.txt) + '</b></div>' +
+          '<div class="ra-destaque-qtd"><span class="ra-destaque-rot">' + (n === 1 ? "AÇÃO" : "AÇÕES") + '</span>' +
+          '<b class="ra-destaque-valor">' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".") + '</b>' +
+          '<small>' + (n === 1 ? "acompanhada" : "acompanhadas") + ' pelo Estado da Bahia</small></div></div>';
       }).join("") + "</div>" +
       raGraficosHtml(d.graficos) +
       '<div class="ra-rolagem"><table class="ra-tab"><thead><tr><th>Status</th>' +

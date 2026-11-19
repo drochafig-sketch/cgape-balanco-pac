@@ -2217,8 +2217,63 @@ def _html_tabela(cabecalho, linhas, linhas_bold=(), cor_cabecalho=None, clique=N
     return f'<table class="pac-tabela"><thead><tr>{ths}</tr></thead><tbody>{"".join(trs)}</tbody></table>'
 
 
+_logo_pac_cache = None
+
+
+def _logo_pac_data_uri():
+    """PAC.png (pasta do programa) como data URI PNG — mantém a
+    transparência (o _data_uri_imagem converte pra JPEG). Reduzido pra 96 px
+    de altura (o dobro do exibido, nítido em tela de alta densidade).
+    Sem o arquivo, devolve "" e o título volta a ser o texto "PAC"."""
+    global _logo_pac_cache
+    if _logo_pac_cache is not None:
+        return _logo_pac_cache
+    caminho = os.path.join(PASTA_BASE, "PAC.png")
+    _logo_pac_cache = ""
+    if os.path.exists(caminho):
+        try:
+            from PIL import Image
+            imagem = Image.open(caminho).convert("RGBA")
+            if imagem.height > 96:
+                imagem = imagem.resize((round(imagem.width * 96 / imagem.height), 96), Image.LANCZOS)
+            buffer = io.BytesIO()
+            imagem.save(buffer, format="PNG", optimize=True)
+            dados = buffer.getvalue()
+        except Exception:
+            with open(caminho, "rb") as f:
+                dados = f.read()
+        _logo_pac_cache = "data:image/png;base64," + base64.b64encode(dados).decode("ascii")
+    return _logo_pac_cache
+
+
+def _css_logo_pac():
+    logo = _logo_pac_data_uri()
+    if not logo:
+        return ""
+    # proporção do PAC.png (855 x 362) a 44 px de altura
+    return (f'.slide-pac .cabecalho .logo-pac{{display:inline-block;height:44px;width:104px;flex:none;'
+            f'background:url("{logo}") left center/contain no-repeat;'
+            '-webkit-print-color-adjust:exact;print-color-adjust:exact}')
+
+
 def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, recorte="", classe_extra="", id_html="",
-                                chips=("gestao", "secretaria")):
+                                chips=("gestao", "secretaria"), pac=True):
+    # pac=True: páginas do PAC — cabeçalho claro com o LOGO do PAC no lugar
+    # da palavra "PAC", pra diferenciar das páginas de Ações em
+    # Monitoramento (pac=False, cabeçalho azul-marinho, título sem prefixo)
+    # — pedido do usuário em 19/11/2026.
+    # O desenho do logo vai UMA vez no CSS (_css_logo_pac), não em cada
+    # página — 46 cópias somavam ~420 KB.
+    logo = _logo_pac_data_uri() if pac else ""
+    if pac and logo:
+        html_titulo = ('<span class="logo-pac" role="img" aria-label="PAC"></span>'
+                       f'<span class="titulo-tema">{_html_esc(tema)}</span>')
+    elif pac:
+        html_titulo = f"PAC - {_html_esc(tema)}"
+    else:
+        html_titulo = _html_esc(tema)
+    if pac:
+        classe_extra = (classe_extra + " slide-pac").strip()
     # chips de filtro ao lado do título, na ordem dada (preenchidos por
     # atualizarChipsFiltro no JS): PAC = gestão/secretaria; Monitoramento =
     # eixo/secretaria — pedido do usuário em 17/11/2026
@@ -2229,7 +2284,7 @@ def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, reco
     atributo_id = f' id="{id_html}"' if id_html else ""
     return f'''<section class="slide{(" " + classe_extra) if classe_extra else ""}"{atributo_id}>
       <div class="cabecalho">
-        <div class="titulo-linha"><div class="titulo">PAC - {_html_esc(tema)}</div>
+        <div class="titulo-linha"><div class="titulo">{html_titulo}</div>
           <span class="chips-filtro">{html_chips}</span></div>
         <div class="subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
         <div class="base-atualizada">{_html_esc(texto_base_atualizada())}</div>
@@ -3212,7 +3267,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         html = _html_cabecalho_rodape_base(
             titulo, "§PAG§", m["total_slides"], partes_monitoramento["secoes"][chave],
             recorte=partes_monitoramento["recorte"], classe_extra="slide-continua slide-monitoramento",
-            chips=("eixo", "secretaria"))
+            chips=("eixo", "secretaria"), pac=False)
         # Título desta página é SÓ "AÇÕES EM MONITORAMENTO", sem nenhum
         # prefixo "PAC" (nem "PAC -", nem "PAC +") — pedido do usuário em
         # 18/11/2026, que reforçou: "NUNCA mude esse título, SEMPRE SERÁ
@@ -3746,6 +3801,19 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .cabecalho .base-atualizada { font-size:12px; line-height:1.3; color:#C9D6EA; margin-top:3px; }
     .cabecalho .governo { position:absolute; top:14px; right:40px; text-align:right; font-weight:700;
       font-size:17px; color:#4FA3E0; line-height:1.7; }
+    /* Páginas do PAC (pedido do usuário em 19/11/2026): cabeçalho claro com
+       o logo do PAC e uma faixa nas cores do logo embaixo — as páginas de
+       Ações em Monitoramento continuam com o cabeçalho azul-marinho. */
+    .slide-pac .cabecalho { background:#FFFFFF; color:#0B1F3F; border-bottom:1px solid #D8DCE3; }
+    .slide-pac .cabecalho::after { content:""; position:absolute; left:0; right:0; bottom:-6px; height:6px;
+      background:linear-gradient(90deg, #1F40FF 0 25%, #00C800 25% 50%, #FFD200 50% 75%, #FF1A1A 75% 100%); }
+    .slide-pac .cabecalho .titulo { display:flex; align-items:center; gap:16px; color:#0B1F3F; }
+    .slide-pac .cabecalho .subtitulo, .slide-pac .cabecalho .base-atualizada { color:#5B6576; }
+    .slide-pac .cabecalho .governo { color:#0B5CAD; }
+    .slide-pac .chip-gestao { background:#0B5CAD; color:#fff; border-color:#0B5CAD; }
+    .slide-pac .chip-secretaria { color:#0B5CAD; border-color:#0B5CAD; }
+    @media print { .slide-pac .cabecalho, .slide-pac .cabecalho::after {
+      -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
     .conteudo { padding: 28px 40px; }
     .rodape { position:absolute; bottom:14px; left:40px; right:40px; display:flex; justify-content:space-between;
       font-size:12px; color:#5B6576; }
@@ -4776,7 +4844,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
 <head>
 <meta charset="utf-8">
 <title>Apresentação CGAPE</title>
-<style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}{CSS_CARDS_OBJETO}{CSS_VISAO_GERAL_DASH}{css_monitoramento}</style>
+<style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}{CSS_CARDS_OBJETO}{CSS_VISAO_GERAL_DASH}{css_monitoramento}{_css_logo_pac()}</style>
 </head>
 <body>
 <button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()">Gerar PDF</button>
