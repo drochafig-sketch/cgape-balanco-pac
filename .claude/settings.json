@@ -130,7 +130,8 @@
       "Bash(git commit *)",
       "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\")",
       "Bash(git merge *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(grep -n \"GERAR RELAT\\\\|APRESENTA.*CGAPE\\\\|FILTROS</\\\\|PUBLICAR</\\\\|menu-grade\\\\|btn-menu-grade\\\\|id=\\\\\"btn-menu\\\\\"\" \"CGAPE - BALANÇO PAC.py\")"
     ]
   }
 }

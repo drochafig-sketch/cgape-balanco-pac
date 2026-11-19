@@ -12679,8 +12679,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       <button class="btn" id="btn-limpar-tudo">LIMPAR FILTROS</button>
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
       <button class="btn" id="btn-preview">DASHBOARD</button>
-      <button class="btn-acento" id="btn-gerar">GERAR RELATÓRIO</button>
-      <button class="btn" id="btn-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
       <button class="btn" id="btn-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
       <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
       <div class="acesso-rapido-wrap" id="acesso-rapido-filtros-wrap">
@@ -12706,6 +12704,23 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
               <line x1="17" y1="16" x2="23" y2="16"></line>
             </svg>
             <span>FILTROS</span>
+          </button>
+          <button class="acesso-rapido-item" id="btn-gerar" title="Gerar o relatório em PDF com os filtros selecionados">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+            <span class="acesso-rapido-texto">GERAR RELATÓRIO</span>
+          </button>
+          <button class="acesso-rapido-item" id="btn-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <span class="acesso-rapido-texto">APRESENTAÇÃO CGAPE</span>
           </button>
           <button class="acesso-rapido-item" id="acesso-rapido-filtros-publicar" style="display:none" title="Publicar planilha/código atualizados no site (GitHub + Render)">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -12830,8 +12845,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         <button type="button" class="btn-inicio" id="btn-inicio-dash" title="Voltar à tela inicial">← Início</button>
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
-        <button class="btn-acento" id="preview-gerar-topo">GERAR RELATÓRIO</button>
-        <button class="btn" id="dash-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">APRESENTAÇÃO CGAPE</button>
         <button class="btn" id="dash-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
         <button class="btn" id="dash-resumo-acoes" data-abrir-resumo-acoes title="Ações em monitoramento (base Ações do Cronograma)">AÇÕES EM MONITORAMENTO</button>
         <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
@@ -12858,6 +12871,23 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
                 <line x1="17" y1="16" x2="23" y2="16"></line>
               </svg>
               <span>FILTROS</span>
+            </button>
+            <button class="acesso-rapido-item" id="preview-gerar-topo" title="Gerar o relatório em PDF com os filtros selecionados">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+              <span class="acesso-rapido-texto">GERAR RELATÓRIO</span>
+            </button>
+            <button class="acesso-rapido-item" id="dash-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+              <span class="acesso-rapido-texto">APRESENTAÇÃO CGAPE</span>
             </button>
             <!-- Só existe no modo desktop (roda git de verdade na máquina de
                  quem clica) — nasce escondido e o JS decide se mostra, ver
@@ -15781,18 +15811,25 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   const btnGerar = document.getElementById("btn-gerar");
   const previewGerarTopo = document.getElementById("preview-gerar-topo");
   const botoesGerar = [btnGerar, previewGerarTopo].filter(Boolean);
-  const textoOriginalBtnGerar = btnGerar.textContent;
+  // Agora um item do menu de Acesso Rápido (com ícone): o texto de
+  // carregamento ("Gerando...") vai só no <span> interno, pra não apagar o
+  // ícone — antes era o textContent do botão inteiro — pedido do usuário em
+  // 18/11/2026.
+  function textoBotaoGerar(b) {
+    return b.querySelector(".acesso-rapido-texto") || b;
+  }
+  const textoOriginalBtnGerar = textoBotaoGerar(btnGerar).textContent;
 
   function travarBotaoGerar(texto) {
     botoesGerar.forEach(function (b) {
       b.disabled = true;
-      b.textContent = texto;
+      textoBotaoGerar(b).textContent = texto;
     });
   }
   function destravarBotaoGerar() {
     botoesGerar.forEach(function (b) {
       b.disabled = false;
-      b.textContent = textoOriginalBtnGerar;
+      textoBotaoGerar(b).textContent = textoOriginalBtnGerar;
     });
   }
 
@@ -16729,13 +16766,16 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     document.getElementById("btn-gerar-pptx"),
     document.getElementById("dash-gerar-pptx"),
   ].filter(Boolean);
-  const textoOriginalBtnGerarPPTX = botoesGerarPPTX.length ? botoesGerarPPTX[0].textContent : "";
+  // Agora um item do menu de Acesso Rápido (com ícone): o texto de
+  // carregamento vai só no <span> interno, pra não apagar o ícone — ver
+  // textoBotaoGerar acima (mesma ideia) — pedido do usuário em 18/11/2026.
+  const textoOriginalBtnGerarPPTX = botoesGerarPPTX.length ? textoBotaoGerar(botoesGerarPPTX[0]).textContent : "";
 
   async function gerarApresentacaoFinanceira() {
     var filtros = montarFiltrosAtuais();
     var secoes = await escolherSlides(filtros, "GERAR PPTX", "pptx");
     if (secoes === null) return;
-    botoesGerarPPTX.forEach(function (b) { b.disabled = true; b.textContent = "Gerando..."; });
+    botoesGerarPPTX.forEach(function (b) { b.disabled = true; textoBotaoGerar(b).textContent = "Gerando..."; });
     try {
       var resultado = await baixarPPTX("gerar_pptx_analise_financeira", filtros, secoes);
       if (!resultado || resultado.cancelado) return;
@@ -16747,7 +16787,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     } catch (erro) {
       alert("Ocorreu um erro ao gerar a apresentação:" + NL + NL + erro);
     } finally {
-      botoesGerarPPTX.forEach(function (b) { b.disabled = false; b.textContent = textoOriginalBtnGerarPPTX; });
+      botoesGerarPPTX.forEach(function (b) { b.disabled = false; textoBotaoGerar(b).textContent = textoOriginalBtnGerarPPTX; });
     }
   }
   botoesGerarPPTX.forEach(function (b) { b.onclick = gerarApresentacaoFinanceira; });
