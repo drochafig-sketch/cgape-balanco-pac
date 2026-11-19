@@ -51,10 +51,11 @@ $Espelho = Join-Path $env:LOCALAPPDATA "CGAPE_espelho_github"
 $EstadoAntigo = Join-Path $env:LOCALAPPDATA "CGAPE_espelho_github.estado"
 $PastaConflitos = Join-Path $Repo "_conflitos_onedrive"
 $NomeAviso = "_CONFLITO_SINCRONIZACAO.txt"
-$Destinos = @(
-    @{ Nome = "OneDrive"; Pasta = "C:\Users\diego.figueiredo\OneDrive\2025 2026 Onedrive\MONITORAMENTO\PANORAMA\Ambiente Virtual"; Log = "_sync_onedrive.log"; Recolher = $true },
-    @{ Nome = "COAHS"; Pasta = "S:\00 NOVA REDE - COAM\venv"; Log = "_sync_coam.log"; Recolher = $false }
-)
+# 19/11/2026: espelho automatico para OneDrive e COAHS DESLIGADO (pedido do usuario).
+# Para religar, devolva as duas linhas abaixo para dentro de $Destinos.
+#   @{ Nome = "OneDrive"; Pasta = "C:\Users\diego.figueiredo\OneDrive\2025 2026 Onedrive\MONITORAMENTO\PANORAMA\Ambiente Virtual"; Log = "_sync_onedrive.log"; Recolher = $true },
+#   @{ Nome = "COAHS"; Pasta = "S:\00 NOVA REDE - COAM\venv"; Log = "_sync_coam.log"; Recolher = $false }
+$Destinos = @()
 $ExcluirPastas = @("Lib", "Scripts", "Include", "share", "build", "dist", "__pycache__", ".git", ".claude", ".venv", "_conflitos_onedrive")
 $ExcluirArquivos = @(".git", "Thumbs.db", "pyvenv.cfg", "desktop.ini", "_sync_onedrive.log", "_sync_coam.log", "_vigia_sincronizacao.log", $NomeAviso)
 $IntervaloGithub = 300   # segundos entre consultas ao GitHub (e conferencias do OneDrive)
