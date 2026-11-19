@@ -126,7 +126,11 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('gerar_pptx_pac.py', encoding='utf-8'\\).read\\(\\)\\)\")",
       "Bash(git rev-list *)",
       "Bash(grep -i \"\\\\.xlsx$\")",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(git commit *)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\")",
+      "Bash(git merge *)",
+      "Bash(git checkout *)"
     ]
   }
 }
