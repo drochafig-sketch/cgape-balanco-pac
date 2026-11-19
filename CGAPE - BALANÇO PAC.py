@@ -488,9 +488,12 @@ TONS_FINANCEIRO = {
         "contratado": dessaturar_hex("#BB6060"),
         "aContratar": clarear_hex(dessaturar_hex("#BB6060")),
     },
+    # 19/11/2026 (pedido do usuário): Recurso Estadual passa a usar o MESMO
+    # amarelo da fase "Licitação" no gráfico Panorama por Fase
+    # (COR_AMARELO / paletaGraficos.amarelo = dessaturar_hex("#BC9E2C")).
     "estadual": {
-        "contratado": dessaturar_hex("#E68A00"),
-        "aContratar": clarear_hex(dessaturar_hex("#E68A00")),
+        "contratado": dessaturar_hex("#BC9E2C"),
+        "aContratar": clarear_hex(dessaturar_hex("#BC9E2C")),
     },
     # Mesmo cinza já usado em COR_CONTRATADO_NAO_DISCRIMINADO (gráfico
     # "Detalhar contratado" do Resumo Financeiro) — contratado sem fonte
@@ -11666,6 +11669,46 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     color: var(--cor-acento-mint-texto);
     margin-top: 4px;
   }
+  /* 19/11/2026 (pedido do usuário): os dois cards QTD TOTAL / INVESTIMENTO
+     da Visão Geral viraram um bloco único no mesmo desenho da apresentação
+     (gerar_pptx_pac.py, "INVESTIMENTO TOTAL DA CARTEIRA"). */
+  .preview-destaque-carteira {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px 40px;
+    text-align: left;
+    padding: 4px 2px 0;
+  }
+  .preview-destaque-qtd {
+    padding-left: 40px;
+    border-left: 2px solid var(--cor-card-elevado);
+  }
+  /* seletor mais específico: a regra ".preview-destaque-carteira .valor"
+     vem depois e, com a mesma especificidade, sobrescrevia esta. */
+  .preview-destaque-carteira .preview-destaque-qtd .valor {
+    font-size: 42px;
+    color: var(--cor-acento-mint-texto);
+  }
+  .preview-destaque-carteira .rotulo {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--cor-texto-secundario);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .preview-destaque-carteira .valor {
+    font-size: 64px;
+    font-weight: 900;
+    line-height: 1.05;
+    color: var(--cor-texto-primario);
+    margin: 2px 0 4px;
+  }
+  .preview-destaque-carteira .subtexto {
+    font-size: 15px;
+    color: var(--cor-texto-secundario);
+  }
 
   .preview-grid {
     display: grid;
@@ -12013,6 +12056,22 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     font-size: 14px; font-weight: 700; flex-shrink: 0; }
   .cl-dash-eixo-prazo { font-size: 12px; font-weight: 700; }
   .cl-dash-grade.cl-dash-recolhido { display: none; }
+  /* Executores em cards — pedido do usuário em 19/11/2026 */
+  .cl-dash-exec-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 16px; }
+  .cl-dash-exec { background: var(--cor-card); border-radius: var(--raio-md); box-shadow: var(--sombra-card);
+    border-top: 4px solid; padding: 12px 14px; cursor: pointer; user-select: none;
+    display: flex; flex-direction: column; gap: 8px; transition: background var(--transicao-rapida); }
+  .cl-dash-exec:hover, .cl-dash-exec.ativo { background: var(--cor-card-elevado); }
+  .cl-dash-exec.ativo { outline: 2px solid var(--cor-acento-teal); }
+  .cl-dash-exec-topo { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .cl-dash-exec-nome { font-size: 15px; font-weight: 800; color: var(--cor-texto-primario); text-transform: uppercase; }
+  .cl-dash-exec-numeros { display: flex; align-items: baseline; gap: 6px; }
+  .cl-dash-exec-qtd { font-size: 30px; font-weight: 900; line-height: 1; color: var(--cor-texto-primario); }
+  .cl-dash-exec-qtd-rot { font-size: 13px; color: var(--cor-texto-secundario); }
+  .cl-dash-exec-valor { margin-left: auto; font-size: 15px; font-weight: 700; color: var(--cor-acento-mint-texto); white-space: nowrap; }
+  .cl-dash-exec-barra { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 2px; background: var(--cor-card-elevado); }
+  .cl-dash-exec-barra i { display: block; height: 100%; }
+  .cl-dash-exec-prazos { display: flex; flex-wrap: wrap; gap: 4px 10px; }
   .cl-dash-vig { position: relative; overflow: hidden; display: flex; justify-content: space-between; align-items: center;
     gap: 10px; margin-top: 10px; border: 1px solid; border-left-width: 4px; border-radius: var(--raio-md); padding: 7px 10px; }
   .cl-dash-vig-fundo { position: absolute; inset: 0; opacity: 0.10; pointer-events: none; }
@@ -14284,7 +14343,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   const TONS_FINANCEIRO = PALETA_GRAFICOS.financeiro || {
     apoiado: { contratado: "#0B5CAD", aContratar: "#0B5CAD" },
     financiamento: { contratado: COR_VERMELHO, aContratar: COR_VERMELHO },
-    estadual: { contratado: "#E68A00", aContratar: "#E68A00" },
+    estadual: { contratado: COR_AMARELO, aContratar: COR_AMARELO },
     naoDiscriminado: "#8C8C8C",
   };
   // CORES_FINANCEIRO (legenda do gráfico de pizza "Resumo Financeiro") usa
@@ -15162,6 +15221,21 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     container.appendChild(wrap);
   }
 
+  // "R$ 20,4 BI" — mesmo formato de abreviar_moeda() da apresentação
+  // (1 casa, vírgula decimal, unidade em maiúsculas).
+  function formatarMoedaDestaque(valor) {
+    valor = Number(valor) || 0;
+    var sinal = valor < 0 ? "-" : "";
+    valor = Math.abs(valor);
+    var texto;
+    if (valor >= 1e9) texto = (valor / 1e9).toFixed(1).replace(".", ",") + " BI";
+    else if (valor >= 1e6) texto = (valor / 1e6).toFixed(1).replace(".", ",") + " MI";
+    else if (valor >= 1e3) texto = (valor / 1e3).toFixed(1).replace(".", ",") + " MIL";
+    else if (valor > 0) texto = valor.toFixed(0);
+    else return "-";
+    return sinal + "R$ " + texto;
+  }
+
   function montarPreVisualizacao(dados) {
     _ultimosDadosPreview = dados;   // redesenho ao trocar o tema
     var nota = document.getElementById("preview-nota-secretaria");
@@ -15176,9 +15250,20 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     }
 
     var cards = document.getElementById("preview-cards");
+    // Investimento à esquerda; quantidade de ações à direita, um pouco
+    // menor que o valor mas com destaque próprio (pedido de 19/11/2026).
     cards.innerHTML =
-      '<div class="preview-card-resumo"><div class="rotulo">QTD Total</div><div class="valor">' + dados.qtd + '</div></div>' +
-      '<div class="preview-card-resumo"><div class="rotulo">Investimento</div><div class="valor">' + formatarMiBi(dados.investimento) + '</div></div>';
+      '<div class="preview-destaque-carteira">' +
+        '<div class="preview-destaque-bloco">' +
+          '<div class="rotulo">Investimento total da carteira</div>' +
+          '<div class="valor">' + formatarMoedaDestaque(dados.investimento) + '</div>' +
+        '</div>' +
+        '<div class="preview-destaque-bloco preview-destaque-qtd">' +
+          '<div class="rotulo">' + (dados.qtd === 1 ? 'Ação do PAC' : 'Ações do PAC') + '</div>' +
+          '<div class="valor">' + dados.qtd + '</div>' +
+          '<div class="subtexto">' + (dados.qtd === 1 ? 'acompanhada' : 'acompanhadas') + ' pelo Estado da Bahia</div>' +
+        '</div>' +
+      '</div>';
 
     desenharGraficoPrazo(dados);
     _dadosFinanceiroAtuais = dados;
@@ -15294,18 +15379,45 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     // Cada eixo com o seu botão de detalhamento (pedido do usuário em
     // 10/11/2026): cards recolhidos por padrão; o cabeçalho já mostra a
     // contagem por prazo, pra urgência ficar visível mesmo recolhido.
+    // Executores em CARDS (pedido do usuário em 19/11/2026): uma grade com
+    // um card por executor (quantidade, valor, barra e contagem por prazo);
+    // clicar no card abre os cards das ações dele logo abaixo da grade.
+    var contarPrazos = function (g) {
+      var c = {};
+      rotulosPrazo.forEach(function (p) {
+        c[p[0]] = g.acoes.filter(function (a) { return a.prazo === p[0]; }).length;
+      });
+      return c;
+    };
+    if (cl.eixos.length) {
+      html += '<div class="cl-dash-exec-grade">';
+      cl.eixos.forEach(function (g) {
+        var c = contarPrazos(g);
+        var pior = ["vencida", "proxima", "no_prazo", "sem_data"].filter(function (k) { return c[k]; })[0] || "sem_data";
+        var aberto = _clDash.abertos.has(g.nome);
+        html += '<div class="cl-dash-exec' + (aberto ? ' ativo' : '') + '" role="button" tabindex="0" data-nome="' + esc(g.nome) +
+          '" style="border-top-color:' + cores[pior] + '" title="' + (aberto ? "Ocultar" : "Ver") + ' as ações do executor">' +
+          '<div class="cl-dash-exec-topo"><span class="cl-dash-exec-nome">' + esc(g.nome) + '</span>' +
+          '<span class="cl-dash-eixo-btn">' + (aberto ? "–" : "+") + '</span></div>' +
+          '<div class="cl-dash-exec-numeros"><span class="cl-dash-exec-qtd">' + g.qtd + '</span>' +
+          '<span class="cl-dash-exec-qtd-rot">' + (g.qtd === 1 ? "ação" : "ações") + '</span>' +
+          '<span class="cl-dash-exec-valor">' + formatarMiBi(g.valor) + '</span></div>' +
+          '<div class="cl-dash-exec-barra">' + rotulosPrazo.map(function (p) {
+            return c[p[0]] ? '<i style="flex:' + c[p[0]] + ';background:' + cores[p[0]] + '"></i>' : '';
+          }).join("") + '</div>' +
+          '<div class="cl-dash-exec-prazos">' + rotulosPrazo.map(function (p) {
+            return c[p[0]] ? '<span class="cl-dash-eixo-prazo" style="color:' + cores[p[0]] + '">● ' + c[p[0]] + ' ' + p[1] + '</span>' : '';
+          }).join("") + '</div></div>';
+      });
+      html += '</div>';
+    }
     cl.eixos.forEach(function (g) {
-      var prazosEixo = rotulosPrazo.map(function (p) {
-        var n = g.acoes.filter(function (a) { return a.prazo === p[0]; }).length;
-        return n ? '<span class="cl-dash-eixo-prazo" style="color:' + cores[p[0]] + '">● ' + n + ' ' + p[1] + '</span>' : '';
-      }).join("");
-      var aberto = _clDash.abertos.has(g.nome);
+      if (!_clDash.abertos.has(g.nome)) return;
       html += '<div class="cl-dash-eixo"><div class="cl-dash-eixo-cab" role="button" tabindex="0" data-nome="' + esc(g.nome) +
-        '" title="' + (aberto ? "Ocultar" : "Ver") + ' detalhamento do executor">' +
-        '<span class="cl-dash-eixo-titulo"><span class="cl-dash-eixo-btn">' + (aberto ? "–" : "+") +
-        '</span><span class="cl-dash-eixo-nome">' + esc(g.nome) +
-        '</span>' + prazosEixo + '</span><span class="cl-dash-eixo-resumo">' + g.qtd + (g.qtd === 1 ? " ação" : " ações") + ' · ' +
-        formatarMiBi(g.valor) + '</span></div><div class="cl-dash-grade' + (aberto ? '' : ' cl-dash-recolhido') + '">';
+        '" title="Ocultar as ações do executor">' +
+        '<span class="cl-dash-eixo-titulo"><span class="cl-dash-eixo-btn">–</span><span class="cl-dash-eixo-nome">' + esc(g.nome) +
+        '</span></span><span class="cl-dash-eixo-resumo">' + g.qtd + (g.qtd === 1 ? " ação" : " ações") + ' · ' +
+        formatarMiBi(g.valor) + '</span></div><div class="cl-dash-grade">';
       g.acoes.forEach(function (a) {
         var cor = cores[a.prazo];
         var chips = [a.situacao, a.fase, a.status].filter(Boolean).map(function (t) {
@@ -15327,14 +15439,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       html += '</div></div>';
     });
     container.innerHTML = html;
-    container.querySelectorAll(".cl-dash-eixo-cab").forEach(function (cab) {
+    // card do executor (abre/fecha) e cabeçalho do detalhe (fecha):
+    // redesenha a seção com o estado novo em _clDash.abertos.
+    container.querySelectorAll(".cl-dash-exec, .cl-dash-eixo-cab").forEach(function (cab) {
       var alternar = function () {
-        var grade = cab.nextElementSibling;
-        var abrir = grade.classList.contains("cl-dash-recolhido");
-        grade.classList.toggle("cl-dash-recolhido", !abrir);
-        cab.querySelector(".cl-dash-eixo-btn").textContent = abrir ? "–" : "+";
-        cab.title = abrir ? "Ocultar detalhamento do executor" : "Ver detalhamento do executor";
-        if (abrir) _clDash.abertos.add(cab.dataset.nome); else _clDash.abertos.delete(cab.dataset.nome);
+        var nome = cab.dataset.nome;
+        if (_clDash.abertos.has(nome)) _clDash.abertos.delete(nome); else _clDash.abertos.add(nome);
+        desenharClausulasDash();
       };
       cab.addEventListener("click", alternar);
       cab.addEventListener("keydown", function (ev) {
@@ -15705,7 +15816,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 
     var filtros = montarFiltrosAtuais();
     var cards = document.getElementById("preview-cards");
-    cards.innerHTML = '<div class="preview-card-resumo"><div class="rotulo">Carregando...</div><div class="valor">—</div></div>';
+    cards.innerHTML = '<div class="preview-destaque-carteira"><div class="preview-destaque-bloco"><div class="rotulo">Investimento total da carteira</div><div class="valor">—</div><div class="subtexto">Carregando...</div></div></div>';
 
     var resultado;
     try {

@@ -3571,23 +3571,48 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
                           f'style="color:#{cores_prazo[chave]}{"" if n else ";display:none"}">● {n} {rot}</span>')
         return "".join(partes)
 
+    def _card_executor(i, nome_executor, acoes_executor):
+        # Executor em CARD (pedido do usuário em 19/11/2026): quantidade,
+        # valor, barra e contagem por prazo; clicar abre o grupo de cards
+        # das ações (cl-eixo com o mesmo id) logo abaixo da grade. Os
+        # números são recalculados pelo filtro de fase (JS_CLAUSULAS).
+        qtd = len(acoes_executor)
+        pz = {k: sum(1 for a in acoes_executor if a["prazo"] == k)
+              for k in ("vencida", "proxima", "no_prazo", "sem_data")}
+        pior = next((k for k in ("vencida", "proxima", "no_prazo", "sem_data") if pz[k]), "sem_data")
+        barra = "".join(f'<i data-prazo="{k}" style="flex:{n};background:#{cores_prazo[k]}{"" if n else ";display:none"}"></i>'
+                        for k, n in pz.items())
+        return f'''<div class="cl-exec" role="button" tabindex="0" data-alvo="detalhe-clausula-executor-{i}"
+             style="border-top-color:#{cores_prazo[pior]}" title="Ver as ações do executor"
+             onclick="clAlternarExecutor(this)" onkeydown="if(event.key==='Enter'||event.key===' '){{event.preventDefault();clAlternarExecutor(this);}}">
+          <div class="cl-exec-topo"><span class="cl-exec-nome">{_html_esc(nome_executor)}</span>
+            <span class="cl-exec-btn">+</span></div>
+          <div class="cl-exec-numeros"><span class="cl-exec-qtd">{qtd}</span>
+            <span class="cl-exec-qtd-rot">aç{"ões" if qtd != 1 else "ão"}</span>
+            <span class="cl-exec-valor">{_html_esc(abreviar_moeda(sum(a["valor"] for a in acoes_executor)))}</span></div>
+          <div class="cl-exec-barra">{barra}</div>
+          <div class="cl-resumo-prazos">{_resumo_prazos_eixo(acoes_executor)}</div>
+        </div>'''
+
     if m["clausulas_por_executor"]:
-        # Um grupo por ÓRGÃO EXECUTOR, cada um com o seu botão de
-        # detalhamento: cards recolhidos por padrão, mesmo "+" das outras
-        # seções; o "Gerar PDF" já expande tudo antes de imprimir.
-        grupos_clausula_html = "".join(f'''<div class="cl-eixo">
+        # Grade de cards de executor + um grupo de cards de ação por
+        # executor, recolhido por padrão (abre ao clicar no card do
+        # executor); o "Gerar PDF" já expande tudo antes de imprimir.
+        executores = list(enumerate(m["clausulas_por_executor"], 1))
+        grupos_clausula_html = (
+            '<div class="cl-exec-grade">'
+            + "".join(_card_executor(i, n, a) for i, (n, a) in executores)
+            + '</div>'
+            + "".join(f'''<div class="cl-eixo oculto" id="detalhe-clausula-executor-{i}">
           <div class="cl-eixo-cabecalho">
             <span class="cl-eixo-titulo">
-              <button type="button" class="btn-icone-detalhamento" title="Ver detalhamento do executor"
-                      onclick="alternarDetalhamento(this, 'detalhe-clausula-executor-{i}')">+</button>
               <span class="cl-eixo-nome">{_html_esc(nome_executor)}</span>
-              <span class="cl-resumo-prazos">{_resumo_prazos_eixo(acoes_executor)}</span>
             </span>
             <span class="cl-eixo-resumo">{len(acoes_executor)} aç{"ões" if len(acoes_executor) != 1 else "ão"} ·
               {_html_esc(abreviar_moeda(sum(a["valor"] for a in acoes_executor)))}</span>
           </div>
-          <div class="cl-grade oculto" id="detalhe-clausula-executor-{i}">{"".join(_card_clausula(a) for a in acoes_executor)}</div>
-        </div>''' for i, (nome_executor, acoes_executor) in enumerate(m["clausulas_por_executor"], 1))
+          <div class="cl-grade">{"".join(_card_clausula(a) for a in acoes_executor)}</div>
+        </div>''' for i, (nome_executor, acoes_executor) in executores))
     else:
         grupos_clausula_html = ('<div class="texto-secundario" style="margin-top:30px">Nenhuma ação com cláusula '
                                 'suspensiva pendente neste recorte.</div>')
@@ -3861,7 +3886,26 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .cl-eixo-titulo { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
     .cl-eixo-nome { font-size:20px; font-weight:700; color:#0B1F3F; text-transform:uppercase; }
     .cl-eixo-prazo { font-size:13px; font-weight:700; }
-    .cl-grade.oculto { display:none; }
+    .cl-grade.oculto, .cl-eixo.oculto { display:none; }
+    /* executores em cards — pedido do usuário em 19/11/2026 */
+    .cl-exec-grade { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:14px; margin-top:20px; }
+    .cl-exec { background:#fff; border:1px solid #D8DCE3; border-top:5px solid; border-radius:10px; padding:14px 16px;
+      cursor:pointer; user-select:none; display:flex; flex-direction:column; gap:9px;
+      transition:box-shadow .15s, border-color .15s; }
+    .cl-exec:hover, .cl-exec:focus { box-shadow:0 4px 14px rgba(11,31,63,.15); outline:none; }
+    .cl-exec.ativo { box-shadow:0 0 0 2px #0B1F3F; }
+    .cl-exec.cl-filtrado { display:none !important; }
+    .cl-exec-topo { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .cl-exec-nome { font-size:18px; font-weight:800; color:#0B1F3F; text-transform:uppercase; }
+    .cl-exec-btn { width:24px; height:24px; border-radius:50%; background:#F2F4F7; color:#0B1F3F; flex-shrink:0;
+      display:inline-flex; align-items:center; justify-content:center; font-size:15px; font-weight:700; }
+    .cl-exec-numeros { display:flex; align-items:baseline; gap:6px; }
+    .cl-exec-qtd { font-size:34px; font-weight:900; line-height:1; color:#0B1F3F; }
+    .cl-exec-qtd-rot { font-size:14px; color:#5B6576; }
+    .cl-exec-valor { margin-left:auto; font-size:17px; font-weight:800; color:#0B1F3F; white-space:nowrap; }
+    .cl-exec-barra { display:flex; gap:2px; height:7px; border-radius:4px; overflow:hidden; background:#F2F4F7; }
+    .cl-exec-barra i { display:block; height:100%; }
+    .cl-exec .cl-resumo-prazos { gap:4px 12px; }
     .cl-vig { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:12px;
       border:1px solid; border-left-width:4px; border-radius:8px; padding:8px 12px; }
     .cl-vig-rotulo { font-size:11px; font-weight:700; color:#5B6576; text-transform:uppercase; }
@@ -5339,6 +5383,26 @@ JS_CLAUSULAS = r"""
       });
       totalQtd += qtd; totalValor += valor;
       Object.keys(cont).forEach(function (k) { cont[k] += pz[k]; });
+      // card do executor (fora do grupo): mesmos números recalculados
+      var exec = grupo.id && root.querySelector('.cl-exec[data-alvo="' + grupo.id + '"]');
+      if (exec) {
+        exec.classList.toggle('cl-filtrado', qtd === 0);
+        var q = exec.querySelector('.cl-exec-qtd'), r = exec.querySelector('.cl-exec-qtd-rot'),
+            v = exec.querySelector('.cl-exec-valor');
+        if (q) q.textContent = qtd;
+        if (r) r.textContent = qtd === 1 ? 'ação' : 'ações';
+        if (v) v.textContent = moedaCurta(valor);
+        exec.querySelectorAll('.cl-exec-barra i').forEach(function (seg) {
+          var n = pz[seg.dataset.prazo] || 0;
+          seg.style.flex = String(n); seg.style.display = n ? '' : 'none';
+        });
+        exec.querySelectorAll('.cl-eixo-prazo').forEach(function (span) {
+          var chave = span.dataset.prazo;
+          if (!chave) return;
+          span.style.display = pz[chave] ? '' : 'none';
+          span.textContent = '● ' + pz[chave] + ' ' + span.dataset.rotulo;
+        });
+      }
     });
     var el;
     if ((el = porId(root, 'cl-kpi-qtd'))) el.textContent = totalQtd;
@@ -5348,6 +5412,19 @@ JS_CLAUSULAS = r"""
     var vazio = porId(root, 'cl-sem-resultado');
     if (vazio) vazio.style.display = totalQtd === 0 ? '' : 'none';
   }
+
+  // clique no card do executor: abre/fecha o grupo de cards das ações
+  window.clAlternarExecutor = function (card) {
+    // busca dentro do slide: cada gestão tem a sua página com os mesmos ids
+    var alvo = (card.closest('.slide') || document).querySelector('[id="' + card.dataset.alvo + '"]');
+    if (!alvo) return;
+    var abrir = alvo.classList.contains('oculto');
+    alvo.classList.toggle('oculto', !abrir);
+    card.classList.toggle('ativo', abrir);
+    var btn = card.querySelector('.cl-exec-btn');
+    if (btn) btn.textContent = abrir ? '–' : '+';
+    card.title = abrir ? 'Ocultar as ações do executor' : 'Ver as ações do executor';
+  };
 
   window.clAlternarFase = function (botao) {
     var root = botao.closest('.slide') || document;
