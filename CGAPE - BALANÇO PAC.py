@@ -17743,6 +17743,18 @@ def _api_resumo_acoes_base():
     return _modulo_resumo_acoes().api_base()
 
 
+def _api_resumo_acoes_cards(filtros=None, alvo=None):
+    # cards das ações ao clicar nos quadros/gráficos da tela Ações em
+    # Monitoramento (19/11/2026)
+    return _modulo_resumo_acoes().api_cards(filtros, alvo)
+
+
+def _api_resumo_acoes_mapa():
+    # desenho do mapa da Bahia para o gráfico de distribuição do
+    # investimento da tela Ações em Monitoramento (19/11/2026)
+    return _modulo_resumo_acoes().api_mapa()
+
+
 def _api_resumo_acoes_pptx(filtros=None):
     if MODO_WEB:
         return {"mensagem": "A apresentação é gerada pelo programa desktop."}
@@ -18042,6 +18054,12 @@ def abrir_interface_filtros(df_base):
 
         def resumo_acoes_xlsx(self, filtros=None):
             return _api_resumo_acoes_xlsx(filtros)
+
+        def resumo_acoes_mapa(self):
+            return _api_resumo_acoes_mapa()
+
+        def resumo_acoes_cards(self, filtros=None, alvo=None):
+            return _api_resumo_acoes_cards(filtros, alvo)
 
         def resumo_acoes_html(self, filtros=None):
             return _api_resumo_acoes_html(filtros)

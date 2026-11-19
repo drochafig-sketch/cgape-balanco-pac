@@ -401,6 +401,9 @@ def _ra_base(caminho):
     orcamento = df[RA_COL_ORCAMENTO].map(_ra_numero)
     df["_orc"] = (investimento == 0) & (orcamento > 0)
     df["_valor"] = investimento.where(~df["_orc"], orcamento)
+    # valores brutos, separados, pros gráficos Orçamento × Investimento
+    # (pedido do usuário em 19/11/2026, ver _ra_graficos)
+    df["_inv"], df["_orcv"] = investimento, orcamento
     # Secretaria derivada do Executor (esta base não tem essa coluna própria)
     # — pedido do usuário em 18/11/2026, ver hierarquia_secretaria.py.
     if "Executor" in df.columns:
@@ -443,6 +446,97 @@ def _ra_juntar_entregues(base):
     if not juntados:
         return base, []
     return base.assign(_f_status=st.where(~juntar, RA_STATUS_ENTREGUE)), juntados
+
+
+# ---- gráficos da tela (pedido do usuário em 19/11/2026) ---------------------
+# Logo abaixo dos cards macro: Orçamento × Investimento no total, por eixo,
+# por status e pelos principais objetos, e o mapa da distribuição do
+# investimento por município. Orçamento = coluna RA_COL_ORCAMENTO e
+# Investimento = RA_COL_VALOR, cada uma somada por si (sem a troca do
+# asterisco); o mapa usa _valor, o mesmo valor dos cards e quadros.
+RA_GRAFICO_MAX_OBJETOS = 15
+
+
+def _ra_chave_mapa(nome):
+    """Município da planilha -> data-k do desenho do mapa (mesmos apelidos
+    do MONITORAMENTO, ex.: grafias antigas)."""
+    import relatorio_monitoramento as mon
+    k = mon.normalizar(nome)
+    return _chave_municipio(mon.APELIDOS_MUNICIPIO.get(k, k))
+
+
+def _ra_graficos(df, eixos):
+    # Composição do VALOR TOTAL (mesma regra dos cards, pedido do usuário em
+    # 19/11/2026): inv = Valor de Investimento; orc = Valor do Orçamento SÓ
+    # das ações sem investimento (o orçamento de quem já tem investimento é
+    # desconsiderado). inv + orc = soma de _valor = total dos cards.
+    def soma(p):
+        inv = float(p["_inv"].sum())
+        orc = float(p.loc[p["_orc"], "_valor"].sum())
+        return {"orc": orc, "inv": inv, "total": inv + orc, "qtd": int(len(p))}
+
+    total = soma(df)
+    total["n_orc"] = int(df["_orc"].sum())
+    total["n_inv"] = int((df["_inv"] > 0).sum())
+    total["n_sem"] = int((df["_valor"] == 0).sum())
+    por_eixo = [{"nome": e, **soma(df[df["_eixo"] == e])}
+                for e in eixos if (df["_eixo"] == e).any()]
+    por_status = [{"nome": _ra_sem_num(st), "st": st, **soma(p)}
+                  for st, p in sorted(df.groupby("_f_status"), key=lambda x: _ra_ordem(x[0]))]
+    por_objeto, n_objetos = [], 0
+    if "_f_objeto" in df.columns and len(df):
+        grupos = [{"nome": o, "eixo": e, **soma(p)}
+                  for (e, o), p in df.groupby(["_eixo", "_f_objeto"])]
+        grupos.sort(key=lambda g: (-g["total"], -g["qtd"], g["nome"]))
+        n_objetos = len(grupos)
+        por_objeto = grupos[:RA_GRAFICO_MAX_OBJETOS]
+    mapa = {}
+    if "Município" in df.columns and len(df):
+        for k, p in df.groupby(df["Município"].map(_ra_chave_mapa)):
+            if k:
+                mapa[k] = [float(p["_valor"].sum()), int(len(p)), bool(p["_orc"].any()),
+                           float(p["_inv"].sum()), float(p.loc[p["_orc"], "_valor"].sum())]
+    return {"total": total, "eixos": por_eixo, "status": por_status,
+            "objetos": por_objeto, "n_objetos": n_objetos, "mapa": mapa}
+
+
+def api_cards(filtros=None, alvo=None):
+    """Cards das ações de uma célula dos quadros resumo (ou de uma barra dos
+    gráficos) da tela — pedido do usuário em 19/11/2026, mesmo recurso do
+    HTML. alvo = {"st": status completo, "ei": eixo, "ob": objeto,
+    "mu": chave do município}; vazio = sem restrição naquela dimensão."""
+    try:
+        caminho = caminho_planilha()
+        if not caminho:
+            return {"ok": False, "mensagem": _sem_planilha()}
+        dados = resumo_acoes_dados(caminho, filtros)
+        base = _ra_base(caminho)
+        if dados.get("entregue"):
+            base, _ = _ra_juntar_entregues(base)
+        df = base.loc[dados["ids"]]
+        alvo = alvo or {}
+        if alvo.get("st"):
+            df = df[df["_f_status"] == alvo["st"]]
+        if alvo.get("ei"):
+            df = df[df["_eixo"] == alvo["ei"]]
+        if alvo.get("ob") and "_f_objeto" in df.columns:
+            df = df[df["_f_objeto"] == alvo["ob"]]
+        if alvo.get("mu") and "Município" in df.columns:
+            df = df[df["Município"].map(_ra_chave_mapa) == alvo["mu"]]
+        # maior valor primeiro
+        df = df.sort_values("_valor", ascending=False)
+        return {"ok": True, **_dados_cards_acoes(df)}
+    except Exception as exc:
+        return {"ok": False, "mensagem": f"Erro ao buscar as ações: {exc}"}
+
+
+def api_mapa():
+    """Desenho do mapa da Bahia (SVG, sem cor de dado) — pedido uma vez
+    pela tela; quem pinta é o JS, com graficos.mapa de cada recorte."""
+    try:
+        return {"ok": True, "svg": _svg_mapa_base()}
+    except Exception as exc:
+        return {"ok": False, "mensagem": f"Mapa indisponível: {exc}"}
 
 
 # ---- dados ------------------------------------------------------------------
@@ -648,6 +742,7 @@ def resumo_acoes_dados(caminho, filtros=None):
         nota += (f" {_ra_qtd(sem_valor)} sem nenhum dos dois valores "
                  "somam R$ 0.")
     return {"eixos": eixos, "cards": cards,
+            "graficos": _ra_graficos(df, eixos),
             "linhas": linhas, "total": total, "nota": nota,
             "quadro_objeto": quadro_objeto,
             "filtros": painel, "datas": painel_datas,
@@ -3025,6 +3120,124 @@ HTML_JANELA = r"""
   .ra-tab small { color:var(--cor-texto-secundario); }
   .ra-nota { font-size:12px; font-style:italic; color:var(--cor-texto-secundario);
     margin-top:10px; }
+  /* Gráficos Orçamento × Investimento + mapa (pedido do usuário em 19/11/2026) */
+  #ra-overlay { --ra-cor-orc:#A9B4C2; --ra-cor-inv:#0B5CAD; }
+  html[data-tema="escuro"] #ra-overlay { --ra-cor-orc:#6B788B; --ra-cor-inv:#4E9BE0; }
+  .ra-graf { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; margin-bottom:6px; }
+  .ra-graf-card { background:var(--cor-card); border-radius:8px; padding:14px 16px;
+    box-shadow:var(--sombra-card); min-width:0; }
+  /* mapa à direita, na altura dos 3 cards da esquerda (total, eixo, status) */
+  .ra-graf-mapa { grid-column:2; grid-row:1 / span 3; display:flex; flex-direction:column; }
+  .ra-graf-largo { grid-column:1 / -1; }
+  .ra-graf-cab { display:flex; justify-content:space-between; align-items:center; gap:10px;
+    flex-wrap:wrap; margin-bottom:12px; }
+  .ra-graf-cab h4 { margin:0; font-size:12.5px; font-weight:800; letter-spacing:.5px;
+    text-transform:uppercase; color:var(--cor-texto-primario); }
+  .ra-graf-cab h4 small { font-weight:400; text-transform:none; letter-spacing:0;
+    color:var(--cor-texto-terciario); }
+  .ra-graf-leg { display:inline-flex; align-items:center; gap:6px; font-size:12px;
+    color:var(--cor-texto-secundario); margin-left:12px; }
+  .ra-graf-leg i, #raGrafDica li i { display:inline-block; width:10px; height:10px; border-radius:2px; }
+  #ra-overlay i.orc { background:var(--ra-cor-orc); }
+  #ra-overlay i.inv { background:var(--ra-cor-inv); }
+  .ra-graf-herois { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .ra-graf-herois span { display:block; font-size:12px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.4px; color:var(--cor-texto-secundario); }
+  .ra-graf-herois b { display:block; font-size:30px; font-weight:900; line-height:1.15;
+    color:var(--cor-texto-primario); white-space:nowrap; }
+  .ra-graf-herois b.inv { color:var(--cor-acento-mint-texto); }
+  .ra-graf-herois small { font-size:12px; color:var(--cor-texto-terciario); }
+  .ra-graf-comp { display:flex; flex-direction:column; gap:4px; margin:14px 0 8px; }
+  .ra-graf-razao { font-size:12.5px; color:var(--cor-texto-secundario); }
+  .ra-graf-razao b { color:var(--cor-texto-primario); }
+  .ra-gbar-lista { display:flex; flex-direction:column; gap:10px; }
+  .ra-graf-legs { display:inline-flex; flex-wrap:wrap; gap:4px 0; }
+  /* barra empilhada: segmentos lado a lado com 2px de respiro entre eles */
+  .ra-gbar-linha i + i { margin-left:-4px; }   /* gap 6px - 4px = 2px */
+  .ra-gbar-linha i.inv:not(:last-of-type) { border-radius:0; }
+  .ra-graf-comp .ra-gbar-linha i { height:16px; }
+  .ra-gbar-linha em small { font-weight:400; color:var(--cor-texto-terciario); }
+  .ra-graf-valor-total span { display:block; font-size:12px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.4px; color:var(--cor-texto-secundario); }
+  .ra-graf-valor-total b { display:block; font-size:34px; font-weight:900; line-height:1.15;
+    color:var(--cor-texto-primario); }
+  .ra-graf-herois span i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; }
+  .ra-graf-herois b small { font-size:13px; font-weight:600; color:var(--cor-texto-terciario); }
+  .ra-gbar { display:grid; grid-template-columns:minmax(140px, 26%) 1fr; gap:10px; align-items:center;
+    padding:2px 4px; border-radius:6px; cursor:default; }
+  .ra-gbar:hover { background:var(--cor-card-elevado); }
+  .ra-gbar-rot { min-width:0; }
+  .ra-gbar-rot span { display:block; font-size:12.5px; font-weight:600; color:var(--cor-texto-primario);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ra-gbar-rot small { display:block; font-size:11px; color:var(--cor-texto-terciario);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ra-gbar-trilhos { display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .ra-gbar-linha { display:flex; align-items:center; gap:6px; min-width:0; }
+  .ra-gbar-linha i { display:block; height:9px; border-radius:0 4px 4px 0; flex:none; }
+  .ra-graf-comp .ra-gbar-linha i { height:12px; }
+  .ra-gbar-linha em { font-style:normal; font-size:11.5px; font-weight:600; white-space:nowrap;
+    color:var(--cor-texto-secundario); }
+  .ra-mapa-slot { flex:1; display:flex; align-items:center; justify-content:center; min-height:260px; }
+  .ra-mapa-svg { width:100%; height:auto; max-height:560px; display:block; }
+  .ra-mapa-svg path:hover { stroke:var(--cor-texto-primario) !important; stroke-width:1.2 !important; }
+  .ra-mapa-escala { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; font-size:12px;
+    color:var(--cor-texto-secundario); }
+  .ra-mapa-escala i { display:inline-block; width:14px; height:10px; border-radius:2px; margin-right:5px;
+    vertical-align:-1px; border:1px solid rgba(0,0,0,.08); }
+  .ra-mapa-nota { margin-top:6px; font-size:11.5px; font-style:italic; color:var(--cor-texto-terciario); }
+  .ra-graf-vazio { font-size:12.5px; color:var(--cor-texto-terciario); padding:10px 0; }
+  #raGrafDica { display:none; position:fixed; z-index:400; pointer-events:none; max-width:300px;
+    background:var(--cor-card-elevado); color:var(--cor-texto-primario); border:1px solid var(--cor-acento-teal);
+    border-radius:8px; padding:9px 11px; font-size:12px; box-shadow:0 8px 24px rgba(0,0,0,.3); }
+  #raGrafDica ul { list-style:none; margin:6px 0 0; padding:0; }
+  #raGrafDica li { display:flex; justify-content:space-between; gap:14px; padding:1px 0; }
+  #raGrafDica li span { display:inline-flex; align-items:center; gap:6px; color:var(--cor-texto-secundario); }
+  #raGrafDica > div { color:var(--cor-texto-terciario); }
+  /* clique nos quadros/gráficos/mapa abre os cards das ações (19/11/2026) */
+  #ra-overlay .ra-cel-clic { cursor:pointer; }
+  #ra-overlay .ra-tab td.ra-cel-clic:hover, #ra-overlay .ra-tab td.ra-cel-clic:focus {
+    background:var(--cor-card-elevado); outline:1px solid var(--cor-acento-teal); outline-offset:-1px; }
+  #ra-overlay .ra-gbar.ra-cel-clic:focus { outline:1px solid var(--cor-acento-teal); }
+  .ra-mapa-svg path { cursor:pointer; }
+  #raOcFundo { display:none; position:fixed; inset:0; z-index:350; background:rgba(5,10,20,.6);
+    align-items:center; justify-content:center; padding:24px; }
+  #raOcFundo.aberta { display:flex; }
+  .ra-oc-janela { background:var(--cor-fundo); color:var(--cor-texto-primario); border-radius:12px;
+    width:min(1200px, 100%); max-height:100%; display:flex; flex-direction:column;
+    box-shadow:0 18px 50px rgba(0,0,0,.45); border:1px solid var(--cor-card-elevado); }
+  .ra-oc-cab { display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+    padding:16px 20px; border-bottom:2px solid var(--cor-acento-teal); }
+  .ra-oc-titulo { font-size:18px; font-weight:800; }
+  .ra-oc-sub { font-size:13px; color:var(--cor-texto-secundario); margin-top:2px; }
+  .ra-oc-fechar { background:transparent; border:none; color:var(--cor-texto-secundario); font-size:28px;
+    line-height:1; cursor:pointer; padding:0 4px; }
+  .ra-oc-fechar:hover { color:var(--cor-texto-primario); }
+  .ra-oc-corpo { overflow:auto; padding:16px 20px 20px; display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; align-content:start; }
+  .ra-oc-card { background:var(--cor-card); border-radius:10px; padding:14px 16px; box-shadow:var(--sombra-card);
+    display:flex; flex-direction:column; gap:10px; border-left:4px solid var(--ra-cor-inv); }
+  .ra-oc-topo-card { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+  .ra-oc-id { min-width:0; }
+  .ra-oc-objeto { font-size:14.5px; font-weight:800; line-height:1.25; }
+  .ra-oc-mun { font-size:13px; font-weight:600; color:var(--cor-acento-mint-texto); margin-top:3px; }
+  .ra-oc-ex { font-size:12px; color:var(--cor-texto-secundario); margin-top:2px; }
+  .ra-oc-chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+  .ra-oc-chips span { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px;
+    background:var(--cor-card-elevado); color:var(--cor-texto-secundario); border-radius:9px; padding:2px 8px; }
+  .ra-oc-gauge { flex:none; color:var(--cor-texto-primario); }
+  .ra-oc-gauge-trilho { stroke:var(--cor-card-elevado); }
+  .ra-oc-sem-gauge { flex:none; width:76px; text-align:center; font-size:10.5px; line-height:1.2;
+    color:var(--cor-texto-terciario); }
+  .ra-oc-desc { font-size:12.5px; color:var(--cor-texto-secundario); line-height:1.35;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .ra-oc-rodape { display:flex; justify-content:space-between; gap:10px; margin-top:auto;
+    border-top:1px solid var(--cor-card-elevado); padding-top:8px; }
+  .ra-oc-rot { font-size:11px; font-weight:700; text-transform:uppercase; color:var(--cor-texto-terciario); }
+  .ra-oc-val { font-size:14px; font-weight:700; }
+  .ra-oc-inv { font-size:17px; font-weight:900; color:var(--cor-acento-mint-texto); text-align:right; }
+  .ra-oc-rodape > div:last-child .ra-oc-rot { text-align:right; }
+  .ra-oc-vazio { font-size:13px; color:var(--cor-texto-terciario); padding:14px 0; }
+  @media (max-width:980px) { .ra-graf { grid-template-columns:1fr; } .ra-graf-mapa { grid-column:auto; grid-row:auto; } }
   .ra-quadro-titulo { margin:22px 0 8px; font-size:13px; font-weight:700;
     letter-spacing:.5px; color:var(--cor-texto-primario); }
   .ra-quadro-titulo small { font-weight:400; font-size:12px; letter-spacing:0;
@@ -3241,11 +3454,18 @@ HTML_JANELA = r"""
   var raPedido = 0;
   var overlay = document.getElementById("ra-overlay");
 
-  function raCelula(c, classe) {
-    var cl = classe ? ' class="' + classe + '"' : "";
-    return c ? "<td" + cl + "><b>" + esc(c.txt) + "</b><small>" + esc(c.qtd) + "</small></td>"
+  // alvo {st, ei, ob}: célula clicável que abre os cards das ações dela
+  // (pedido do usuário em 19/11/2026, mesmo recurso do HTML)
+  function raCelula(c, classe, alvo) {
+    var clic = c && alvo;
+    var cls = [classe || "", clic ? "ra-cel-clic" : ""].join(" ").trim();
+    var cl = cls ? ' class="' + cls + '"' : "";
+    var dados = clic ? ' tabindex="0" title="Ver as ações" data-st="' + esc(alvo.st || "") + '" data-ei="' +
+      esc(alvo.ei || "") + '" data-ob="' + esc(alvo.ob || "") + '"' : "";
+    return c ? "<td" + cl + dados + "><b>" + esc(c.txt) + "</b><small>" + esc(c.qtd) + "</small></td>"
              : "<td" + cl + ">–</td>";
   }
+  function raStatusAlvo(s) { return s === "TOTAL" ? "" : s; }
   function raAlternar(chave, valor, marcar) {
     var atual = raFiltros[chave] || [];
     var nova = marcar ? atual.concat([valor]) : atual.filter(function (v) { return v !== valor; });
@@ -3637,9 +3857,10 @@ HTML_JANELA = r"""
       return;
     }
     var linha = function (l, classeExtra) {
+      var st = raStatusAlvo(l.status);
       return "<td>" + esc(semNum(l.status)) + "</td>" +
-        l.celulas.map(function (c) { return raCelula(c, classeExtra); }).join("") +
-        raCelula(l.total, "tot");
+        l.celulas.map(function (c, i) { return raCelula(c, classeExtra, {st: st, ei: d.eixos[i]}); }).join("") +
+        raCelula(l.total, "tot", {st: st});
     };
     document.getElementById("raQuadro").innerHTML =
       (d.aviso_cards ? '<div class="ra-aviso-cards">' + esc(d.aviso_cards) + "</div>" : "") +
@@ -3648,6 +3869,7 @@ HTML_JANELA = r"""
         return '<div class="ra-card" style="--ra-cor:#' + esc(c.cor) + '"><span>' + esc(c.rotulo) +
           "</span><b>" + esc(c.txt) + "</b><span>" + esc(c.qtd) + "</span></div>";
       }).join("") + "</div>" +
+      raGraficosHtml(d.graficos) +
       '<div class="ra-rolagem"><table class="ra-tab"><thead><tr><th>Status</th>' +
       d.eixos.map(function (e) { return "<th>" + esc(e) + "</th>"; }).join("") +
       '<th class="tot">Total</th></tr></thead><tbody>' +
@@ -3655,21 +3877,309 @@ HTML_JANELA = r"""
       "</tbody><tfoot><tr>" + linha(d.total, "tot") + "</tr></tfoot></table></div>" +
       raQuadroObjeto(d.quadro_objeto) +
       '<div class="ra-nota">' + esc(d.nota) + "</div>";
+    raLigarGraficos(d.graficos);
+  }
+
+  // ---- Gráficos Orçamento × Investimento + mapa (pedido do usuário em
+  // 19/11/2026), logo abaixo dos cards macro. Orçamento e Investimento são
+  // as duas colunas da base somadas cada uma por si; o mapa usa o mesmo
+  // valor dos cards (investimento, ou orçamento quando falta — "*").
+  function raRs(v) {
+    v = Number(v) || 0;
+    if (v >= 999.95e6) return "R$ " + (v / 1e9).toFixed(2).replace(".", ",") + " BI";
+    if (v >= 1e6) return "R$ " + (v / 1e6).toFixed(1).replace(".", ",") + " MI";
+    if (v > 0) return "R$ " + Math.round(v / 1e3) + " mil";
+    return "R$ 0";
+  }
+  function raQtdTxt(n) { return n === 1 ? "1 ação" : String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " ações"; }
+  function raPct(a, b) { return b > 0 ? (a / b * 100).toFixed(1).replace(".", ",") + "%" : "—"; }
+  var raGrafItens = [];   // itens com dica (índice em data-gi)
+  // Barra empilhada = composição do valor total: investimento + orçamento
+  // das ações sem investimento (pedido do usuário em 19/11/2026).
+  function raPilha(i, max, escala) {
+    var w = function (v) { return v > 0 ? Math.max(0.4, v / max * escala).toFixed(2) + "%" : "0"; };
+    // segmentos soltos dentro da linha (flex): a % é sobre a largura da linha
+    return (i.inv > 0 ? '<i class="inv" style="width:' + w(i.inv) + '"></i>' : '') +
+      (i.orc > 0 ? '<i class="orc" style="width:' + w(i.orc) + '"></i>' : '');
+  }
+  // tipo: "eixo" | "status" | "objeto" — diz o que o clique na barra filtra
+  function raBarrasPar(lista, comEixo, tipo) {
+    if (!lista || !lista.length) return '<div class="ra-graf-vazio">Sem dados no recorte</div>';
+    var max = Math.max.apply(null, lista.map(function (i) { return i.total; })) || 1;
+    return '<div class="ra-gbar-lista">' + lista.map(function (i) {
+      var gi = raGrafItens.push(i) - 1;
+      var alvo = tipo === "status" ? {st: i.st} : tipo === "objeto" ? {ei: i.eixo, ob: i.nome} : {ei: i.nome};
+      return '<div class="ra-gbar ra-cel-clic" tabindex="0" data-gi="' + gi + '" data-st="' + esc(alvo.st || "") +
+        '" data-ei="' + esc(alvo.ei || "") + '" data-ob="' + esc(alvo.ob || "") + '">' +
+        '<div class="ra-gbar-rot"><span>' + esc(i.nome) + '</span>' +
+          (comEixo ? '<small>' + esc(i.eixo) + ' · ' + raQtdTxt(i.qtd) + '</small>' : '<small>' + raQtdTxt(i.qtd) + '</small>') + '</div>' +
+        // maior barra = 78% da linha: sobra espaço para o valor ao lado
+        '<div class="ra-gbar-linha">' + raPilha(i, max, 78) + '<em>' + raRs(i.total) +
+          (i.orc > 0 ? ' <small>(' + raPct(i.orc, i.total) + ' orçam.)</small>' : '') + '</em></div>' +
+        '</div>';
+    }).join("") + '</div>';
+  }
+  function raGraficosHtml(g) {
+    raGrafItens = [];
+    if (!g) return "";
+    var t = g.total;
+    var legenda = '<span class="ra-graf-leg"><i class="inv"></i>Investimento</span>' +
+                  '<span class="ra-graf-leg"><i class="orc"></i>Orçamento (ações sem investimento)</span>';
+    var card = function (titulo, corpo, classe, extra) {
+      return '<div class="ra-graf-card' + (classe ? " " + classe : "") + '"><div class="ra-graf-cab"><h4>' + titulo +
+        '</h4><span class="ra-graf-legs">' + (extra || legenda) + '</span></div>' + corpo + '</div>';
+    };
+    var totalHtml =
+      '<div class="ra-graf-valor-total"><span>Valor total</span><b>' + raRs(t.total) + '</b></div>' +
+      '<div class="ra-graf-comp"><div class="ra-gbar-linha">' + raPilha(t, t.total || 1, 99) + '</div></div>' +
+      '<div class="ra-graf-herois">' +
+        '<div><span><i class="inv"></i>Investimento</span><b class="inv">' + raRs(t.inv) +
+          ' <small>' + raPct(t.inv, t.total) + '</small></b><small>' + raQtdTxt(t.n_inv) + ' com valor de investimento</small></div>' +
+        '<div><span><i class="orc"></i>Orçamento</span><b>' + raRs(t.orc) +
+          ' <small>' + raPct(t.orc, t.total) + '</small></b><small>' + raQtdTxt(t.n_orc) + ' sem investimento, só com orçamento</small></div>' +
+      '</div>' +
+      '<div class="ra-graf-razao">O orçamento das ações que já têm valor de investimento não entra' +
+        (t.n_sem ? ' · ' + raQtdTxt(t.n_sem) + ' sem nenhum dos dois valores' : '') + '.</div>';
+    var nObj = g.n_objetos > g.objetos.length
+      ? ' <small>(' + g.objetos.length + ' maiores de ' + g.n_objetos + ')</small>' : '';
+    return '<div class="ra-quadro-titulo">VISÃO GRÁFICA — COMPOSIÇÃO DO VALOR TOTAL ' +
+        '<small>(investimento + orçamento das ações sem investimento; passe o mouse nas barras e no mapa)</small></div>' +
+      '<div class="ra-graf">' +
+        card("Total do recorte", totalHtml, "ra-graf-total", '<span></span>') +
+        card("Distribuição do investimento por município", '<div class="ra-mapa-slot"><div class="ra-graf-vazio">Carregando o mapa…</div></div>' +
+             '<div class="ra-mapa-leg"></div>', "ra-graf-mapa", '<span></span>') +
+        card("Por eixo", raBarrasPar(g.eixos, false, "eixo")) +
+        card("Por status", raBarrasPar(g.status, false, "status")) +
+        card("Principais objetos" + nObj, raBarrasPar(g.objetos, true, "objeto"), "ra-graf-largo") +
+      '</div>';
+  }
+  var raMapaSvg = null, raMapaPedido = null, raMapaDados = {};
+  // rampa sequencial (um tom, claro -> escuro) e cor de "sem ação"
+  var RA_MAPA_RAMPA = ["#CFE0F1", "#9DC1E4", "#5F9AD0", "#2F6FB3", "#0B4A8A"];
+  function raMapaCores() {
+    var escuro = document.documentElement.getAttribute("data-tema") === "escuro";
+    return { sem: escuro ? "#2A364C" : "#E7EBF0", borda: escuro ? "#141D2E" : "#FFFFFF" };
+  }
+  function raPintarMapa(slot, legEl, mapa) {
+    raMapaDados = mapa || {};
+    if (!raMapaSvg) return;
+    if (raMapaSvg.parentNode !== slot) { slot.innerHTML = ""; slot.appendChild(raMapaSvg); }
+    var vals = Object.keys(raMapaDados).map(function (k) { return raMapaDados[k][0]; })
+      .filter(function (v) { return v > 0; }).sort(function (a, b) { return a - b; });
+    // quebras por quintil dos municípios com valor (classes com ~mesma
+    // quantidade de municípios); repetidas são removidas
+    var quebras = [];
+    for (var q = 1; q < RA_MAPA_RAMPA.length; q++) {
+      var v = vals.length ? vals[Math.min(vals.length - 1, Math.floor(vals.length * q / RA_MAPA_RAMPA.length))] : 0;
+      if (v > 0 && quebras.indexOf(v) === -1) quebras.push(v);
+    }
+    var classe = function (v) {
+      var c = 0; while (c < quebras.length && v >= quebras[c]) c++;
+      return Math.min(c + (RA_MAPA_RAMPA.length - 1 - quebras.length), RA_MAPA_RAMPA.length - 1);
+    };
+    var cores = raMapaCores();
+    Array.prototype.forEach.call(raMapaSvg.querySelectorAll("path"), function (p) {
+      var d = raMapaDados[p.dataset.k];
+      p.setAttribute("fill", d && d[0] > 0 ? RA_MAPA_RAMPA[classe(d[0])] : cores.sem);
+      p.setAttribute("stroke", cores.borda);
+      p.setAttribute("stroke-width", "0.4");
+    });
+    var municipios = Object.keys(raMapaDados).filter(function (k) { return raMapaDados[k][0] > 0; }).length;
+    var limites = [0].concat(quebras);
+    var primeira = RA_MAPA_RAMPA.length - 1 - quebras.length;
+    legEl.innerHTML = '<div class="ra-mapa-escala">' + limites.map(function (ini, i) {
+      var fim = limites[i + 1];
+      return '<span><i style="background:' + RA_MAPA_RAMPA[primeira + i] + '"></i>' +
+        (fim ? (i === 0 ? "até " + raRs(fim) : raRs(ini) + " a " + raRs(fim)) : "acima de " + raRs(ini)) + '</span>';
+    }).join("") + '<span><i style="background:' + cores.sem + '"></i>sem ação</span></div>' +
+      '<div class="ra-mapa-nota">' + municipios + ' município(s) com valor no recorte. Cor pelo valor total ' +
+      '(investimento + orçamento das ações sem investimento); classes por quintil.</div>';
+  }
+  function raLigarGraficos(g) {
+    var raiz = document.getElementById("raQuadro");
+    var slot = raiz.querySelector(".ra-mapa-slot"), legEl = raiz.querySelector(".ra-mapa-leg");
+    if (slot && g) {
+      if (raMapaSvg) raPintarMapa(slot, legEl, g.mapa);
+      else {
+        if (!raMapaPedido) raMapaPedido = api("resumo_acoes_mapa");
+        raMapaPedido.then(function (r) {
+          if (!r || !r.ok || !r.svg) {
+            raMapaPedido = null;
+            slot.innerHTML = '<div class="ra-graf-vazio">' + esc((r && r.mensagem) || "Mapa indisponível") + '</div>';
+            return;
+          }
+          if (!raMapaSvg) {
+            var caixa = document.createElement("div");
+            caixa.innerHTML = r.svg;
+            raMapaSvg = caixa.querySelector("svg");
+            if (!raMapaSvg) return;
+            raMapaSvg.setAttribute("class", "ra-mapa-svg");
+            raMapaSvg.setAttribute("aria-label", "Mapa da distribuição do investimento por município");
+            raMapaSvg.addEventListener("mousemove", function (ev) {
+              var p = ev.target.closest("path");
+              if (!p) { raDica(null); return; }
+              var d = raMapaDados[p.dataset.k];
+              raDica("<b>" + esc(p.dataset.n) + "</b>" + (d && d[1]
+                ? "<ul><li><span>Valor total</span><b>" + raRs(d[0]) + "</b></li>" +
+                  "<li><span><i class='inv'></i>Investimento</span><b>" + raRs(d[3]) + "</b></li>" +
+                  "<li><span><i class='orc'></i>Orçamento (sem investimento)</span><b>" + raRs(d[4]) + "</b></li>" +
+                  "<li><span>Ações</span><b>" + raQtdTxt(d[1]) + "</b></li></ul>"
+                : "<div>sem ação no recorte</div>"), ev);
+            });
+            raMapaSvg.addEventListener("mouseleave", function () { raDica(null); });
+            // clique no município: cards das ações dele no recorte
+            raMapaSvg.addEventListener("click", function (ev) {
+              var p = ev.target.closest("path"), d = p && raMapaDados[p.dataset.k];
+              if (!d || !d[1]) return;
+              raDica(null);
+              raAbrirCards({mu: p.dataset.k}, p.dataset.n);
+            });
+          }
+          var s = document.querySelector("#raQuadro .ra-mapa-slot"), l = document.querySelector("#raQuadro .ra-mapa-leg");
+          // pinta com o recorte MAIS RECENTE (o filtro pode ter mudado
+          // enquanto o desenho do mapa carregava)
+          if (s) raPintarMapa(s, l, raUltimoMapa || g.mapa);
+        }).catch(function (e) {
+          raMapaPedido = null;
+          slot.innerHTML = '<div class="ra-graf-vazio">Mapa indisponível: ' + esc(e) + '</div>';
+        });
+      }
+      raUltimoMapa = g.mapa;
+    }
+    Array.prototype.forEach.call(raiz.querySelectorAll(".ra-gbar[data-gi]"), function (el) {
+      var i = raGrafItens[+el.dataset.gi];
+      el.addEventListener("mousemove", function (ev) {
+        raDica("<b>" + esc(i.nome) + "</b>" + (i.eixo ? "<div>" + esc(i.eixo) + "</div>" : "") +
+          "<ul><li><span>Valor total</span><b>" + raRs(i.total) + "</b></li>" +
+          "<li><span><i class='inv'></i>Investimento</span><b>" + raRs(i.inv) + " (" + raPct(i.inv, i.total) + ")</b></li>" +
+          "<li><span><i class='orc'></i>Orçamento (sem investimento)</span><b>" + raRs(i.orc) + " (" + raPct(i.orc, i.total) + ")</b></li>" +
+          "<li><span>Ações</span><b>" + raQtdTxt(i.qtd) + "</b></li></ul>", ev);
+      });
+      el.addEventListener("mouseleave", function () { raDica(null); });
+    });
+  }
+  var raUltimoMapa = null;
+
+  // ---- Cards das ações ao clicar numa célula dos quadros resumo, numa
+  // barra dos gráficos ou num município do mapa (pedido do usuário em
+  // 19/11/2026 — mesmo recurso do HTML). As ações vêm do Python
+  // (resumo_acoes_cards) com o recorte atual + a célula clicada.
+  var RA_ARCO = "M 11.74 56.39 A 32.06 32.06 0 1 1 64.26 56.39";
+  function raGauge(v) {
+    if (v == null) return '<div class="ra-oc-sem-gauge">Avanço<br>não<br>informado</div>';
+    v = Math.max(0, Math.min(100, v));
+    return '<svg width="76" height="76" viewBox="0 0 76 76" class="ra-oc-gauge">' +
+      '<path d="' + RA_ARCO + '" fill="none" class="ra-oc-gauge-trilho" stroke-width="9.88" stroke-linecap="round" pathLength="100"></path>' +
+      (v > 0.5 ? '<path d="' + RA_ARCO + '" fill="none" stroke="#2E7D32" stroke-width="9.88" stroke-linecap="round" pathLength="100" stroke-dasharray="' + v.toFixed(1) + ' 200"></path>' : '') +
+      '<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="currentColor">' + Math.round(v) + '%</text></svg>';
+  }
+  function raCardAcao(a, C) {
+    return '<div class="ra-oc-card"><div class="ra-oc-topo-card"><div class="ra-oc-id">' +
+      '<div class="ra-oc-objeto">' + esc(a[C.nome]) + '</div>' +
+      '<div class="ra-oc-mun">' + esc(a[C.mun] || "Município não informado") + '</div>' +
+      (a[C.ex] ? '<div class="ra-oc-ex">' + esc(a[C.ex]) + '</div>' : '') +
+      '<div class="ra-oc-chips"><span>' + esc(a[C.st]) + '</span><span>' + esc(a[C.ei]) + '</span></div>' +
+      '</div>' + raGauge(a[C.av]) + '</div>' +
+      (a[C.ds] ? '<div class="ra-oc-desc" title="' + esc(a[C.ds]) + '">' + esc(a[C.ds]) + '</div>' : '') +
+      '<div class="ra-oc-rodape">' +
+        '<div><div class="ra-oc-rot">Conclusão prevista</div><div class="ra-oc-val">' + esc(a[C.pz] || "A definir") + '</div></div>' +
+        '<div><div class="ra-oc-rot">' + (a[C.orc] ? "Orçamento*" : "Investimento") + '</div><div class="ra-oc-inv">' + esc(a[C.val]) + '</div></div>' +
+      '</div></div>';
+  }
+  function raOcJanela() {
+    var f = document.getElementById("raOcFundo");
+    if (f) return f;
+    f = document.createElement("div");
+    f.id = "raOcFundo";
+    f.innerHTML = '<div class="ra-oc-janela" role="dialog" aria-modal="true">' +
+      '<div class="ra-oc-cab"><div><div class="ra-oc-titulo"></div><div class="ra-oc-sub"></div></div>' +
+      '<button type="button" class="ra-oc-fechar" title="Fechar (Esc)">&times;</button></div>' +
+      '<div class="ra-oc-corpo"></div></div>';
+    document.getElementById("ra-overlay").appendChild(f);
+    f.addEventListener("click", function (ev) {
+      if (ev.target === f || ev.target.closest(".ra-oc-fechar")) f.classList.remove("aberta");
+    });
+    // Esc: tratado no atalho geral do overlay (fecha esta janela primeiro)
+    return f;
+  }
+  function raAbrirCards(alvo, nomeMunicipio) {
+    var f = raOcJanela();
+    var titulo = alvo.ob || nomeMunicipio || alvo.ei || (alvo.st ? semNum(alvo.st) : "Todas as ações");
+    // subtítulo: eixo do objeto, status (se não for o próprio título) e,
+    // depois da busca, a quantidade de ações
+    var partes = [];
+    if (alvo.ob && alvo.ei) partes.push(alvo.ei);
+    if (!alvo.st) partes.push("Todos os status");
+    else if (titulo !== semNum(alvo.st)) partes.push(semNum(alvo.st));
+    f.querySelector(".ra-oc-titulo").textContent = titulo;
+    f.querySelector(".ra-oc-sub").textContent = partes.concat(["carregando…"]).join(" · ");
+    f.querySelector(".ra-oc-corpo").innerHTML = '<div class="ra-oc-vazio">Buscando as ações…</div>';
+    f.classList.add("aberta");
+    api("resumo_acoes_cards", raFiltros, alvo).then(function (r) {
+      if (!r || !r.ok) {
+        f.querySelector(".ra-oc-corpo").innerHTML = '<div class="ra-oc-vazio">' + esc((r && r.mensagem) || "Erro ao buscar as ações") + '</div>';
+        return;
+      }
+      var C = {};
+      (r.campos || []).forEach(function (k, i) { C[k] = i; });
+      var lista = r.acoes || [];
+      f.querySelector(".ra-oc-sub").textContent = partes.concat([raQtdTxt(lista.length)]).join(" · ");
+      f.querySelector(".ra-oc-corpo").innerHTML = lista.map(function (a) { return raCardAcao(a, C); }).join("") ||
+        '<div class="ra-oc-vazio">Nenhuma ação encontrada.</div>';
+    }).catch(function (e) {
+      f.querySelector(".ra-oc-corpo").innerHTML = '<div class="ra-oc-vazio">Erro ao buscar as ações: ' + esc(e) + '</div>';
+    });
+  }
+  (function () {
+    var q = document.getElementById("raQuadro");
+    if (!q) return;
+    var abrir = function (el) {
+      raDica(null);
+      raAbrirCards({st: el.dataset.st || "", ei: el.dataset.ei || "", ob: el.dataset.ob || ""});
+    };
+    q.addEventListener("click", function (ev) {
+      var el = ev.target.closest && ev.target.closest(".ra-cel-clic");
+      if (el) abrir(el);
+    });
+    q.addEventListener("keydown", function (ev) {
+      var el = ev.target.closest && ev.target.closest(".ra-cel-clic");
+      if (el && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); abrir(el); }
+    });
+  })();
+
+  function raDica(html, ev) {
+    var d = document.getElementById("raGrafDica");
+    if (!d) {
+      d = document.createElement("div");
+      d.id = "raGrafDica";
+      document.getElementById("ra-overlay").appendChild(d);
+    }
+    if (!html) { d.style.display = "none"; return; }
+    d.innerHTML = html;
+    d.style.display = "block";
+    var x = ev.clientX + 14, y = ev.clientY + 14;
+    if (x + d.offsetWidth > window.innerWidth - 8) x = ev.clientX - d.offsetWidth - 14;
+    if (y + d.offsetHeight > window.innerHeight - 8) y = ev.clientY - d.offsetHeight - 14;
+    d.style.left = x + "px"; d.style.top = y + "px";
   }
   // Quadro Status × Objeto: mesmo formato, com o eixo do objeto numa linha
   // de cabeçalho acima (mesma ordem de eixos do quadro Status × Eixo).
   function raQuadroObjeto(q) {
     if (!q || !q.grupos || !q.grupos.length) return "";
-    var inicio = {}, n = 0;
-    q.grupos.forEach(function (g) { inicio[n] = true; n += g.objetos.length; });
-    var cel = function (c, i, classe) {
+    var inicio = {}, n = 0, colunas = [];
+    q.grupos.forEach(function (g) {
+      inicio[n] = true; n += g.objetos.length;
+      g.objetos.forEach(function (o) { colunas.push({ei: g.eixo, ob: o}); });
+    });
+    var cel = function (c, i, classe, st) {
       var cl = (classe ? classe + " " : "") + (inicio[i] ? "ra-ini-grupo" : "");
-      return raCelula(c, cl.trim());
+      return raCelula(c, cl.trim(), {st: st, ei: colunas[i].ei, ob: colunas[i].ob});
     };
     var linha = function (l, classeExtra) {
+      var st = raStatusAlvo(l.status);
       return "<td>" + esc(semNum(l.status)) + "</td>" +
-        l.celulas.map(function (c, i) { return cel(c, i, classeExtra); }).join("") +
-        raCelula(l.total, "tot ra-ini-grupo");
+        l.celulas.map(function (c, i) { return cel(c, i, classeExtra, st); }).join("") +
+        raCelula(l.total, "tot ra-ini-grupo", {st: st});
     };
     return '<div class="ra-quadro-titulo">QUADRO RESUMO — STATUS × OBJETO ' +
       "<small>(objetos agrupados pelo eixo, na mesma ordem do quadro acima; role para o lado)</small></div>" +
@@ -3829,7 +4339,11 @@ HTML_JANELA = r"""
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape" || !overlay.classList.contains("aberto")) return;
     var aberto = overlay.querySelector(".ra-ms.aberto");
-    if (aberto) aberto.classList.remove("aberto");
+    // Esc com a janela de cards das ações aberta fecha SÓ ela e volta para
+    // Ações em Monitoramento (pedido do usuário em 19/11/2026)
+    var cardsAbertos = document.getElementById("raOcFundo");
+    if (cardsAbertos && cardsAbertos.classList.contains("aberta")) cardsAbertos.classList.remove("aberta");
+    else if (aberto) aberto.classList.remove("aberto");
     else if (raFiltrosJanelaAberta()) raFiltrosJanela(false);
     else fechar();
     e.stopPropagation();

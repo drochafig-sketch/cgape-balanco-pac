@@ -4509,7 +4509,8 @@ CSS_VISAO_GERAL_DASH = """
     .vgd-muitas .vgd-col-rotulo { transform:rotate(-40deg); transform-origin:center; height:34px; margin-top:12px; }
     .vgd-pizza-wrap { display:flex; align-items:center; gap:22px; }
     .vgd-pizza { position:relative; flex:none; width:170px; height:170px; border-radius:50%; }
-    .vgd-pizza::after { content:""; position:absolute; inset:24%; background:#fff; border-radius:50%; }
+    /* anel mais fino (pedido de 19/11/2026): inset 24% -> 17% (~41px -> ~29px) */
+    .vgd-pizza::after { content:""; position:absolute; inset:17%; background:#fff; border-radius:50%; }
     .vgd-legenda { display:flex; flex-direction:column; gap:9px; min-width:0; }
     .vgd-leg-item { display:flex; align-items:flex-start; gap:9px; }
     .vgd-leg-bola { flex:none; width:11px; height:11px; border-radius:50%; margin-top:5px; }
