@@ -2914,11 +2914,20 @@ HTML_JANELA = r"""
         <button type="button" class="ra-fechar" id="raFechar">FECHAR</button>
       </div>
     </div>
-    <div class="ra-corpo">
+    <!-- Filtros/datas numa janela suspensa, aberta pelo botão FILTROS que
+         fica parado no canto superior esquerdo, logo abaixo do cabeçalho,
+         enquanto a página rola — pedido do usuário em 19/11/2026. -->
+    <div class="ra-area">
+    <button type="button" class="ra-filtros-btn" id="raFiltrosBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="raFiltrosJanela" title="Filtros, datas e prazos">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M1.5 2.5h13l-5 6v4.5l-3 1.5v-6z"/></svg>FILTROS<span class="ra-filtros-qtd" id="raFiltrosQtd"></span></button>
+    <div class="ra-filtros-janela" id="raFiltrosJanela" role="dialog" aria-label="Filtros, datas e prazos">
       <div class="ra-filtros" id="raFiltros"></div>
+    </div>
+    <div class="ra-corpo">
       <div class="ra-msg" id="raMsg"></div>
       <div id="raQuadro"></div>
       <div id="raTabela"></div>
+    </div>
     </div>
   </div>
 </div>
@@ -2968,7 +2977,29 @@ HTML_JANELA = r"""
   .ra-botoes .ra-menu-lista button:hover:not(:disabled) {
     background:var(--cor-fundo); color:var(--cor-acento-teal-texto); }
   #raGerar:disabled, #raXlsx:disabled, #raHtml:disabled, #raConder:disabled { opacity:.6; cursor:default; }
-  .ra-corpo { flex:1; overflow:auto; padding:14px 18px 40px; }
+  .ra-area { flex:1; min-height:0; position:relative; display:flex; flex-direction:column; }
+  .ra-corpo { flex:1; overflow:auto; padding:54px 18px 40px; }
+  .ra-filtros-btn { position:absolute; top:10px; left:18px; z-index:36;
+    display:inline-flex; align-items:center; gap:7px; padding:7px 14px;
+    border-radius:18px; border:1px solid var(--cor-acento-teal);
+    background:var(--cor-acento-teal); color:#fff; font-size:12px; font-weight:700;
+    letter-spacing:.5px; cursor:pointer; font-family:inherit;
+    box-shadow:0 4px 14px rgba(0,0,0,.3); }
+  .ra-filtros-btn svg { fill:currentColor; }
+  .ra-filtros-btn:hover, .ra-filtros-btn[aria-expanded="true"] { background:var(--cor-acento-teal-hover, var(--cor-acento-teal)); }
+  .ra-filtros-qtd { display:none; min-width:18px; height:18px; padding:0 5px; box-sizing:border-box;
+    border-radius:9px; background:#fff; color:var(--cor-acento-teal); font-size:11px;
+    line-height:18px; text-align:center; }
+  .ra-filtros-qtd.tem { display:inline-block; }
+  .ra-filtros-janela { display:none; position:absolute; top:50px; left:18px; right:18px;
+    z-index:35; max-height:calc(100% - 64px); overflow:auto; border-radius:10px;
+    border:1px solid var(--cor-card-elevado); box-shadow:0 16px 48px rgba(0,0,0,.45); }
+  .ra-filtros-janela.aberto { display:block; }
+  .ra-filtros-janela .ra-filtros { margin:0; border-radius:10px; box-shadow:none;
+    padding:12px 16px 14px; }
+  /* lista dos filtros de seleção: com espaço, aparece inteira por cima da
+     janela (sem barra de rolagem cortando) */
+  @media (min-height:760px) { .ra-filtros-janela { overflow:visible; max-height:none; } }
   .ra-msg { font-size:13px; color:var(--cor-texto-secundario); min-height:18px;
     margin-bottom:10px; }
   .ra-cards { display:grid; gap:12px; margin-bottom:14px; }
@@ -3041,6 +3072,9 @@ HTML_JANELA = r"""
     grid-template-columns:repeat(8, minmax(0, 1fr)); }
   @media (max-width:1100px) {
     .ra-filtros-grade { grid-template-columns:repeat(4, minmax(0, 1fr)); } }
+  /* 16:9 largo: os 10 filtros de seleção numa linha só, janela mais baixa */
+  @media (min-width:1600px) {
+    .ra-filtros-grade { grid-template-columns:repeat(10, minmax(0, 1fr)); } }
   .ra-ms { position:relative; min-width:0; }
   .ra-ms h3 { margin:0 0 4px; font-size:11px; font-weight:600;
     color:var(--cor-texto-secundario); text-transform:uppercase; letter-spacing:.3px; }
@@ -3403,6 +3437,11 @@ HTML_JANELA = r"""
     document.getElementById("raEntregueRotulo").classList.toggle("ativo", !!raFiltros.entregue);
     document.getElementById("raLimpar").style.visibility =
       raChavesFiltro().length ? "visible" : "hidden";
+    // quantos filtros em uso, no botão FILTROS (busca geral e buscas das
+    // colunas ficam fora: elas têm campo próprio na tela)
+    var qtdF = Object.keys(raFiltros).filter(function (c) { return c !== "busca" && c !== "bcol"; }).length;
+    var marca = document.getElementById("raFiltrosQtd");
+    if (marca) { marca.textContent = qtdF || ""; marca.classList.toggle("tem", qtdF > 0); }
     raSincronizarBuscaGeral();
   }
 
@@ -3790,9 +3829,31 @@ HTML_JANELA = r"""
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape" || !overlay.classList.contains("aberto")) return;
     var aberto = overlay.querySelector(".ra-ms.aberto");
-    if (aberto) aberto.classList.remove("aberto"); else fechar();
+    if (aberto) aberto.classList.remove("aberto");
+    else if (raFiltrosJanelaAberta()) raFiltrosJanela(false);
+    else fechar();
     e.stopPropagation();
   }, true);
+  // Janela suspensa dos filtros: abre/fecha no botão FILTROS; fecha com
+  // Esc (ver acima) ou clicando fora dela.
+  function raFiltrosJanelaAberta() {
+    return document.getElementById("raFiltrosJanela").classList.contains("aberto");
+  }
+  function raFiltrosJanela(abrir) {
+    document.getElementById("raFiltrosJanela").classList.toggle("aberto", abrir);
+    document.getElementById("raFiltrosBtn").setAttribute("aria-expanded", abrir ? "true" : "false");
+    if (!abrir) overlay.querySelectorAll(".ra-ms.aberto").forEach(function (b) { b.classList.remove("aberto"); });
+  }
+  document.getElementById("raFiltrosBtn").addEventListener("click", function (ev) {
+    ev.stopPropagation();
+    raFiltrosJanela(!raFiltrosJanelaAberta());
+  });
+  document.addEventListener("mousedown", function (ev) {
+    if (!raFiltrosJanelaAberta()) return;
+    var j = document.getElementById("raFiltrosJanela"), b = document.getElementById("raFiltrosBtn");
+    if (j.contains(ev.target) || b.contains(ev.target)) return;
+    raFiltrosJanela(false);
+  });
   document.querySelectorAll("[data-abrir-resumo-acoes]").forEach(function (b) {
     b.addEventListener("click", window.abrirResumoAcoes);
   });
