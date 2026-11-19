@@ -481,9 +481,12 @@ TONS_FINANCEIRO = {
         "contratado": dessaturar_hex("#0B5CAD"),
         "aContratar": clarear_hex(dessaturar_hex("#0B5CAD")),
     },
+    # 19/11/2026 (pedido do usuário): Financiamento passa a usar o MESMO
+    # vermelho da fase "Selecionada" no gráfico Panorama por Fase
+    # (COR_VERMELHO / paletaGraficos.vermelho = dessaturar_hex("#BB6060")).
     "financiamento": {
-        "contratado": dessaturar_hex("#2F7F92"),
-        "aContratar": clarear_hex(dessaturar_hex("#2F7F92")),
+        "contratado": dessaturar_hex("#BB6060"),
+        "aContratar": clarear_hex(dessaturar_hex("#BB6060")),
     },
     "estadual": {
         "contratado": dessaturar_hex("#E68A00"),
@@ -11802,18 +11805,20 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     font-size: 12px;
     color: var(--cor-texto-secundario);
   }
+  /* 19/11/2026 (pedido do usuário): valores e quantidades dos gráficos
+     maiores — antes 14px (valor), 12px (%) e 12.5px (quantidade). */
   .grafico-legenda-qtd-mini {
-    font-size: 12.5px;
+    font-size: 14.5px;
     font-weight: 700;
     color: var(--cor-texto-primario);
   }
   .grafico-legenda-valor {
-    font-size: 14px;
+    font-size: 17px;
     font-weight: 700;
     color: var(--cor-acento-mint-texto);
   }
   .grafico-legenda-pct {
-    font-size: 12px;
+    font-size: 13.5px;
     font-weight: 400;
     color: var(--cor-texto-terciario);
   }
@@ -11946,7 +11951,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     filter: brightness(1.15);
   }
   .grafico-barra-valor {
-    font-size: 12px;
+    font-size: 15px;   /* antes 12px — pedido do usuário em 19/11/2026 */
     font-weight: 700;
     color: var(--cor-texto-primario);
     margin-bottom: 4px;
@@ -14278,7 +14283,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // painel e o PDF. Fallback só pra arquivo de dados antigo sem a chave.
   const TONS_FINANCEIRO = PALETA_GRAFICOS.financeiro || {
     apoiado: { contratado: "#0B5CAD", aContratar: "#0B5CAD" },
-    financiamento: { contratado: "#2F7F92", aContratar: "#2F7F92" },
+    financiamento: { contratado: COR_VERMELHO, aContratar: COR_VERMELHO },
     estadual: { contratado: "#E68A00", aContratar: "#E68A00" },
     naoDiscriminado: "#8C8C8C",
   };
