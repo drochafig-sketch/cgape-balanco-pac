@@ -10509,23 +10509,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     padding: 20px;
     color: var(--cor-texto-primario);
   }
-  .mon-conclusao {
-    border-top: 1px solid var(--cor-card-elevado);
-    padding: 6px 12px 8px 12px;
-    max-height: 38%;
-    overflow-y: auto;
-    flex-shrink: 0;
-  }
-  .mon-conclusao-titulo {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    color: var(--cor-texto-primario);
-    margin-bottom: 2px;
-  }
-  .mon-conclusao details > summary { list-style: none; cursor: pointer; }
-  .mon-conclusao details > summary::-webkit-details-marker { display: none; }
-  .mon-conclusao .mon-mes { padding-left: 18px; }
   .mon-select {
     margin: 4px 12px 10px 12px;
     background: var(--cor-card-elevado);
@@ -11560,7 +11543,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     .modal-titulo-botoes .btn, .modal-titulo-botoes .btn-acento { padding-left: 10px; padding-right: 10px; }
   }
   /* --- Acesso Rápido: botão de ícone (grade 2x2) que abre um menu com os
-     atalhos FILTROS e PUBLICAR — mesmo componente nas duas
+     atalhos GERAR RELATÓRIO e PUBLICAR — mesmo componente nas duas
      barras (painel de filtros e dash), sempre no fim da fileira de
      botões. O menu (.acesso-rapido-menu) fica escondido (display:none)
      até ganhar a classe "aberto". */
@@ -12937,9 +12920,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   <div id="topo">
     <div class="topo-titulo-bloco">
       <div class="topo-titulo-textos">
-        <span class="topo-titulo-principal">BALANÇO PAC - BAHIA</span>
+        <!-- Título e carimbo trocam com a chave PAC | MONITORAMENTO (ver
+             atualizarCabecalhoFiltros) — pedido do usuário em 20/11/2026. -->
+        <span class="topo-titulo-principal" id="topo-titulo-texto">BALANÇO PAC - BAHIA</span>
         <span class="topo-titulo-atualizacao">
-          <span>__ULTIMA_ATUALIZACAO__</span>
+          <span id="topo-titulo-data">__ULTIMA_ATUALIZACAO__</span>
           <button type="button" class="btn-atualizar-base" id="btn-atualizar-base-filtros" title="Atualizar base de dados (recarrega a planilha e reabre o painel)" aria-label="Atualizar base de dados" style="display:none">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12a9 9 0 1 1-3-6.7"></path>
@@ -12950,7 +12935,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       </div>
       <p class="topo-orientacao">Selecione os filtros desejados. Caso nenhum item de um bloco seja selecionado, todos os itens desse bloco serão considerados automaticamente.</p>
       <div class="seletor-secao troca-base" id="seletor-secao" data-tela="filtros" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
-        <button type="button" class="btn-casa" id="btn-inicio-filtros" title="Início (voltar à tela inicial)" aria-label="Início — voltar à tela inicial"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path></svg></button>
+        <!-- Só no painel de filtros: no lugar da casa (Início), o ícone de
+             gráfico de pizza volta pro DASH da base exibida (PAC ou
+             MONITORAMENTO) — pedido do usuário em 20/11/2026. Os dashes
+             continuam com a casa. -->
+        <button type="button" class="btn-casa" id="btn-dash-filtros" title="Voltar ao dashboard" aria-label="Voltar ao dashboard"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M11 2v20c-5.07-.5-9-4.79-9-10s3.93-9.5 9-10zm2.03 0v8.99H22c-.47-4.74-4.24-8.52-8.97-8.99zm0 11.01V22c4.74-.47 8.5-4.25 8.97-8.99h-8.97z"></path></svg></button>
         <button type="button" class="ativo" data-secao="PAC" role="tab" aria-selected="true" tabindex="0">PAC<span class="contagem-base"></span></button>
         <button type="button" data-secao="MON" role="tab" aria-selected="false" tabindex="-1">MONITORAMENTO<span class="contagem-base"></span></button>
       </div>
@@ -12973,7 +12962,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       </button>
       <button class="btn" id="btn-limpar-tudo">LIMPAR FILTROS</button>
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
-      <button class="btn" id="btn-preview">DASHBOARD</button>
       <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
       <div class="acesso-rapido-wrap" id="acesso-rapido-filtros-wrap">
         <button class="botao-icone-topo" id="acesso-rapido-filtros-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
@@ -12985,20 +12973,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
           </svg>
         </button>
         <div class="acesso-rapido-menu" id="acesso-rapido-filtros-menu">
-          <button class="acesso-rapido-item" id="acesso-rapido-filtros-filtros" title="Filtros">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="4" y1="21" x2="4" y2="14"></line>
-              <line x1="4" y1="10" x2="4" y2="3"></line>
-              <line x1="12" y1="21" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12" y2="3"></line>
-              <line x1="20" y1="21" x2="20" y2="16"></line>
-              <line x1="20" y1="12" x2="20" y2="3"></line>
-              <line x1="1" y1="14" x2="7" y2="14"></line>
-              <line x1="9" y1="8" x2="15" y2="8"></line>
-              <line x1="17" y1="16" x2="23" y2="16"></line>
-            </svg>
-            <span>FILTROS</span>
-          </button>
           <button class="acesso-rapido-item" id="btn-gerar" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -13166,20 +13140,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
             </svg>
           </button>
           <div class="acesso-rapido-menu" id="acesso-rapido-dash-menu">
-            <button class="acesso-rapido-item" id="acesso-rapido-dash-filtros" title="Filtros">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="4" y1="21" x2="4" y2="14"></line>
-                <line x1="4" y1="10" x2="4" y2="3"></line>
-                <line x1="12" y1="21" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12" y2="3"></line>
-                <line x1="20" y1="21" x2="20" y2="16"></line>
-                <line x1="20" y1="12" x2="20" y2="3"></line>
-                <line x1="1" y1="14" x2="7" y2="14"></line>
-                <line x1="9" y1="8" x2="15" y2="8"></line>
-                <line x1="17" y1="16" x2="23" y2="16"></line>
-              </svg>
-              <span>FILTROS</span>
-            </button>
             <button class="acesso-rapido-item" id="preview-gerar-topo" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -16000,11 +15960,18 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // refletir uma versão nova do arquivo (recém-sincronizada na pasta) é
   // fechar e reabrir o app. Só desktop — no modo web não há processo local
   // pra reiniciar.
-  // "← Início" (tela HOME) nas duas barras — funciona igual em desktop e
+  // Casa (tela HOME) na chave do dash do PAC — funciona igual em desktop e
   // web (ver irPara/irParaHome, definidos mais acima) — pedido do usuário
   // em 14/11/2026.
-  [document.getElementById("btn-inicio-filtros"), document.getElementById("btn-inicio-dash")]
-    .filter(Boolean).forEach(function (btn) { btn.onclick = window.irParaHome; });
+  var btnInicioDash = document.getElementById("btn-inicio-dash");
+  if (btnInicioDash) btnInicioDash.onclick = window.irParaHome;
+  // No painel de filtros a casa virou o ícone de pizza: volta pro dash da
+  // base exibida (PAC ou MONITORAMENTO), igual ao botão DASHBOARD —
+  // pedido do usuário em 20/11/2026.
+  var btnDashFiltros = document.getElementById("btn-dash-filtros");
+  if (btnDashFiltros) btnDashFiltros.onclick = function () {
+    trocarBase(window.baseAtiva, { tela: "dash" });
+  };
 
   var botoesAtualizarBase = [
     document.getElementById("btn-atualizar-base-filtros"),
@@ -16031,7 +15998,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     });
   }
 
-  var btnPreview = document.getElementById("btn-preview");
 
   // Busca os dados atualizados e (re)desenha o dashboard — chamada tanto no
   // carregamento inicial da página (o dashboard agora É a tela inicial)
@@ -16084,27 +16050,16 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     document.getElementById("preview-overlay").style.display = "flex";
   }
 
-  // Botão "DASHBOARD" DENTRO do painel de filtros: fecha o painel e mostra
-  // o dashboard da BASE ATIVA (PAC ou MONITORAMENTO) — ver trocarBase().
-  btnPreview.onclick = function () {
-    trocarBase(window.baseAtiva, { tela: "dash" });
-  };
+  // (Botão "DASHBOARD" do topo do painel de filtros removido: a pizza da
+  // chave, #btn-dash-filtros, faz o mesmo — pedido do usuário em
+  // 20/11/2026.)
 
-  // Botão "FILTROS" (dentro do menu de Acesso Rápido, nas duas barras):
-  // abre o painel de filtros maximizado, já na grade da base ativa. No
-  // próprio painel de filtros não tem efeito visível (já está aberto) —
-  // existe ali só pra manter o mesmo menu nas duas telas.
-  [
-    document.getElementById("acesso-rapido-filtros-filtros"),
-    document.getElementById("acesso-rapido-dash-filtros"),
-  ].forEach(function (btnFiltros) {
-    btnFiltros.onclick = function () {
-      trocarBase(window.baseAtiva, { tela: "filtros" });
-    };
-  });
+  // (Item "FILTROS" do menu de Acesso Rápido removido das duas barras: o
+  // botão flutuante #fab-filtros já abre o painel de filtros — pedido do
+  // usuário em 20/11/2026.)
 
   // Menu de Acesso Rápido: o botão de ícone (grade 2x2) alterna a exibição
-  // do menu com FILTROS/PUBLICAR; clicar num item do menu ou
+  // do menu com GERAR RELATÓRIO/PUBLICAR; clicar num item do menu ou
   // fora dele fecha de volta. Mesmo componente nas duas barras.
   function configurarAcessoRapido(idWrap) {
     var wrap = document.getElementById(idWrap);
@@ -17300,7 +17255,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     dados: null,
     carregando: false,
     sel: {},                 // chave do bloco -> Set de opções marcadas
-    conclusao: new Set(),    // anos ("2026"), meses ("2026-03") ou SEM PRAZO
     datas: {},               // chave de CAMPOS_DATA -> {de, ate} ("AAAA-MM-DD")
     top30: false,            // "30 MAIORES MUNICÍPIOS"
     // "STATUS ENTREGUE" (Obras Concluídas + Inauguradas num só status no
@@ -17325,7 +17279,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var f = {};
     if (MON.dados) {
       MON.dados.blocos.forEach(function (b) { f[b.chave] = Array.from(MON.sel[b.chave]); });
-      f.CONCLUSAO = Array.from(MON.conclusao);
+      // (CONCLUSAO saiu com o menu CONCLUSÃO (ENTREGA OBRA) — pedido do
+      // usuário em 20/11/2026; relatorio_monitoramento.filtrar já trata a
+      // chave ausente como "sem filtro".)
       f.ORDEM = MON.ordem;
       f.COLUNAS = Array.from(MON.colunas);
       Object.keys(MON.datas).forEach(function (c) { f["D_" + c] = MON.datas[c]; });
@@ -17476,6 +17432,30 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   window.posicionarFabFiltros = posicionarFabFiltros;
   window.addEventListener("resize", posicionarFabFiltros);
 
+  // Título e carimbo de atualização do topo do painel de filtros seguem a
+  // base ativa: "BALANÇO PAC - BAHIA" + data da planilha do PAC, ou "AÇÕES
+  // EM MONITORAMENTO" + data da planilha Ações do Cronograma (vem com
+  // MON.dados, ver relatorio_monitoramento.dados_painel) — pedido do
+  // usuário em 20/11/2026. Os textos do PAC são os que o HTML já trouxe.
+  var _tituloFiltrosEl = document.getElementById("topo-titulo-texto");
+  var _dataFiltrosEl = document.getElementById("topo-titulo-data");
+  var CABECALHO_FILTROS_PAC = {
+    titulo: _tituloFiltrosEl ? _tituloFiltrosEl.textContent : "",
+    data: _dataFiltrosEl ? _dataFiltrosEl.textContent : "",
+  };
+  function atualizarCabecalhoFiltros() {
+    if (!_tituloFiltrosEl || !_dataFiltrosEl) return;
+    if (window.baseAtiva === "MON") {
+      _tituloFiltrosEl.textContent = "AÇÕES EM MONITORAMENTO";
+      _dataFiltrosEl.textContent = MON.dados && MON.dados.atualizado_em
+        ? "Base Ações do Cronograma atualizada em " + MON.dados.atualizado_em
+        : "Base Ações do Cronograma" + (MON.carregando ? " — carregando…" : "");
+    } else {
+      _tituloFiltrosEl.textContent = CABECALHO_FILTROS_PAC.titulo;
+      _dataFiltrosEl.textContent = CABECALHO_FILTROS_PAC.data;
+    }
+  }
+
   function atualizarRotulosLimpar() {
     var rotulo = "LIMPAR FILTROS (" + (window.baseAtiva === "MON" ? "MONITORAMENTO" : "PAC") + ")";
     [document.getElementById("btn-limpar-tudo"), document.getElementById("dash-limpar"),
@@ -17547,6 +17527,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     atualizarRotulosLimpar();
     atualizarContadoresBase();
     if (base === "MON" && !MON.dados && !MON.carregando) monCarregar();
+    atualizarCabecalhoFiltros();
     if (tela === "filtros") {
       document.getElementById("app").style.display = "flex";
     } else {
@@ -17564,10 +17545,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       if (c === chaveExcluida) continue;
       var s = MON.sel[c];
       if (s.size > 0 && !s.has(l[c])) return false;
-    }
-    if (chaveExcluida !== "CONCLUSAO" && MON.conclusao.size > 0
-        && !MON.conclusao.has(l.PRAZO_ANO) && !MON.conclusao.has(l.PRAZO_MES)) {
-      return false;
     }
     if (MON.top30 && !l.TOP30) return false;
     // Intervalos de data: com um lado preenchido, sem data fica de fora
@@ -17595,15 +17572,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         label.classList.toggle("indisponivel", !ok);
         label.querySelector("input").disabled = !ok;
       });
-    });
-    var dispPrazo = new Set();
-    linhas.forEach(function (l) {
-      if (monLinhaPassa(l, "CONCLUSAO")) { dispPrazo.add(l.PRAZO_ANO); dispPrazo.add(l.PRAZO_MES); }
-    });
-    document.querySelectorAll("#grade-mon .mon-conclusao input").forEach(function (chk) {
-      var ok = dispPrazo.has(chk.dataset.valor);
-      chk.disabled = !ok;
-      chk.closest("label").classList.toggle("indisponivel", !ok);
     });
     var total = linhas.filter(function (l) { return monLinhaPassa(l, null); }).length;
     var contador = document.getElementById("mon-contador");
@@ -17860,31 +17828,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       el.appendChild(lista);
       desenharLista();
 
-      // Menu CONCLUSÃO (ano > mês da Entrega Obra) dentro do bloco Situação
-      if (bloco.chave === "SITUACAO") {
-        var conc = document.createElement("div");
-        conc.className = "mon-conclusao";
-        conc.innerHTML = '<div class="mon-conclusao-titulo">CONCLUSÃO (ENTREGA OBRA)</div>';
-        MON.dados.conclusao.forEach(function (ano) {
-          var det = document.createElement("details");
-          var sum = document.createElement("summary");
-          sum.appendChild(monItem(ano.chave, ano.rotulo, MON.conclusao.has(ano.chave), function (marcado) {
-            if (marcado) MON.conclusao.add(ano.chave); else MON.conclusao.delete(ano.chave);
-            monAtualizarDisponibilidade();
-          }));
-          det.appendChild(sum);
-          ano.meses.forEach(function (mes) {
-            var item = monItem(mes.chave, mes.rotulo, MON.conclusao.has(mes.chave), function (marcado) {
-              if (marcado) MON.conclusao.add(mes.chave); else MON.conclusao.delete(mes.chave);
-              monAtualizarDisponibilidade();
-            });
-            item.classList.add("mon-mes");
-            det.appendChild(item);
-          });
-          conc.appendChild(det);
-        });
-        el.appendChild(conc);
-      }
+      // (Menu CONCLUSÃO (ENTREGA OBRA) — ano > mês — que ficava dentro do
+      // bloco Situação foi removido: a Entrega da Obra já se filtra pelo
+      // cartão ENTREGA DA OBRA de DATAS E PRAZOS, com os atalhos de mandato —
+      // pedido do usuário em 20/11/2026.)
       grade.appendChild(el);
     });
 
@@ -17948,18 +17895,21 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var grade = document.getElementById("grade-mon");
     if (!r || !r.ok) {
       grade.innerHTML = '<div class="mon-aviso">' + escaparHtmlFicha((r && r.erro) || "Não foi possível carregar a base do MONITORAMENTO.") + "</div>";
+      atualizarCabecalhoFiltros();
       return;
     }
     MON.dados = r.dados;
     MON.dados.blocos.forEach(function (b) { MON.sel[b.chave] = new Set(); });
     MON.colunas = new Set(MON.dados.colunas.filter(function (c) { return c.padrao; }).map(function (c) { return c.chave; }));
     monRenderizar();
+    // Data da planilha do MONITORAMENTO chegou junto: acerta o carimbo do
+    // topo do painel de filtros (ver atualizarCabecalhoFiltros).
+    atualizarCabecalhoFiltros();
   }
 
   function monLimpar() {
     if (!MON.dados) return;
     Object.keys(MON.sel).forEach(function (k) { MON.sel[k].clear(); });
-    MON.conclusao.clear();
     MON.datas = {};
     MON.top30 = false;
     monRenderizar();

@@ -534,6 +534,11 @@ def dados_painel():
                     for r, _p, _a in COLUNAS_DETALHAMENTO],
         "limiteColunas": LIMITE_COLUNAS,
         "atualizacao": texto_atualizacao(),
+        # Só data/hora, no formato do carimbo do PAC no topo do painel de
+        # filtros ("... atualizada em 19/11/2026 às 17h34min") — usado quando a
+        # chave PAC | MONITORAMENTO passa pro MONITORAMENTO — pedido do usuário
+        # em 20/11/2026.
+        "atualizado_em": (_DATA_BASE or datetime.now()).strftime("%d/%m/%Y às %Hh%Mmin"),
         "total": int(len(df)),
     }
 
