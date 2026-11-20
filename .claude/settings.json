@@ -131,7 +131,17 @@
       "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\")",
       "Bash(git merge *)",
       "Bash(git checkout *)",
-      "Bash(grep -n \"GERAR RELAT\\\\|APRESENTA.*CGAPE\\\\|FILTROS</\\\\|PUBLICAR</\\\\|menu-grade\\\\|btn-menu-grade\\\\|id=\\\\\"btn-menu\\\\\"\" \"CGAPE - BALANÇO PAC.py\")"
+      "Bash(grep -n \"GERAR RELAT\\\\|APRESENTA.*CGAPE\\\\|FILTROS</\\\\|PUBLICAR</\\\\|menu-grade\\\\|btn-menu-grade\\\\|id=\\\\\"btn-menu\\\\\"\" \"CGAPE - BALANÇO PAC.py\")",
+      "Bash(python -m PyInstaller --version)",
+      "Bash(python -c \"import webview, clr_loader, pythonnet, pptx, reportlab, openpyxl, pandas; print\\('tudo ok'\\)\")",
+      "Bash(cd \"c:\\\\Users\\\\droch\\\\OneDrive\\\\2025 2026 Onedrive\\\\MONITORAMENTO\\\\PANORAMA\\\\Ambiente Virtual\" && ls -la \"dist/\" 2>&1 | tail -10 && echo \"---copiando---\" && cp -f \"dist/CGAPE - BALANCO PAC.exe\" \"CGAPE - BALANCO PAC.exe\" && ls -la \"CGAPE - BALANCO PAC.exe\")",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId=16416\")",
+      "PowerShell(Stop-Process -Id 16188 -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 16188 -ErrorAction SilentlyContinue)",
+      "Bash(awk 'NR==7775,NR==9650' \"CGAPE - BALANÇO PAC.py\")",
+      "Bash(curl -s -X POST http://127.0.0.1:5055/api/resumo_acoes_codigos_do_recorte -H \"Content-Type: application/json\" -d '[{}]')",
+      "Bash(sort -t: -k2 -n -u)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('CGAPE - BALANÇO PAC.py', encoding='utf-8'\\).read\\(\\)\\)\")"
     ]
   }
 }

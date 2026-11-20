@@ -10321,10 +10321,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   body.secao-mon #filtros-busca-btn-lupa,
   body.secao-mon #filtros-qc-btn,
   body.secao-mon #btn-gerencial-filtros,
-  body.secao-mon #btn-preview,
-  body.secao-mon #btn-gerar-pptx,
-  body.secao-mon #btn-ver-html,
-  body.secao-mon #acesso-rapido-filtros-wrap { display: none !important; }
+  body.secao-mon #btn-preview { display: none !important; }
   .mon-aviso {
     grid-column: 1 / -1;
     padding: 20px;
@@ -10757,7 +10754,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     background: rgba(0,0,0,0.6);
     align-items: center;
     justify-content: center;
-    z-index: 95;
+    /* Acima do overlay "Ações em Monitoramento" (resumo_acoes.py,
+       #ra-overlay, z-index 200) — o Controle de Qualidade do MONITORAMENTO
+       pode abrir com esse overlay aberto por trás (atalho "INCLUIR NA
+       APRESENTAÇÃO", que agora passa pela mesma checagem de qualidade de
+       qualquer formato — ver gerarSaida) e ficava escondido atrás dele —
+       bug encontrado na validação em 20/11/2026. */
+    z-index: 1200;
   }
   #modal-qualidade {
     background: var(--cor-card);
@@ -11016,7 +11019,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     background: rgba(0,0,0,0.6);
     align-items: center;
     justify-content: center;
-    z-index: 99;
+    /* Acima do overlay "Ações em Monitoramento" (#ra-overlay, z-index 200) e
+       do Controle de Qualidade (#modal-overlay, 1200) — mesmo motivo (ver
+       comentário em #modal-overlay): "INCLUIR NA APRESENTAÇÃO" abre esta
+       janela com o overlay de Monitoramento ainda aberto por trás. */
+    z-index: 1201;
   }
   #paginas-painel {
     background: var(--cor-card);
@@ -11034,9 +11041,28 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     font-weight: 700;
     border-bottom: 1px solid var(--cor-card-elevado);
   }
+  /* Chave RELATÓRIO PDF | APRESENTAÇÃO HTML | APRESENTAÇÃO PPTX — pedido do
+     usuário em 20/11/2026: um botão GERAR RELATÓRIO só, com o formato
+     escolhido aqui dentro, no lugar dos três botões separados que existiam
+     antes (ver gerarSaida/mostrarJanelaPaginas). Mesmo visual do
+     .seletor-secao (PAC | MONITORAMENTO) do painel de filtros. */
+  .paginas-formato {
+    margin: 14px 22px 0 22px;
+  }
+  .paginas-formato button {
+    flex: 1;
+  }
+  .paginas-aviso-formato {
+    margin: 10px 22px 0 22px;
+    padding: 8px 12px;
+    border-radius: var(--raio-sm);
+    background: var(--cor-card-elevado);
+    color: var(--cor-texto-secundario);
+    font-size: 12px;
+  }
   /* Resumo dos dois grupos de filtro (PAC + Monitoramento) na janela de
-     slides da apresentação — só aparece no formato HTML, onde as duas
-     bases/filtros coexistem (ver mostrarJanelaPaginas) — pedido do
+     slides da apresentação — só aparece quando a Apresentação (HTML/PDF)
+     inclui o Monitoramento (ver mostrarJanelaPaginas) — pedido do
      usuário em 15/11/2026: deixar claro que são dois recortes
      independentes, nenhum afeta o outro. */
   .paginas-resumo-filtros {
@@ -12743,7 +12769,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       <button class="btn" id="btn-limpar-tudo">LIMPAR FILTROS</button>
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
       <button class="btn" id="btn-preview">DASHBOARD</button>
-      <button class="btn" id="btn-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
       <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
       <div class="acesso-rapido-wrap" id="acesso-rapido-filtros-wrap">
         <button class="botao-icone-topo" id="acesso-rapido-filtros-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
@@ -12769,7 +12794,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
             </svg>
             <span>FILTROS</span>
           </button>
-          <button class="acesso-rapido-item" id="btn-gerar" title="Gerar o relatório em PDF com os filtros selecionados">
+          <button class="acesso-rapido-item" id="btn-gerar" title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>
@@ -12777,14 +12802,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
               <line x1="16" y1="17" x2="8" y2="17"></line>
             </svg>
             <span class="acesso-rapido-texto">GERAR RELATÓRIO</span>
-          </button>
-          <button class="acesso-rapido-item" id="btn-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2"></rect>
-              <line x1="8" y1="21" x2="16" y2="21"></line>
-              <line x1="12" y1="17" x2="12" y2="21"></line>
-            </svg>
-            <span class="acesso-rapido-texto">APRESENTAÇÃO CGAPE</span>
           </button>
           <button class="acesso-rapido-item" id="acesso-rapido-filtros-publicar" style="display:none" title="Publicar planilha/código atualizados no site (GitHub + Render)">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -12865,6 +12882,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     <div class="modal-titulo">
       <span id="paginas-titulo">Selecione as páginas do relatório</span>
     </div>
+    <div id="paginas-formato" class="seletor-secao paginas-formato" role="radiogroup" aria-label="Formato da saída">
+      <button type="button" data-formato="pdf" role="radio">RELATÓRIO PDF</button>
+      <button type="button" data-formato="html" role="radio">APRESENTAÇÃO HTML</button>
+      <button type="button" data-formato="pptx" role="radio">APRESENTAÇÃO PPTX</button>
+    </div>
+    <div id="paginas-aviso-formato" class="paginas-aviso-formato" style="display:none"></div>
     <div id="paginas-resumo-filtros" class="paginas-resumo-filtros" style="display:none"></div>
     <div class="paginas-acoes">
       <button class="btn-mini" id="paginas-marcar-tudo">Marcar tudo</button>
@@ -12909,8 +12932,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         <button type="button" class="btn-inicio" id="btn-inicio-dash" title="Voltar à tela inicial">← Início</button>
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
-        <button class="btn" id="dash-ver-html" title="Abre a mesma apresentação em HTML, direto no navegador — mais fácil de conferir do que o .pptx">VER APRESENTAÇÃO (HTML)</button>
-        <button class="btn" id="dash-resumo-acoes" data-abrir-resumo-acoes title="Ações em monitoramento (base Ações do Cronograma)">AÇÕES EM MONITORAMENTO</button>
+        <button class="btn" id="dash-resumo-acoes" title="Ações em monitoramento (base Ações do Cronograma)">AÇÕES EM MONITORAMENTO</button>
         <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
         <div class="acesso-rapido-wrap" id="acesso-rapido-dash-wrap">
           <button class="botao-icone-topo" id="acesso-rapido-dash-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
@@ -12936,7 +12958,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
               </svg>
               <span>FILTROS</span>
             </button>
-            <button class="acesso-rapido-item" id="preview-gerar-topo" title="Gerar o relatório em PDF com os filtros selecionados">
+            <button class="acesso-rapido-item" id="preview-gerar-topo" title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
@@ -12944,14 +12966,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
                 <line x1="16" y1="17" x2="8" y2="17"></line>
               </svg>
               <span class="acesso-rapido-texto">GERAR RELATÓRIO</span>
-            </button>
-            <button class="acesso-rapido-item" id="dash-gerar-pptx" title="Gera a Apresentação CGAPE com os filtros selecionados; os slides são escolhidos em seguida">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2"></rect>
-                <line x1="8" y1="21" x2="16" y2="21"></line>
-                <line x1="12" y1="17" x2="12" y2="21"></line>
-              </svg>
-              <span class="acesso-rapido-texto">APRESENTAÇÃO CGAPE</span>
             </button>
             <!-- Só existe no modo desktop (roda git de verdade na máquina de
                  quem clica) — nasce escondido e o JS decide se mostra, ver
@@ -16174,94 +16188,92 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     return chaves.length + " filtro" + (chaves.length > 1 ? "s" : "") + " ativo" + (chaves.length > 1 ? "s" : "");
   }
 
+  // Um botão GERAR RELATÓRIO só, com uma chave de formato dentro da janela
+  // de seleção, no lugar dos três botões separados (RELATÓRIO PDF,
+  // APRESENTAÇÃO HTML, APRESENTAÇÃO PPTX) que existiam antes — pedido do
+  // usuário em 20/11/2026. Cada formato tem seu próprio catálogo (api),
+  // rótulos e opções (reordenar só no HTML, colunas só no PDF).
+  var PAGINAS_FORMATOS = {
+    pdf: {
+      tituloJanela: "Selecione as páginas do relatório", rotuloBotao: "GERAR PDF",
+      rotuloChave: "RELATÓRIO PDF",
+      api: "listar_paginas_relatorio", argsApi: function (filtros) { return [filtros]; },
+      semColunas: false, permitirReordenar: false,
+      unidade: "página", unidades: "páginas", contador: "selecionadas",
+    },
+    html: {
+      tituloJanela: "Selecione os slides da apresentação", rotuloBotao: "VER APRESENTAÇÃO",
+      rotuloChave: "APRESENTAÇÃO HTML",
+      api: "listar_slides_apresentacao", argsApi: function (filtros) { return [filtros, "html"]; },
+      semColunas: true, permitirReordenar: true,
+      unidade: "slide", unidades: "slides", contador: "selecionados",
+    },
+    pptx: {
+      tituloJanela: "Selecione os slides da apresentação", rotuloBotao: "GERAR PPTX",
+      rotuloChave: "APRESENTAÇÃO PPTX",
+      api: "listar_slides_apresentacao", argsApi: function (filtros) { return [filtros, "pptx"]; },
+      semColunas: true, permitirReordenar: false,
+      unidade: "slide", unidades: "slides", contador: "selecionados",
+    },
+  };
+  var CHAVE_FORMATO_SALVO = "pacFormatoSaida";
+
   function mostrarJanelaPaginas(filtros, opcoes) {
-    // Resolve com a lista de chaves escolhidas, ou com null quando a pessoa
-    // cancela (aí a geração inteira é abortada, sem abrir o "Salvar como").
-    // opcoes (usado pela apresentação; sem ele, é a janela do relatório):
-    // api, titulo, rotuloConfirmar, semColunas, unidade/unidades, contador,
-    // formato (repassado pra api, ex.: "html" esconde slides que só existem
-    // mesclados no HTML), marcarPadrao(chave) -> true/false/undefined
-    // (undefined = usa o padrão do catálogo) — usado pelo atalho "INCLUIR
-    // NA APRESENTAÇÃO" do Monitoramento, que marca só as páginas MON_* —
-    // pedido do usuário em 15/11/2026.
+    // Resolve com {formato, secoes} (chaves escolhidas), ou com null quando
+    // a pessoa cancela (aí a geração inteira é abortada, sem abrir o
+    // "Salvar como"). opcoes: formatoInicial ("pdf"/"html"/"pptx" — padrão:
+    // o último usado, ou "pdf"), marcarPadrao(chave) -> true/false/undefined
+    // (undefined = usa o padrão do catálogo), só aplicado ao formato HTML —
+    // usado pelo atalho "INCLUIR NA APRESENTAÇÃO" do Monitoramento, que
+    // abre already em HTML com só as páginas MON_* marcadas — pedido do
+    // usuário em 15/11/2026 (refeito em 20/11/2026 pra um único botão).
     opcoes = opcoes || {};
-    var unidade = opcoes.unidade || "página";
-    var unidades = opcoes.unidades || "páginas";
     return new Promise(async function (resolve) {
-      document.getElementById("paginas-titulo").textContent = opcoes.titulo || "Selecione as páginas do relatório";
-      document.getElementById("paginas-confirmar").textContent = opcoes.rotuloConfirmar || "GERAR PDF";
-      document.getElementById("paginas-colunas").style.display = opcoes.semColunas ? "none" : "";
       var overlay = document.getElementById("paginas-overlay");
       var grade = document.getElementById("paginas-grade");
       var contador = document.getElementById("paginas-contador");
-
-      // Linha "PAC: ... / Monitoramento: ..." — só no HTML da apresentação,
-      // onde as duas bases/filtros coexistem na mesma página (ver
-      // SLIDES_SO_NO_HTML/CHAVES_MONITORAMENTO em gerar_pptx_pac.py) —
-      // deixa explícito que um recorte não influencia o outro.
+      var elFormato = document.getElementById("paginas-formato");
+      var elAviso = document.getElementById("paginas-aviso-formato");
       var resumoFiltrosEl = document.getElementById("paginas-resumo-filtros");
-      if (resumoFiltrosEl) {
-        if (opcoes.formato === "html") {
-          var filtrosMonAtuais = window.monRaFiltrosAtuais ? window.monRaFiltrosAtuais() : null;
-          resumoFiltrosEl.style.display = "flex";
-          resumoFiltrosEl.innerHTML =
-            "<span>PAC: <b>" + resumoFiltrosAtivos(filtros, CHAVES_NAO_FILTRO_PAC) + "</b></span>" +
-            "<span>Monitoramento: <b>" + resumoFiltrosAtivos(filtrosMonAtuais) + "</b></span>";
-        } else {
-          resumoFiltrosEl.style.display = "none";
-          resumoFiltrosEl.innerHTML = "";
-        }
-      }
+      var botoesFormato = Array.prototype.slice.call(elFormato.querySelectorAll("button"));
 
-      var lista;
-      try {
-        var argsApi = opcoes.formato !== undefined ? [filtros, opcoes.formato] : [filtros];
-        lista = await chamarAPI(opcoes.api || "listar_paginas_relatorio", ...argsApi);
-      } catch (erro) {
-        alert("Não foi possível montar a lista de páginas:" + NL + NL + erro);
-        resolve(null);
-        return;
-      }
-      if (!lista || lista.ok === false || !lista.secoes || !lista.secoes.length) {
-        // Sem lista utilizável, segue com o relatório completo em vez de
-        // travar a geração por causa da janela de seleção. Resolve com []
-        // (não null) porque null é reservado para "usuário cancelou" — o
-        // backend trata None/[] do mesmo jeito (relatório completo).
-        resolve([]);
-        return;
-      }
+      var formatoSalvo = null;
+      try { formatoSalvo = localStorage.getItem(CHAVE_FORMATO_SALVO); } catch (e) {}
+      var formato = opcoes.formatoInicial || (PAGINAS_FORMATOS[formatoSalvo] ? formatoSalvo : "pdf");
 
-      // O padrão vem do backend: quase tudo marcado, mas o Detalhamento
-      // Financeiro chega desmarcado quando o recorte só tem ANDAMENTO.
-      // opcoes.marcarPadrao, quando informado, tem prioridade sobre esse
-      // padrão — usado pelo atalho "INCLUIR NA APRESENTAÇÃO".
-      var marcadas = {};
-      lista.secoes.forEach(function (sec) {
-        var padraoCustom = opcoes.marcarPadrao ? opcoes.marcarPadrao(sec.chave) : undefined;
-        marcadas[sec.chave] = padraoCustom !== undefined ? padraoCustom : sec.marcada !== false;
-      });
+      // Seleção de cada formato guardada à parte enquanto a janela está
+      // aberta — trocar PDF -> HTML -> PDF não perde o que foi marcado no
+      // PDF (pedido do usuário em 20/11/2026).
+      var estados = {};   // formato -> {lista, marcadas}
+      var indiceArrastado = null;
+
+      function cfg() { return PAGINAS_FORMATOS[formato]; }
 
       function atualizarContador() {
-        var n = lista.secoes.filter(function (s) { return marcadas[s.chave]; }).length;
-        contador.textContent = n + " de " + lista.secoes.length + " " + (opcoes.contador || "selecionadas");
+        var st = estados[formato];
+        var c = cfg();
+        if (!st || !st.lista) { contador.textContent = ""; document.getElementById("paginas-confirmar").disabled = true; return; }
+        var n = st.lista.secoes.filter(function (s) { return st.marcadas[s.chave]; }).length;
+        contador.textContent = n + " de " + st.lista.secoes.length + " " + c.contador;
         document.getElementById("paginas-confirmar").disabled = n === 0;
       }
 
       function trocarOrdem(indiceA, indiceB) {
-        var tmp = lista.secoes[indiceA];
-        lista.secoes[indiceA] = lista.secoes[indiceB];
-        lista.secoes[indiceB] = tmp;
+        var secoes = estados[formato].lista.secoes;
+        var tmp = secoes[indiceA];
+        secoes[indiceA] = secoes[indiceB];
+        secoes[indiceB] = tmp;
         desenhar();
       }
 
       // Arrastar e soltar (pedido do usuário em 09/11/2026): tira o cartão
       // da posição "de" e o insere antes da posição "para" (0..n, contada
       // na lista ANTES de tirar o cartão).
-      var indiceArrastado = null;
       function moverPara(de, para) {
         if (de === null || para === de || para === de + 1) return;
-        var item = lista.secoes.splice(de, 1)[0];
-        lista.secoes.splice(para > de ? para - 1 : para, 0, item);
+        var secoes = estados[formato].lista.secoes;
+        var item = secoes.splice(de, 1)[0];
+        secoes.splice(para > de ? para - 1 : para, 0, item);
         desenhar();
       }
       function limparAlvos() {
@@ -16276,10 +16288,17 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       }
 
       function desenhar() {
+        var st = estados[formato];
+        var c = cfg();
         grade.innerHTML = "";
-        lista.secoes.forEach(function (sec, indice) {
+        if (!st || st.falhou) {
+          grade.innerHTML = '<div class="mon-aviso">Não foi possível montar a lista deste formato.</div>';
+          atualizarContador();
+          return;
+        }
+        st.lista.secoes.forEach(function (sec, indice) {
           var card = document.createElement("div");
-          card.className = "pagina-card" + (marcadas[sec.chave] ? " marcada" : "");
+          card.className = "pagina-card" + (st.marcadas[sec.chave] ? " marcada" : "");
           card.innerHTML =
             '<svg viewBox="0 0 160 108" width="100%">' +
             '<rect x="0" y="0" width="160" height="108" rx="4" fill="#FFFFFF"/>' +
@@ -16288,17 +16307,17 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
             '<div class="pagina-card-titulo">' + escaparHtmlFicha(sec.titulo) + "</div>" +
             '<div class="pagina-card-sub">' +
             (sec.paginas === null
-              ? "várias " + unidades
+              ? "várias " + c.unidades
               : sec.paginas > 1
-              ? sec.paginas + " " + unidades
-              : "1 " + unidade) +
+              ? sec.paginas + " " + c.unidades
+              : "1 " + c.unidade) +
             "</div>";
           card.onclick = function () {
-            marcadas[sec.chave] = !marcadas[sec.chave];
-            card.classList.toggle("marcada", marcadas[sec.chave]);
+            st.marcadas[sec.chave] = !st.marcadas[sec.chave];
+            card.classList.toggle("marcada", st.marcadas[sec.chave]);
             atualizarContador();
           };
-          if (opcoes.permitirReordenar) {
+          if (c.permitirReordenar) {
             var ordem = document.createElement("div");
             ordem.className = "pagina-card-ordem";
             var btnCima = document.createElement("button");
@@ -16313,7 +16332,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
             btnBaixo.className = "pagina-card-ordem-btn";
             btnBaixo.textContent = "▼";
             btnBaixo.title = "Mover pra baixo na ordem da apresentação";
-            btnBaixo.disabled = indice === lista.secoes.length - 1;
+            btnBaixo.disabled = indice === st.lista.secoes.length - 1;
             btnBaixo.onclick = function (ev) { ev.stopPropagation(); trocarOrdem(indice, indice + 1); };
             ordem.appendChild(btnCima);
             ordem.appendChild(btnBaixo);
@@ -16358,6 +16377,91 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         atualizarContador();
       }
 
+      // Linha "PAC: ... / Monitoramento: ..." (PDF e HTML, que incluem o
+      // Monitoramento) ou aviso de que este formato não inclui essas
+      // páginas (PPTX) — pedido do usuário em 20/11/2026: os filtros do
+      // Monitoramento vêm agora SEMPRE da grade #grade-mon do painel
+      // (filtros.MONITORAMENTO), a mesma fonte usada pela seção
+      // MONITORAMENTO do relatório PDF — não mais do overlay "Ações em
+      // Monitoramento".
+      function atualizarResumoFiltros() {
+        if (!resumoFiltrosEl) return;
+        if (formato === "pptx") {
+          resumoFiltrosEl.style.display = "none";
+          resumoFiltrosEl.innerHTML = "";
+          elAviso.style.display = "";
+          elAviso.textContent = "O PPTX não inclui as páginas de Monitoramento.";
+        } else {
+          elAviso.style.display = "none";
+          elAviso.textContent = "";
+          resumoFiltrosEl.style.display = "flex";
+          resumoFiltrosEl.innerHTML =
+            "<span>PAC: <b>" + resumoFiltrosAtivos(filtros, CHAVES_NAO_FILTRO_PAC) + "</b></span>" +
+            "<span>Monitoramento: <b>" + resumoFiltrosAtivos(filtros.MONITORAMENTO) + "</b></span>";
+        }
+      }
+
+      async function carregarFormato(f) {
+        if (estados[f]) return;
+        var c = PAGINAS_FORMATOS[f];
+        var lista;
+        try {
+          lista = await chamarAPI(c.api, ...c.argsApi(filtros));
+        } catch (erro) {
+          estados[f] = { lista: null, marcadas: {}, falhou: true };
+          return;
+        }
+        if (!lista || lista.ok === false || !lista.secoes || !lista.secoes.length) {
+          estados[f] = { lista: null, marcadas: {}, falhou: true };
+          return;
+        }
+        // O padrão vem do backend: quase tudo marcado, mas o Detalhamento
+        // Financeiro chega desmarcado quando o recorte só tem ANDAMENTO.
+        // opcoes.marcarPadrao, quando informado, só vale pro HTML (é o
+        // atalho "INCLUIR NA APRESENTAÇÃO", específico da apresentação).
+        var marcadas = {};
+        lista.secoes.forEach(function (sec) {
+          var padraoCustom = (f === "html" && opcoes.marcarPadrao) ? opcoes.marcarPadrao(sec.chave) : undefined;
+          marcadas[sec.chave] = padraoCustom !== undefined ? padraoCustom : sec.marcada !== false;
+        });
+        estados[f] = { lista: lista, marcadas: marcadas, falhou: false };
+      }
+
+      async function trocarFormato(novoFormato) {
+        formato = novoFormato;
+        try { localStorage.setItem(CHAVE_FORMATO_SALVO, formato); } catch (e) {}
+        var c = cfg();
+        botoesFormato.forEach(function (b) {
+          var ativo = b.dataset.formato === formato;
+          b.classList.toggle("ativo", ativo);
+          b.setAttribute("aria-checked", ativo ? "true" : "false");
+          b.tabIndex = ativo ? 0 : -1;
+        });
+        document.getElementById("paginas-titulo").textContent = c.tituloJanela;
+        document.getElementById("paginas-confirmar").textContent = c.rotuloBotao;
+        document.getElementById("paginas-colunas").style.display = c.semColunas ? "none" : "";
+        atualizarResumoFiltros();
+        grade.innerHTML = '<div class="mon-aviso">Carregando…</div>';
+        await carregarFormato(formato);
+        desenhar();
+      }
+
+      botoesFormato.forEach(function (b) {
+        b.onclick = function () { trocarFormato(b.dataset.formato); };
+      });
+      // Setas do teclado movem o foco E a seleção dentro do radiogroup
+      // (padrão de acessibilidade de grupo de rádio) — pedido do usuário
+      // em 20/11/2026.
+      elFormato.addEventListener("keydown", function (ev) {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(ev.key) === -1) return;
+        ev.preventDefault();
+        var indiceAtual = botoesFormato.findIndex(function (b) { return b.dataset.formato === formato; });
+        var passo = (ev.key === "ArrowLeft" || ev.key === "ArrowUp") ? -1 : 1;
+        var proximo = botoesFormato[(indiceAtual + passo + botoesFormato.length) % botoesFormato.length];
+        proximo.focus();
+        trocarFormato(proximo.dataset.formato);
+      });
+
       function fechar() {
         overlay.style.display = "none";
         document.getElementById("paginas-confirmar").onclick = null;
@@ -16366,26 +16470,28 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         document.getElementById("paginas-limpar").onclick = null;
         document.getElementById("paginas-colunas-padrao").onclick = null;
         document.getElementById("paginas-colunas-essencial").onclick = null;
+        botoesFormato.forEach(function (b) { b.onclick = null; });
       }
 
       // Seção "Colunas do Detalhamento" — mesma seleção (estadoColunas) que
-      // antes vivia no painel de filtros. renderizarBlocoColunas() já lê e
-      // escreve direto em estadoColunas; aqui é só (re)desenhá-la com a
-      // janela aberta e ligar os dois atalhos. O que ficar marcado ao
-      // confirmar entra no relatório porque executarGeracaoRelatorio
-      // remonta os filtros depois que esta janela fecha.
-      if (!opcoes.semColunas) {
-        renderizarBlocoColunas();
-        document.getElementById("paginas-colunas-padrao").onclick = colunasAplicarPadrao;
-        document.getElementById("paginas-colunas-essencial").onclick = colunasAplicarEssencial;
-      }
+      // antes vivia no painel de filtros; só aparece no formato PDF (ver
+      // trocarFormato). O que ficar marcado ao confirmar entra no
+      // relatório porque gerarSaida remonta os filtros depois que esta
+      // janela fecha.
+      renderizarBlocoColunas();
+      document.getElementById("paginas-colunas-padrao").onclick = colunasAplicarPadrao;
+      document.getElementById("paginas-colunas-essencial").onclick = colunasAplicarEssencial;
 
       document.getElementById("paginas-marcar-tudo").onclick = function () {
-        lista.secoes.forEach(function (s) { marcadas[s.chave] = true; });
+        var st = estados[formato];
+        if (!st || !st.lista) return;
+        st.lista.secoes.forEach(function (s) { st.marcadas[s.chave] = true; });
         desenhar();
       };
       document.getElementById("paginas-limpar").onclick = function () {
-        lista.secoes.forEach(function (s) { marcadas[s.chave] = false; });
+        var st = estados[formato];
+        if (!st || !st.lista) return;
+        st.lista.secoes.forEach(function (s) { st.marcadas[s.chave] = false; });
         desenhar();
       };
       document.getElementById("paginas-cancelar").onclick = function () {
@@ -16393,15 +16499,17 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         resolve(null);
       };
       document.getElementById("paginas-confirmar").onclick = function () {
-        var escolhidas = lista.secoes
-          .filter(function (s) { return marcadas[s.chave]; })
+        var st = estados[formato];
+        if (!st || !st.lista) return;
+        var escolhidas = st.lista.secoes
+          .filter(function (s) { return st.marcadas[s.chave]; })
           .map(function (s) { return s.chave; });
         if (!escolhidas.length) return;
         fechar();
-        resolve(escolhidas);
+        resolve({ formato: formato, secoes: escolhidas });
       };
 
-      desenhar();
+      await trocarFormato(formato);
       overlay.style.display = "flex";
     });
   }
@@ -16778,7 +16886,18 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 
   document.getElementById("ficha-btn-gerar-pdf").onclick = gerarFichaPdf;
 
-  async function executarGeracaoRelatorio() {
+  var AVISO_RECORTE_VAZIO = "Nenhum registro encontrado para os filtros selecionados. Não será gerado.";
+
+  // Fluxo único de geração (pedido do usuário em 20/11/2026, no lugar dos
+  // três botões/fluxos separados que existiam antes — GERAR RELATÓRIO,
+  // APRESENTAÇÃO CGAPE e VER APRESENTAÇÃO (HTML)): Controle de Qualidade
+  // (PAC + Monitoramento) uma vez só, depois a janela de seleção com a
+  // chave de formato (mostrarJanelaPaginas), e por fim gera no formato
+  // escolhido reaproveitando baixarPDF/baixarHTML/baixarPPTX, já
+  // existentes. opcoesJanela: repassado a mostrarJanelaPaginas
+  // (formatoInicial, marcarPadrao) — usado pelo atalho "INCLUIR NA
+  // APRESENTAÇÃO".
+  async function gerarSaida(opcoesJanela) {
     var filtros = montarFiltrosAtuais();
 
     travarBotaoGerar("Verificando...");
@@ -16793,7 +16912,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 
     if (!inicio || inicio.ok === false) {
       if (inicio && inicio.vazio) {
-        alert("Nenhum registro encontrado para os filtros selecionados. O relatorio nao sera gerado.");
+        alert("Nenhum registro encontrado para os filtros selecionados. Não será gerado.");
       } else {
         alert("Ocorreu um erro ao verificar os filtros:" + NL + NL + (inicio ? inicio.erro : "erro desconhecido"));
       }
@@ -16812,23 +16931,32 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       if (!prosseguirMon) return;
     }
 
-    // Janela de seleção de páginas — entre a checagem de qualidade e o
-    // diálogo de salvar. Sai daqui com a lista de seções escolhidas.
-    var secoesEscolhidas = await mostrarJanelaPaginas(filtros);
-    if (secoesEscolhidas === null) {
+    // Janela de seleção (páginas do PDF ou slides da apresentação, e o
+    // formato) — entre a checagem de qualidade e o diálogo de salvar.
+    var escolha = await mostrarJanelaPaginas(filtros, opcoesJanela);
+    if (escolha === null) {
       destravarBotaoGerar();
       return;
     }
-    // A janela de páginas é também onde as colunas do Detalhamento são
-    // escolhidas agora — remonta os filtros para levar a seleção final.
+    // A janela também é onde as colunas do Detalhamento são escolhidas
+    // (só vale pro PDF) — remonta os filtros para levar a seleção final.
     filtros = montarFiltrosAtuais();
 
     travarBotaoGerar("Gerando...");
     var resultado;
     try {
-      resultado = await baixarPDF("escolher_local_e_gerar", filtros, secoesEscolhidas);
+      if (escolha.formato === "pptx") {
+        resultado = await baixarPPTX("gerar_pptx_analise_financeira", filtros, escolha.secoes);
+      } else if (escolha.formato === "html") {
+        // filtros_mon (3º argumento) não é mais usado pelo backend — os
+        // filtros do Monitoramento vêm de filtros.MONITORAMENTO, já dentro
+        // de `filtros` — mantido só por compatibilidade de assinatura.
+        resultado = await baixarHTML("visualizar_html_analise_financeira", filtros, escolha.secoes, null);
+      } else {
+        resultado = await baixarPDF("escolher_local_e_gerar", filtros, escolha.secoes);
+      }
     } catch (erro) {
-      alert("Ocorreu um erro ao gerar o relatorio:" + NL + NL + erro);
+      alert("Ocorreu um erro ao gerar:" + NL + NL + erro);
       destravarBotaoGerar();
       return;
     }
@@ -16837,10 +16965,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     if (!resultado || resultado.ok === false) {
       if (resultado && resultado.cancelado) return;
       if (resultado && resultado.vazio) {
-        alert("Nenhum registro encontrado para os filtros selecionados. O relatorio nao sera gerado.");
+        alert(AVISO_RECORTE_VAZIO);
         return;
       }
-      alert("Ocorreu um erro ao gerar o relatorio:" + NL + NL + (resultado ? resultado.erro : "erro desconhecido"));
+      alert("Ocorreu um erro ao gerar:" + NL + NL + (resultado ? resultado.erro : "erro desconhecido"));
       return;
     }
 
@@ -16853,113 +16981,18 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     }
   }
 
-  botoesGerar.forEach(function (b) { b.onclick = executarGeracaoRelatorio; });
-
-  // Botão "ANÁLISE FINANCEIRA (PPTX)" — aparece duas vezes (tela de
-  // filtros e topo do dashboard, mesmo padrão do par btnGerar/
-  // previewGerarTopo acima) — com os filtros ativos no painel e a mesma
-  // janela de seleção do relatório (aqui, de slides), sem passo de qualidade.
-  function escolherSlides(filtros, rotuloConfirmar, formato, marcarPadrao) {
-    return mostrarJanelaPaginas(filtros, {
-      api: "listar_slides_apresentacao",
-      titulo: "Selecione os slides da apresentação",
-      rotuloConfirmar: rotuloConfirmar,
-      semColunas: true,
-      unidade: "slide",
-      unidades: "slides",
-      contador: "selecionados",
-      formato: formato,
-      // Reordenar só faz sentido pro HTML: é o único formato onde dá pra
-      // intercalar a apresentação Canva (site externo) entre as seções do
-      // dash — o PPTX mantém a ordem fixa do catálogo — pedido do usuário
-      // em 08/11/2026.
-      permitirReordenar: formato === "html",
-      marcarPadrao: marcarPadrao,
-    });
-  }
-  var AVISO_RECORTE_VAZIO = "Nenhum registro encontrado para os filtros selecionados. A apresentação não será gerada.";
-  const botoesGerarPPTX = [
-    document.getElementById("btn-gerar-pptx"),
-    document.getElementById("dash-gerar-pptx"),
-  ].filter(Boolean);
-  // Agora um item do menu de Acesso Rápido (com ícone): o texto de
-  // carregamento vai só no <span> interno, pra não apagar o ícone — ver
-  // textoBotaoGerar acima (mesma ideia) — pedido do usuário em 18/11/2026.
-  const textoOriginalBtnGerarPPTX = botoesGerarPPTX.length ? textoBotaoGerar(botoesGerarPPTX[0]).textContent : "";
-
-  async function gerarApresentacaoFinanceira() {
-    var filtros = montarFiltrosAtuais();
-    var secoes = await escolherSlides(filtros, "GERAR PPTX", "pptx");
-    if (secoes === null) return;
-    botoesGerarPPTX.forEach(function (b) { b.disabled = true; textoBotaoGerar(b).textContent = "Gerando..."; });
-    try {
-      var resultado = await baixarPPTX("gerar_pptx_analise_financeira", filtros, secoes);
-      if (!resultado || resultado.cancelado) return;
-      if (resultado.vazio) {
-        alert(AVISO_RECORTE_VAZIO);
-      } else if (!resultado.ok) {
-        alert(resultado.erro || "Não foi possível gerar a apresentação.");
-      }
-    } catch (erro) {
-      alert("Ocorreu um erro ao gerar a apresentação:" + NL + NL + erro);
-    } finally {
-      botoesGerarPPTX.forEach(function (b) { b.disabled = false; textoBotaoGerar(b).textContent = textoOriginalBtnGerarPPTX; });
-    }
-  }
-  botoesGerarPPTX.forEach(function (b) { b.onclick = gerarApresentacaoFinanceira; });
-
-  // Botão "VER APRESENTAÇÃO (HTML)" — mesma apresentação, versão pra
-  // conferir rápido no navegador (sem precisar de PowerPoint/Canva).
-  const botoesVerHTML = [
-    document.getElementById("btn-ver-html"),
-    document.getElementById("dash-ver-html"),
-  ].filter(Boolean);
-  const textoOriginalBtnVerHTML = botoesVerHTML.length ? botoesVerHTML[0].textContent : "";
-
-  // opcoesExtra.marcarPadrao / rotuloConfirmar: usados pelo atalho "INCLUIR
-  // NA APRESENTAÇÃO" do Monitoramento (ver window.abrirApresentacaoComMonitoramento
-  // abaixo), que abre esta MESMA janela já com as páginas MON_* marcadas e
-  // as do PAC desmarcadas — pedido do usuário em 15/11/2026.
-  async function verApresentacaoHtml(opcoesExtra) {
-    opcoesExtra = opcoesExtra || {};
-    var filtros = montarFiltrosAtuais();
-    // Filtros do Monitoramento (resumo_acoes.py, overlay "Ações em
-    // Monitoramento") — TOTALMENTE independentes dos do PAC acima; "null"
-    // quando o overlay nunca existiu nesta página (função ainda não
-    // definida) ou nunca foi customizado, o que o backend trata como base
-    // completa — pedido do usuário em 15/11/2026.
-    var filtrosMon = window.monRaFiltrosAtuais ? window.monRaFiltrosAtuais() : null;
-    var secoes = await escolherSlides(
-      filtros, opcoesExtra.rotuloConfirmar || "VER APRESENTAÇÃO", "html", opcoesExtra.marcarPadrao
-    );
-    if (secoes === null) return;
-    botoesVerHTML.forEach(function (b) { b.disabled = true; b.textContent = "Gerando..."; });
-    try {
-      var resultado = await baixarHTML("visualizar_html_analise_financeira", filtros, secoes, filtrosMon);
-      if (!resultado || resultado.cancelado) return;
-      if (resultado.vazio) {
-        alert(AVISO_RECORTE_VAZIO);
-      } else if (!resultado.ok) {
-        alert(resultado.erro || "Não foi possível gerar a apresentação em HTML.");
-      }
-    } catch (erro) {
-      alert("Ocorreu um erro ao gerar a apresentação:" + NL + NL + erro);
-    } finally {
-      botoesVerHTML.forEach(function (b) { b.disabled = false; b.textContent = textoOriginalBtnVerHTML; });
-    }
-  }
-  botoesVerHTML.forEach(function (b) { b.onclick = function () { verApresentacaoHtml(); }; });
+  botoesGerar.forEach(function (b) { b.onclick = function () { gerarSaida(); }; });
 
   // Atalho "INCLUIR NA APRESENTAÇÃO" (botão do overlay de Monitoramento,
-  // ver HTML_JANELA em resumo_acoes.py) — mesma janela/geração do botão
-  // "VER APRESENTAÇÃO (HTML)" acima, só que já chegando com as páginas
+  // ver HTML_JANELA em resumo_acoes.py) — mesmo fluxo do botão GERAR
+  // RELATÓRIO acima, só que já abrindo a janela em HTML, com as páginas
   // MON_* marcadas e as do PAC desmarcadas (o usuário marca o que quiser
   // do PAC) — pedido do usuário em 15/11/2026. Exposto em window porque
   // quem aciona é o script de resumo_acoes.py, injetado nesta mesma
   // página mas definido num <script> à parte.
   window.abrirApresentacaoComMonitoramento = function () {
-    return verApresentacaoHtml({
-      rotuloConfirmar: "VER APRESENTAÇÃO",
+    return gerarSaida({
+      formatoInicial: "html",
       marcarPadrao: function (chave) { return chave.indexOf("MON_") === 0; },
     });
   };
@@ -17044,6 +17077,25 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     f.MONITORAMENTO = monFiltrosAtuais();
     return f;
   };
+
+  // Botão "AÇÕES EM MONITORAMENTO" do dash: abre o overlay (resumo_acoes.py)
+  // já sincronizado com o recorte atual da grade #grade-mon acima — mesma
+  // fonte de filtros usada pelo relatório/apresentação — pedido do usuário
+  // em 20/11/2026. Busca os "Código" desse recorte e repassa pro overlay
+  // (window.abrirResumoAcoes); o usuário ainda filtra mais à vontade dentro
+  // dele, sem perder essa base.
+  var btnDashResumoAcoes = document.getElementById("dash-resumo-acoes");
+  if (btnDashResumoAcoes) {
+    btnDashResumoAcoes.onclick = async function () {
+      if (!window.abrirResumoAcoes) return;
+      var codigos = null;
+      try {
+        var r = await chamarAPI("resumo_acoes_codigos_do_recorte", monFiltrosAtuais());
+        if (r && r.ok) codigos = r.codigos;
+      } catch (e) { /* segue sem sincronizar — overlay abre com a base toda */ }
+      window.abrirResumoAcoes(codigos);
+    };
+  }
 
   function monLinhaPassa(l, chaveExcluida) {
     var blocos = MON.dados.blocos;
@@ -17780,6 +17832,22 @@ def _api_resumo_acoes_html(filtros=None):
     return _modulo_resumo_acoes().api_html(filtros, devolver_conteudo=MODO_WEB)
 
 
+def _api_resumo_acoes_codigos_do_recorte(filtros_mon):
+    # Botão "AÇÕES EM MONITORAMENTO" do dash: abre o overlay já sincronizado
+    # com o recorte da grade #grade-mon do painel (mesma fonte de filtros
+    # do relatório/apresentação) — pedido do usuário em 20/11/2026. Devolve
+    # os "Código" das ações desse recorte; o overlay restringe a ele (ver
+    # "_codigos" em resumo_acoes.resumo_acoes_dados) e o usuário ainda pode
+    # filtrar mais à vontade dentro do overlay, sem perder essa base.
+    try:
+        codigos = _modulo_monitoramento().codigos_do_recorte(filtros_mon)
+        return {"ok": True, "codigos": codigos}
+    except Exception as erro:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "erro": str(erro)}
+
+
 def _api_resumo_acoes_qualidade_secretaria():
     # Controle de qualidade da Secretaria derivada do Executor — pedido do
     # usuário em 18/11/2026 (ver hierarquia_secretaria.py).
@@ -17868,6 +17936,34 @@ def _api_gerar_pptx_analise_financeira_bytes(filtros=None, secoes=None):
     return {"ok": True, "nome_arquivo": nome_arquivo_pptx_analise_financeira, "conteudo": conteudo}
 
 
+def _filtros_mon_para_apresentacao(filtros):
+    # Filtros do Monitoramento para as páginas MON_* da Apresentação CGAPE
+    # (HTML) — pedido do usuário em 20/11/2026: fonte ÚNICA de filtros do
+    # Monitoramento para o PDF, o HTML e o PPTX, vinda da MESMA grade
+    # #grade-mon do painel (filtros["MONITORAMENTO"], formato de
+    # relatorio_monitoramento.CAMPOS_FILTRO) usada na seção MONITORAMENTO do
+    # relatório PDF — em vez dos filtros próprios do overlay "Ações em
+    # Monitoramento" (resumo_acoes.py), que alimentavam isso antes e podiam
+    # divergir do PDF. "_codigos" (ver resumo_acoes.resumo_acoes_dados)
+    # restringe a base do Monitoramento às MESMAS ações que
+    # relatorio_monitoramento.filtrar() devolveria para este recorte — sem
+    # duplicar a regra de filtro em dois lugares. NÃO liga "top30": esse
+    # filtro restringe o quadro Status × Eixo/Objeto só às 30 maiores
+    # cidades (ver resumo_acoes_dados), o que faria o HTML mostrar uma
+    # quantidade diferente da seção MONITORAMENTO do PDF (que não tem esse
+    # conceito) pro MESMO recorte — bug encontrado na validação em
+    # 20/11/2026. Sem "top30", a seção dos 30 maiores municípios (mapa,
+    # gráfico, cartões) não aparece nas páginas MON_* da apresentação; o
+    # quadro resumo mostra o recorte inteiro, batendo com o PDF.
+    filtros_mon_grade = (filtros or {}).get("MONITORAMENTO")
+    if filtros_mon_grade is None:
+        return None
+    codigos = _modulo_monitoramento().codigos_do_recorte(filtros_mon_grade)
+    if codigos is None:
+        return None
+    return {"_codigos": codigos}
+
+
 def _construir_html_analise_financeira_bytes(filtros=None, secoes=None, filtros_mon=None):
     # Mesma ideia de _construir_pptx_analise_financeira_bytes, mas pra
     # versão HTML da apresentação (ver montar_html_apresentacao em
@@ -17876,14 +17972,14 @@ def _construir_html_analise_financeira_bytes(filtros=None, secoes=None, filtros_
     # navegador quebra linha e redimensiona sozinho, então serve como
     # conferência visual rápida sem precisar abrir PowerPoint/Canva.
     #
-    # filtros_mon: filtros do overlay "Ações em Monitoramento" (resumo_
-    # acoes.py — NÃO confundir com _modulo_monitoramento()/relatorio_
-    # monitoramento.py, a seção de MONITORAMENTO do relatório PDF, outra
-    # coisa). Repassado à parte de `filtros` (do painel do PAC) porque as
-    # páginas MON_* da apresentação usam base e filtros independentes —
-    # pedido do usuário em 15/11/2026.
+    # filtros_mon (parâmetro mantido só por compatibilidade com chamadas
+    # antigas — pedido do usuário em 20/11/2026 — e ignorado aqui): os
+    # filtros do Monitoramento para as páginas MON_* agora vêm sempre de
+    # filtros["MONITORAMENTO"] (ver _filtros_mon_para_apresentacao), a
+    # mesma grade usada pela seção MONITORAMENTO do relatório PDF.
     return _modulo_apresentacao().gerar_html_bytes(
-        _df_analise_financeira(filtros), filtros, secoes, filtros_mon)
+        _df_analise_financeira(filtros), filtros, secoes,
+        _filtros_mon_para_apresentacao(filtros))
 
 
 def _api_gerar_html_analise_financeira_bytes(filtros=None, secoes=None, filtros_mon=None):
@@ -18063,6 +18159,9 @@ def abrir_interface_filtros(df_base):
 
         def resumo_acoes_html(self, filtros=None):
             return _api_resumo_acoes_html(filtros)
+
+        def resumo_acoes_codigos_do_recorte(self, filtros_mon):
+            return _api_resumo_acoes_codigos_do_recorte(filtros_mon)
 
         def resumo_acoes_atualizar_conder(self):
             return _api_resumo_acoes_atualizar_conder()

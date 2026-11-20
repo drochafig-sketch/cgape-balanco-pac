@@ -542,7 +542,13 @@ def api_mapa():
 # ---- dados ------------------------------------------------------------------
 def resumo_acoes_dados(caminho, filtros=None):
     """Quadro por eixo e status, já formatado para a página e para o slide.
-    filtros: {chave de RA_FILTROS: [valores], "d_<chave>": {de, ate}}."""
+    filtros: {chave de RA_FILTROS: [valores], "d_<chave>": {de, ate},
+    "_codigos": [Código, ...]}. "_codigos" (pedido do usuário em
+    20/11/2026): restringe a base a estes valores da coluna "Código" ANTES
+    de qualquer outro filtro — usado pela Apresentação CGAPE (HTML/slides
+    MON_*) pra seguir exatamente o mesmo recorte da grade de filtros do
+    MONITORAMENTO (relatorio_monitoramento.codigos_do_recorte), em vez dos
+    filtros próprios deste overlay. None = sem essa restrição."""
     base = _ra_base(caminho)
     filtros = filtros or {}
     entregue = bool(filtros.get("entregue"))
@@ -574,6 +580,10 @@ def resumo_acoes_dados(caminho, filtros=None):
     busca_cols = {r: str(t).strip() for r, t in (filtros.get("bcol") or {}).items()
                   if str(t or "").strip()}
     marca_busca = pd.Series(True, index=base.index)
+    codigos = filtros.get("_codigos")
+    if codigos is not None and "Código" in base.columns:
+        codigos_norm = {str(c).strip() for c in codigos}
+        marca_busca &= base["Código"].astype(str).str.strip().isin(codigos_norm)
     if busca_geral:
         marca_busca &= _ra_contem_todos(base["_busca"], _ra_termos(busca_geral))
     if busca_cols:
@@ -3473,8 +3483,21 @@ HTML_JANELA = r"""
     if (raFiltrosSalvos) raFiltros = JSON.parse(raFiltrosSalvos) || {};
   } catch (e) { /* localStorage indisponível (ex.: aba anônima) — segue com base completa */ }
   function raSalvarFiltros() {
-    try { if (window.localStorage) localStorage.setItem(MON_RA_CHAVE_STORAGE, JSON.stringify(raFiltros)); }
-    catch (e) { /* ignora — não é crítico, só perde a persistência entre telas */ }
+    // "_codigos" (ver window.abrirResumoAcoes) é o recorte da grade
+    // #grade-mon do painel no momento em que o overlay foi aberto por ele —
+    // não é uma escolha do usuário dentro do overlay, então não entra na
+    // persistência entre sessões (senão ficaria "grudado" mesmo depois de
+    // fechar e reabrir o overlay sem vir do painel) — pedido do usuário em
+    // 20/11/2026.
+    try {
+      if (!window.localStorage) return;
+      var paraSalvar = raFiltros;
+      if ("_codigos" in raFiltros) {
+        paraSalvar = Object.assign({}, raFiltros);
+        delete paraSalvar._codigos;
+      }
+      localStorage.setItem(MON_RA_CHAVE_STORAGE, JSON.stringify(paraSalvar));
+    } catch (e) { /* ignora — não é crítico, só perde a persistência entre telas */ }
   }
   // Exposto pro script do painel (montar_html_painel), que injeta este
   // overlay na mesma página — usado pelo botão "VER APRESENTAÇÃO (HTML)" /
@@ -3505,7 +3528,7 @@ HTML_JANELA = r"""
   }
   // "entregue" é configuração do quadro, não filtro: o LIMPAR não mexe nele
   function raChavesFiltro() {
-    return Object.keys(raFiltros).filter(function (c) { return c !== "entregue"; });
+    return Object.keys(raFiltros).filter(function (c) { return c !== "entregue" && c !== "_codigos"; });
   }
   function raLimparFiltros() {
     raChavesFiltro().forEach(function (c) { delete raFiltros[c]; });
@@ -3690,7 +3713,7 @@ HTML_JANELA = r"""
       raChavesFiltro().length ? "visible" : "hidden";
     // quantos filtros em uso, no botão FILTROS (busca geral e buscas das
     // colunas ficam fora: elas têm campo próprio na tela)
-    var qtdF = Object.keys(raFiltros).filter(function (c) { return c !== "busca" && c !== "bcol"; }).length;
+    var qtdF = Object.keys(raFiltros).filter(function (c) { return c !== "busca" && c !== "bcol" && c !== "_codigos"; }).length;
     var marca = document.getElementById("raFiltrosQtd");
     if (marca) { marca.textContent = qtdF || ""; marca.classList.toggle("tem", qtdF > 0); }
     raSincronizarBuscaGeral();
@@ -4277,7 +4300,18 @@ HTML_JANELA = r"""
     }).catch(function (e) { msg.textContent = "Erro ao gerar o HTML: " + e; if (aba) aba.close(); })
       .finally(function () { botao.disabled = false; });
   }
-  window.abrirResumoAcoes = function () {
+  // codigosRestricao (pedido do usuário em 20/11/2026): quando o overlay é
+  // aberto pelo botão "AÇÕES EM MONITORAMENTO" do dash, chega aqui com os
+  // "Código" do recorte atual da grade #grade-mon do painel (ver
+  // resumo_acoes_codigos_do_recorte em "CGAPE - BALANÇO PAC.py") — o
+  // overlay abre já restrito a esse recorte, e o usuário ainda pode filtrar
+  // mais à vontade por cima dele, sem perdê-lo (não entra na persistência
+  // entre sessões — ver raSalvarFiltros). Sem esse argumento (reabertura
+  // via pywebviewready, ou outro gatilho), mantém o comportamento de
+  // sempre: abre com os filtros salvos do próprio overlay.
+  window.abrirResumoAcoes = function (codigosRestricao) {
+    if (codigosRestricao) raFiltros._codigos = codigosRestricao;
+    else delete raFiltros._codigos;
     overlay.classList.add("aberto");
     overlay.setAttribute("aria-hidden", "false");
     raConsultar();

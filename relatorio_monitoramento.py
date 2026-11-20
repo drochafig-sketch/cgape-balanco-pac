@@ -471,6 +471,22 @@ def filtrar(filtros):
     return df
 
 
+def codigos_do_recorte(filtros):
+    """Códigos ("Código" da planilha) das ações do recorte definido pelos
+    filtros da grade MONITORAMENTO — pedido do usuário em 20/11/2026: fonte
+    única de filtros do Monitoramento pro PDF, pro HTML e pro PPTX da
+    Apresentação CGAPE (antes, o HTML/PPTX usavam os filtros do overlay
+    "Ações em Monitoramento", resumo_acoes.py, divergentes dos do PDF).
+    Usado por resumo_acoes.py (chave "_codigos" de resumo_acoes_dados) pra
+    restringir a MESMA base de Ações do Cronograma a este recorte exato,
+    sem duplicar a regra de filtro. None = planilha indisponível (base()
+    devolveu None); [] = recorte vazio de verdade."""
+    df = filtrar(filtros)
+    if df is None:
+        return None
+    return df["CODIGO"].tolist()
+
+
 # ----------------------------------------------------------------------------
 # CONTROLE DE QUALIDADE (coluna "Dias em Atraso (De Marco)" da base)
 # ----------------------------------------------------------------------------
