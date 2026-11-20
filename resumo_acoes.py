@@ -635,7 +635,12 @@ def resumo_acoes_dados(caminho, filtros=None):
     # sem filtro: todos os eixos, mesmo sem ação; com filtro, só os que têm
     # ação; sempre do maior para o menor investimento
     por_eixo = df.groupby("_eixo")["_valor"].sum()
-    filtrado = bool(sel or sel_datas or top30 or busca_geral or busca_cols)
+    # "_descricao": texto dos filtros do PAINEL que viraram "_codigos" (ver
+    # relatorio_monitoramento.descrever_filtros) — sem ele, um recorte vindo
+    # do painel aparecia como "Base completa." — pedido do usuário em
+    # 20/11/2026.
+    descricao_externa = str(filtros.get("_descricao") or "").strip()
+    filtrado = bool(sel or sel_datas or top30 or busca_geral or busca_cols or descricao_externa)
     eixos = sorted(set(df["_eixo"]) if filtrado
                    else set(RA_EIXOS) | set(df["_eixo"]),
                    key=lambda e: (-por_eixo.get(e, 0), e))
@@ -725,7 +730,8 @@ def resumo_acoes_dados(caminho, filtros=None):
 
         def resumo_filtros(limite):
             return "; ".join(
-                ([RA_TOP30_FONTE] if top30 else [])
+                ([descricao_externa] if descricao_externa else [])
+                + ([RA_TOP30_FONTE] if top30 else [])
                 + [f"{rotulo}: " + (", ".join(_ra_sem_num(v) if c == "status" else v for v in sel[c])
                                     if len(sel[c]) <= limite
                                   else f"{len(sel[c])} selecionado(s)")
@@ -2820,7 +2826,24 @@ def montar_partes_html_monitoramento(caminho_base, dados, filtros=None):
         # "ra-oc-dados--monra" do recorte visível (data-oc).
         "oc_html": fundo_oc,
         "recorte": p["recorte_txt"],
+        # Data da planilha "Ações do Cronograma" pro cabeçalho da página
+        # MON_ACOES (gerar_pptx_pac._slide_monitoramento troca por ela a data
+        # do PAC) — a chave era lida lá mas nunca preenchida aqui, e a página
+        # saía com a data/hora da planilha do PAC. Mesma fonte do cartão da
+        # tela HOME (data_atualizacao_base) — corrigido a pedido do usuário em
+        # 20/11/2026.
+        "data_atualizacao_texto": _texto_data_apresentacao(data_atualizacao_base()),
+        # Rodapé da mesma página: planilha e mês do MONITORAMENTO, não os do PAC.
+        "fonte_texto": os.path.splitext(RA_PLANILHA)[0],
+        "posicao_texto": (f"{data_atualizacao_base():%m/%Y}" if data_atualizacao_base() else ""),
     }
+
+
+def _texto_data_apresentacao(data):
+    # Mesmo formato de gerar_pptx_pac.texto_base_atualizada().
+    if data is None:
+        return ""
+    return f"Base atualizada em: {data:%d/%m/%Y} às {data:%Hh%M}"
 
 
 # ---- API (chamada pelo painel) ----------------------------------------------
@@ -4082,6 +4105,12 @@ HTML_JANELA = r"""
     // ficava no popup FILTROS daqui) — pedido do usuário em 20/11/2026.
     if (opcoes && opcoes.entregue) raFiltros.entregue = true;
     else delete raFiltros.entregue;
+    // opcoes.descricao: texto dos filtros do painel (o recorte chega só
+    // como códigos) — vai como "_descricao" pro topo/nota do dash e do
+    // GERAR HTML, em vez de "Base completa." — pedido do usuário em
+    // 20/11/2026. Não é salvo entre sessões (ver raTirarMovidos).
+    if (opcoes && opcoes.descricao) raFiltros._descricao = opcoes.descricao;
+    else delete raFiltros._descricao;
     overlay.classList.add("aberto");
     overlay.setAttribute("aria-hidden", "false");
     // Botão flutuante do painel de filtros (definido no painel): acerta a

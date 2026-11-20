@@ -595,6 +595,37 @@ def codigos_do_recorte(filtros):
     return df["CODIGO"].tolist()
 
 
+def descrever_filtros(filtros, incluir_top30=True):
+    """Texto curto dos filtros da grade MONITORAMENTO ("Eixo: A, B; Entrega
+    da Obra: 01/01/2023 a 31/12/2026; ...") — "" sem filtro. Usado pelo dash
+    e pela Apresentação CGAPE (resumo_acoes.py, chave "_descricao"), que
+    recebem o recorte só como lista de códigos e mostravam "Base completa."
+    mesmo filtrados — pedido do usuário em 20/11/2026. incluir_top30=False
+    quando o "30 maiores" é aplicado à parte (resumo_acoes já o descreve)."""
+    filtros = filtros or {}
+    partes = []
+    for chave, _col, titulo in CAMPOS_FILTRO:
+        valores = filtros.get(chave) or []
+        if valores:
+            partes.append(f"{titulo}: " + (", ".join(valores) if len(valores) <= 10
+                                           else f"{len(valores)} selecionados"))
+
+    def _br(iso):
+        d = pd.to_datetime(iso or None, errors="coerce")
+        return None if pd.isna(d) else f"{d:%d/%m/%Y}"
+
+    for chave, _col, rotulo in CAMPOS_DATA:
+        faixa = filtros.get("D_" + chave) or {}
+        de, ate = _br(faixa.get("de")), _br(faixa.get("ate"))
+        if de and ate:
+            partes.append(f"{rotulo}: {de} a {ate}")
+        elif de or ate:
+            partes.append(f"{rotulo}: " + (f"a partir de {de}" if de else f"até {ate}"))
+    if incluir_top30 and filtros.get("TOP30"):
+        partes.append("30 maiores municípios (população)")
+    return "; ".join(partes)
+
+
 # ----------------------------------------------------------------------------
 # CONTROLE DE QUALIDADE (coluna "Dias em Atraso (De Marco)" da base)
 # ----------------------------------------------------------------------------

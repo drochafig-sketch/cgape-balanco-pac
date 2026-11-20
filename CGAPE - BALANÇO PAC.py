@@ -11214,8 +11214,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .paginas-formato {
     margin: 14px 22px 0 22px;
   }
+  /* Rótulo sempre numa linha só: com "flex: 1" os três botões dividiam a
+     largura do texto mais curto e "APRESENTAÇÃO HTML/PPTX" quebrava em duas
+     linhas, cortadas pela borda da chave — corrigido a pedido do usuário em
+     20/11/2026. Agora cada botão tem no mínimo a largura do próprio texto
+     (a chave cresce até caber os três). */
   .paginas-formato button {
-    flex: 1;
+    flex: 1 0 auto;
+    white-space: nowrap;
   }
   .paginas-aviso-formato {
     margin: 10px 22px 0 22px;
@@ -17490,8 +17496,19 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       // MONITORAMENTO (a chave saiu do popup de lá e veio pra cá).
       // entregue: chave STATUS ENTREGUE, também movida pra cá.
       var opcoesRa = { top30: MON.top30, entregue: MON.entregue };
-      chamarAPI("resumo_acoes_codigos_do_recorte", monFiltrosAtuais()).then(function (r) {
+      // O recorte mandado ao dash vai SEM o TOP30: quem aplica os 30 maiores
+      // lá é o próprio resumo_acoes.py (opcoesRa.top30), que precisa do
+      // recorte inteiro pra montar o "VALOR TOTAL · ESTADO" (que não segue
+      // essa chave) ao lado do "VALOR TOTAL · 30 MAIORES". Com o TOP30 já
+      // aplicado aqui, os dois cards saíam iguais — corrigido a pedido do
+      // usuário em 20/11/2026 ("tem alguma coisa errada nos 30 maiores").
+      // O relatório (PDF/HTML/PPTX) continua recebendo o TOP30 normalmente
+      // via montarFiltrosAtuais().
+      var filtrosRecorte = monFiltrosAtuais();
+      delete filtrosRecorte.TOP30;
+      chamarAPI("resumo_acoes_codigos_do_recorte", filtrosRecorte).then(function (r) {
         if (pedido !== basePedidoMon) return;
+        opcoesRa.descricao = r && r.ok ? (r.descricao || "") : "";
         window.abrirResumoAcoes(r && r.ok ? r.codigos : null, opcoesRa);
       }).catch(function () {
         if (pedido === basePedidoMon) window.abrirResumoAcoes(null, opcoesRa);
@@ -18437,8 +18454,12 @@ def _api_resumo_acoes_codigos_do_recorte(filtros_mon):
     # "_codigos" em resumo_acoes.resumo_acoes_dados) e o usuário ainda pode
     # filtrar mais à vontade dentro do overlay, sem perder essa base.
     try:
-        codigos = _modulo_monitoramento().codigos_do_recorte(filtros_mon)
-        return {"ok": True, "codigos": codigos}
+        mon = _modulo_monitoramento()
+        codigos = mon.codigos_do_recorte(filtros_mon)
+        # "descricao": texto desses filtros pro topo do dash/HTML (ver
+        # resumo_acoes "_descricao") — pedido do usuário em 20/11/2026.
+        return {"ok": True, "codigos": codigos,
+                "descricao": mon.descrever_filtros(filtros_mon, incluir_top30=False)}
     except Exception as erro:
         import traceback
         traceback.print_exc()
@@ -18544,21 +18565,32 @@ def _filtros_mon_para_apresentacao(filtros):
     # divergir do PDF. "_codigos" (ver resumo_acoes.resumo_acoes_dados)
     # restringe a base do Monitoramento às MESMAS ações que
     # relatorio_monitoramento.filtrar() devolveria para este recorte — sem
-    # duplicar a regra de filtro em dois lugares. NÃO liga "top30": esse
-    # filtro restringe o quadro Status × Eixo/Objeto só às 30 maiores
-    # cidades (ver resumo_acoes_dados), o que faria o HTML mostrar uma
-    # quantidade diferente da seção MONITORAMENTO do PDF (que não tem esse
-    # conceito) pro MESMO recorte — bug encontrado na validação em
-    # 20/11/2026. Sem "top30", a seção dos 30 maiores municípios (mapa,
-    # gráfico, cartões) não aparece nas páginas MON_* da apresentação; o
-    # quadro resumo mostra o recorte inteiro, batendo com o PDF.
+    # duplicar a regra de filtro em dois lugares.
+    # "30 MAIORES MUNICÍPIOS" (TOP30): a chave agora mora no painel e o PDF
+    # também a aplica (relatorio_monitoramento.filtrar), então a antiga trava
+    # que nunca ligava "top30" aqui caiu — pedido do usuário em 20/11/2026
+    # ("quando ativado precisa mostrar o mapa e o gráfico com a análise de
+    # necessidade"). Os códigos vão SEM o TOP30 e o "top30" é ligado à parte:
+    # quem corta os 30 maiores é o próprio resumo_acoes.py, que precisa do
+    # recorte inteiro pro card "VALOR TOTAL · ESTADO" e liga o mapa, o
+    # gráfico do Índice de Necessidade e os cartões; o total dos 30 maiores,
+    # os quadros e a lista seguem a chave — batendo com o PDF. "_descricao":
+    # texto dos filtros do painel pro topo da página (antes saía "Base
+    # completa." mesmo filtrado).
     filtros_mon_grade = (filtros or {}).get("MONITORAMENTO")
     if filtros_mon_grade is None:
         return None
-    codigos = _modulo_monitoramento().codigos_do_recorte(filtros_mon_grade)
+    filtros_sem_top30 = dict(filtros_mon_grade)
+    top30 = bool(filtros_sem_top30.pop("TOP30", None))
+    mon = _modulo_monitoramento()
+    codigos = mon.codigos_do_recorte(filtros_sem_top30)
     if codigos is None:
         return None
-    return {"_codigos": codigos}
+    saida = {"_codigos": codigos,
+             "_descricao": mon.descrever_filtros(filtros_sem_top30, incluir_top30=False)}
+    if top30:
+        saida["top30"] = True
+    return saida
 
 
 def _construir_html_analise_financeira_bytes(filtros=None, secoes=None, filtros_mon=None):

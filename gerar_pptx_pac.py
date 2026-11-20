@@ -3278,6 +3278,15 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         texto_mon = partes_monitoramento.get("data_atualizacao_texto") or ""
         if texto_pac and texto_mon:
             html = html.replace(_html_esc(texto_pac), _html_esc(texto_mon), 1)
+        # Rodapé "Fonte: <planilha> · posição em MM/AAAA": da planilha Ações
+        # do Cronograma, não da do PAC (antes saía a do PAC nesta página
+        # também) — pedido do usuário em 20/11/2026, junto com a data acima.
+        fonte_mon = partes_monitoramento.get("fonte_texto") or ""
+        posicao_mon = partes_monitoramento.get("posicao_texto") or ""
+        if fonte_mon and posicao_mon:
+            html = re.sub(r"<span>Fonte: [^<]*? · posição em [0-9/]+",
+                          lambda _m: f"<span>Fonte: {_html_esc(fonte_mon)} · posição em {_html_esc(posicao_mon)}",
+                          html, count=1)
         return [html]
 
     total_investimento = m["total_investimento"]
