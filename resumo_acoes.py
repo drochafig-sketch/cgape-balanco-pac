@@ -3021,6 +3021,24 @@ HTML_JANELA = r"""
       <h2>AÇÕES EM MONITORAMENTO
         <small>base Ações do Cronograma<span id="raAtualizado"></span></small></h2>
       <div class="ra-botoes">
+        <!-- Chave PAC | MONITORAMENTO (troca a base ativa — ver trocarBase()
+             em "CGAPE - BALANÇO PAC.py"): PAC e MONITORAMENTO viram painéis
+             irmãos, esta janela passa a SER o dash do MONITORAMENTO (não
+             mais um overlay por cima do dash do PAC) — pedido do usuário em
+             20/11/2026. Configurada via window.configurarSeletorSecao
+             (definida lá, chamada aqui embaixo porque este HTML só existe
+             depois daquele <script>). -->
+        <div class="seletor-secao troca-base" data-tela="dash" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
+          <button type="button" data-secao="PAC" role="tab" aria-selected="false" tabindex="-1">PAC<span class="contagem-base"></span></button>
+          <button type="button" class="ativo" data-secao="MON" role="tab" aria-selected="true" tabindex="0">MONITORAMENTO<span class="contagem-base"></span></button>
+        </div>
+        <button type="button" class="btn-inicio" id="raLimparBase" title="Limpar filtros (MONITORAMENTO) — Shift+clique limpa PAC e MONITORAMENTO">LIMPAR FILTROS</button>
+        <!-- "PAINEL DE FILTROS" (não só "FILTROS"): esta janela já tem um
+             botão FILTROS próprio (#raFiltrosBtn, datas/busca rápida deste
+             overlay) — este aqui abre o painel #app/#grade-mon compartilhado
+             com o PAC — pedido do usuário em 20/11/2026. -->
+        <button type="button" class="btn-inicio" id="raFiltrosPainel" title="Abrir o painel de filtros completo, na grade do MONITORAMENTO">PAINEL DE FILTROS</button>
+        <button type="button" class="btn-inicio" id="ra-gerar-relatorio" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados (o mesmo relatório do PAC, que já traz as duas bases)">GERAR RELATÓRIO</button>
         <button type="button" class="ra-inicio" id="raInicio" title="Voltar à tela inicial">← Início</button>
         <div class="ra-busca-geral">
           <input type="search" id="raBuscaGeral" autocomplete="off"
@@ -3038,7 +3056,6 @@ HTML_JANELA = r"""
         </div>
         <button type="button" id="raHtml" title="Gera uma página HTML com o gráfico de investimento dos 30 maiores municípios por população, a avaliação da carteira e o quadro Status × Eixo do recorte atual">GERAR HTML</button>
         <button type="button" id="raIncluirApresentacao" title="Abre a Apresentação CGAPE (HTML) já com as páginas do Monitoramento marcadas — você escolhe quais páginas do PAC entram junto">INCLUIR NA APRESENTAÇÃO</button>
-        <button type="button" class="ra-fechar" id="raFechar">FECHAR</button>
       </div>
     </div>
     <!-- Filtros/datas numa janela suspensa, aberta pelo botão FILTROS que
@@ -3059,13 +3076,20 @@ HTML_JANELA = r"""
   </div>
 </div>
 <style>
-  #ra-overlay { display:none; position:fixed; inset:0; z-index:200;
+  /* z-index 70 (era 200): este overlay virou o dash irmão do PAC
+     (#preview-overlay, também 70), nunca mais um modal por cima dele — o
+     painel de filtros (#app, z-index 85) precisa poder cobrir os dois —
+     pedido do usuário em 20/11/2026. */
+  #ra-overlay { display:none; position:fixed; inset:0; z-index:70;
     background:var(--cor-fundo); color:var(--cor-texto-primario);
     font-family:var(--fonte); }
   #ra-overlay.aberto { display:flex; }
   #ra-janela { display:flex; flex-direction:column; width:100%; height:100%; }
+  /* Borda teal -> --cor-acento-secundario (identidade_visual.TEAL): cor de
+     destaque discreta da base MONITORAMENTO (TAREFA B), já que este
+     cabeçalho só existe pra ela — pedido do usuário em 20/11/2026. */
   .ra-cabecalho { display:flex; justify-content:space-between; align-items:center;
-    gap:12px; padding:10px 18px; border-bottom:2px solid var(--cor-acento-teal);
+    gap:12px; padding:10px 18px; border-bottom:2px solid var(--cor-acento-secundario);
     background:var(--cor-card); }
   .ra-cabecalho h2 { margin:0; font-size:16px; letter-spacing:.5px; }
   .ra-cabecalho h2 small { font-weight:400; font-size:12px; margin-left:8px;
@@ -3080,6 +3104,19 @@ HTML_JANELA = r"""
     font-family:inherit; }
   .ra-botoes button:hover, #raLimpar:hover, .ra-mais:hover {
     border-color:var(--cor-acento-teal); color:var(--cor-acento-teal-texto); }
+  /* A chave PAC | MONITORAMENTO (.seletor-secao.troca-base, definida em
+     "CGAPE - BALANÇO PAC.py") precisa continuar com a cara de pílula de lá
+     mesmo dentro de ".ra-botoes button" acima — essa regra vem depois no
+     documento (este <style> é injetado no fim do body) e ganharia o empate
+     de especificidade — pedido do usuário em 20/11/2026. */
+  .ra-botoes .seletor-secao.troca-base button {
+    background:transparent; border:none; border-radius:0; padding:6px 16px;
+    color:var(--cor-texto-primario); font-size:12px; font-weight:700;
+    letter-spacing:0.04em;
+  }
+  .ra-botoes .seletor-secao.troca-base button:hover { border-color:transparent; color:var(--cor-texto-primario); }
+  .ra-botoes .seletor-secao.troca-base button.ativo { background:var(--cor-acento-secundario); color:#fff; }
+  .ra-botoes .seletor-secao.troca-base .contagem-base { font-weight:400; opacity:0.85; }
   /* Texto branco — var(--cor-acento-teal) virou um azul escuro saturado na
      identidade única do projeto; #10251F (quase preto) não tinha mais
      contraste nenhum em cima dele (fazia sentido só com o teal claro
@@ -3478,9 +3515,23 @@ HTML_JANELA = r"""
   // desta tela antes de clicar nele.
   var MON_RA_CHAVE_STORAGE = "monRaFiltros";
   var raFiltros = {};
+  // Prazo contratual, DATAS E PRAZOS e "30 MAIORES MUNICÍPIOS" saíram deste
+  // popup e foram pro painel de filtros compartilhado (#grade-mon, ver
+  // relatorio_monitoramento.CAMPOS_DATA) — pedido do usuário em 20/11/2026.
+  // O recorte de lá chega aqui pelo "_codigos" e o "30 maiores" pela opção
+  // top30 de window.abrirResumoAcoes (que ainda liga as seções próprias dos
+  // 30 maiores desta janela). Sobras dessas chaves salvas numa sessão
+  // antiga filtrariam sem nenhum controle na tela pra desfazer — por isso
+  // saem ao carregar e nunca são salvas.
+  function raTirarMovidos(obj) {
+    Object.keys(obj).forEach(function (c) {
+      if (c === "prazo" || c === "top30" || c.indexOf("d_") === 0) delete obj[c];
+    });
+    return obj;
+  }
   try {
     var raFiltrosSalvos = window.localStorage && localStorage.getItem(MON_RA_CHAVE_STORAGE);
-    if (raFiltrosSalvos) raFiltros = JSON.parse(raFiltrosSalvos) || {};
+    if (raFiltrosSalvos) raFiltros = raTirarMovidos(JSON.parse(raFiltrosSalvos) || {});
   } catch (e) { /* localStorage indisponível (ex.: aba anônima) — segue com base completa */ }
   function raSalvarFiltros() {
     // "_codigos" (ver window.abrirResumoAcoes) é o recorte da grade
@@ -3491,11 +3542,8 @@ HTML_JANELA = r"""
     // 20/11/2026.
     try {
       if (!window.localStorage) return;
-      var paraSalvar = raFiltros;
-      if ("_codigos" in raFiltros) {
-        paraSalvar = Object.assign({}, raFiltros);
-        delete paraSalvar._codigos;
-      }
+      var paraSalvar = raTirarMovidos(Object.assign({}, raFiltros));
+      delete paraSalvar._codigos;
       localStorage.setItem(MON_RA_CHAVE_STORAGE, JSON.stringify(paraSalvar));
     } catch (e) { /* ignora — não é crítico, só perde a persistência entre telas */ }
   }
@@ -3526,9 +3574,13 @@ HTML_JANELA = r"""
     if (nova.length) raFiltros[chave] = nova; else delete raFiltros[chave];
     raConsultar();
   }
-  // "entregue" é configuração do quadro, não filtro: o LIMPAR não mexe nele
+  // "entregue" é configuração do quadro, não filtro: o LIMPAR não mexe nele.
+  // "_codigos" e "top30" vêm do painel de filtros compartilhado (ver
+  // raTirarMovidos) — também ficam de fora daqui.
   function raChavesFiltro() {
-    return Object.keys(raFiltros).filter(function (c) { return c !== "entregue" && c !== "_codigos"; });
+    return Object.keys(raFiltros).filter(function (c) {
+      return c !== "entregue" && c !== "_codigos" && c !== "top30";
+    });
   }
   function raLimparFiltros() {
     raChavesFiltro().forEach(function (c) { delete raFiltros[c]; });
@@ -3666,12 +3718,14 @@ HTML_JANELA = r"""
   }
   function raDesenharFiltros(lista, datas) {
     var caixa = document.getElementById("raFiltros");
-    datas = datas || [];
+    // Prazo contratual, DATAS E PRAZOS e "30 MAIORES MUNICÍPIOS" agora
+    // ficam no painel de filtros compartilhado (ver raTirarMovidos) —
+    // pedido do usuário em 20/11/2026. O backend continua mandando os
+    // dois (são usados no HTML autônomo/.pptx), só não aparecem aqui.
+    lista = (lista || []).filter(function (f) { return f.chave !== "prazo"; });
+    datas = [];
     if (!caixa.children.length) {
       caixa.innerHTML = '<div class="ra-filtros-topo"><b>FILTROS</b>' +
-        '<label class="ra-top30" id="raTop30Rotulo"><input type="checkbox" id="raTop30">' +
-        '<span class="ra-top30-trilho"><span></span></span>30 MAIORES MUNICÍPIOS ' +
-        '<small>(população IBGE 2026)</small></label>' +
         '<label class="ra-top30" id="raEntregueRotulo" title="Obras Concluídas e Obras ' +
         'Inauguradas somadas num só status"><input type="checkbox" id="raEntregue">' +
         '<span class="ra-top30-trilho"><span></span></span>STATUS ENTREGUE ' +
@@ -3682,11 +3736,6 @@ HTML_JANELA = r"""
         'preenchido, ações sem essa data ficam de fora)</small></div>' +
         '<div class="ra-datas-grade"></div>';
       caixa.querySelector("#raLimpar").onclick = raLimparFiltros;
-      caixa.querySelector("#raTop30").onchange = function (e) {
-        e.stopPropagation();
-        if (e.target.checked) raFiltros.top30 = true; else delete raFiltros.top30;
-        raConsultar();
-      };
       caixa.querySelector("#raEntregue").onchange = function (e) {
         e.stopPropagation();
         if (e.target.checked) raFiltros.entregue = true; else delete raFiltros.entregue;
@@ -3705,15 +3754,13 @@ HTML_JANELA = r"""
       var bloco = caixa.querySelector('.ra-data[data-ra="' + f.chave + '"]');
       if (bloco) raAtualizarData(bloco, f);
     });
-    document.getElementById("raTop30").checked = !!raFiltros.top30;
-    document.getElementById("raTop30Rotulo").classList.toggle("ativo", !!raFiltros.top30);
     document.getElementById("raEntregue").checked = !!raFiltros.entregue;
     document.getElementById("raEntregueRotulo").classList.toggle("ativo", !!raFiltros.entregue);
     document.getElementById("raLimpar").style.visibility =
       raChavesFiltro().length ? "visible" : "hidden";
     // quantos filtros em uso, no botão FILTROS (busca geral e buscas das
     // colunas ficam fora: elas têm campo próprio na tela)
-    var qtdF = Object.keys(raFiltros).filter(function (c) { return c !== "busca" && c !== "bcol" && c !== "_codigos"; }).length;
+    var qtdF = Object.keys(raFiltros).filter(function (c) { return c !== "busca" && c !== "bcol" && c !== "_codigos" && c !== "top30"; }).length;
     var marca = document.getElementById("raFiltrosQtd");
     if (marca) { marca.textContent = qtdF || ""; marca.classList.toggle("tem", qtdF > 0); }
     raSincronizarBuscaGeral();
@@ -4309,18 +4356,28 @@ HTML_JANELA = r"""
   // entre sessões — ver raSalvarFiltros). Sem esse argumento (reabertura
   // via pywebviewready, ou outro gatilho), mantém o comportamento de
   // sempre: abre com os filtros salvos do próprio overlay.
-  window.abrirResumoAcoes = function (codigosRestricao) {
+  // opcoes.top30: chave "30 MAIORES MUNICÍPIOS" do painel de filtros
+  // compartilhado — liga as seções próprias dos 30 maiores desta janela
+  // (gráfico, mapa, cartões), que antes eram ligadas pela chave do popup
+  // FILTROS daqui — pedido do usuário em 20/11/2026.
+  window.abrirResumoAcoes = function (codigosRestricao, opcoes) {
     if (codigosRestricao) raFiltros._codigos = codigosRestricao;
     else delete raFiltros._codigos;
+    if (opcoes && opcoes.top30) raFiltros.top30 = true;
+    else delete raFiltros.top30;
     overlay.classList.add("aberto");
     overlay.setAttribute("aria-hidden", "false");
     raConsultar();
   };
+  // Botão FECHAR removido (pedido do usuário em 20/11/2026): esta janela é
+  // agora o dash irmão do PAC, não um modal por cima dele — pra sair, a
+  // chave PAC | MONITORAMENTO do cabeçalho ou "← Início". fechar() continua
+  // existindo só pro Esc (ver mais abaixo, "senão fechar()"), agora voltando
+  // pra base PAC pela mesma trocarBase() da chave.
   function fechar() {
-    overlay.classList.remove("aberto");
-    overlay.setAttribute("aria-hidden", "true");
+    if (window.trocarBase) window.trocarBase("PAC", { tela: "dash" });
+    else { overlay.classList.remove("aberto"); overlay.setAttribute("aria-hidden", "true"); }
   }
-  document.getElementById("raFechar").onclick = fechar;
   document.getElementById("raGerar").onclick = raGerar;
   // Menu de grade (CONDER / Qualidade / Gerar apresentação): abre/fecha no
   // ícone, fecha ao escolher um item ou ao clicar fora.
@@ -4404,6 +4461,31 @@ HTML_JANELA = r"""
   // 14/11/2026.
   var btnInicio = document.getElementById("raInicio");
   if (btnInicio && window.irParaHome) btnInicio.onclick = window.irParaHome;
+  // Chave PAC | MONITORAMENTO, LIMPAR FILTROS, FILTROS e GERAR RELATÓRIO
+  // deste cabeçalho: funções definidas no <script> do painel (ver "CGAPE -
+  // BALANÇO PAC.py"), que já rodou antes deste HTML existir — pedido do
+  // usuário em 20/11/2026 (PAC e MONITORAMENTO viram painéis irmãos).
+  var raSeletorBase = document.querySelector("#ra-janela .seletor-secao.troca-base");
+  if (raSeletorBase && window.configurarSeletorSecao) window.configurarSeletorSecao(raSeletorBase);
+  var btnRaLimparBase = document.getElementById("raLimparBase");
+  if (btnRaLimparBase) {
+    btnRaLimparBase.onclick = function (ev) {
+      if (window.limparFiltrosBaseAtiva) window.limparFiltrosBaseAtiva(ev && ev.shiftKey);
+      if (window.mostrarDashDaBaseAtiva) window.mostrarDashDaBaseAtiva();
+    };
+  }
+  var btnRaFiltrosPainel = document.getElementById("raFiltrosPainel");
+  if (btnRaFiltrosPainel) {
+    btnRaFiltrosPainel.onclick = function () {
+      if (window.trocarBase) window.trocarBase("MON", { tela: "filtros" });
+    };
+  }
+  var btnRaGerarRelatorio = document.getElementById("ra-gerar-relatorio");
+  if (btnRaGerarRelatorio) {
+    btnRaGerarRelatorio.onclick = function () {
+      if (window.gerarSaida) window.gerarSaida();
+    };
+  }
   overlay.addEventListener("click", function () {
     overlay.querySelectorAll(".ra-ms.aberto").forEach(function (b) { b.classList.remove("aberto"); });
   });

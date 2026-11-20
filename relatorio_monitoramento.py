@@ -42,6 +42,18 @@ def configurar(modulo):
     pac = modulo
 
 
+def _modulo_resumo_acoes():
+    # Lista fixa dos 30 maiores municípios por população (RA_TOP30/
+    # RA_TOP30_CHAVES) e o normalizador de nome (_chave_municipio) usados
+    # pelo filtro "30 MAIORES MUNICÍPIOS" abaixo — fonte única com o mesmo
+    # filtro de resumo_acoes.py, pra nunca divergir (mesmo padrão de
+    # importação tardia dos outros satélites: nunca no topo do módulo,
+    # import só quando precisa, pra evitar import circular) — pedido do
+    # usuário em 20/11/2026.
+    import resumo_acoes
+    return resumo_acoes
+
+
 def _modulo_hierarquia_secretaria():
     # Hierarquia SECRETARIA -> EXECUTOR desta base (ver hierarquia_secretaria.py)
     # — mesmo padrão de satélite independente usado pelos outros módulos.
@@ -120,6 +132,27 @@ CAMPOS_FILTRO = [
     ("ESCOPO", "ESCOPO", "Escopo"),
     ("TERRITORIO", "TERRITORIO", "Território de Identidade"),
     ("MUNICIPIO", "MUNICIPIO", "Município"),
+    ("PRAZO_CONTRATUAL", "PRAZO_CONTRATUAL", "Prazo Contratual"),
+]
+
+# Filtros de data (intervalo de/até) e o filtro "30 MAIORES MUNICÍPIOS" —
+# chave/coluna/rótulo, igual ao padrão de CAMPOS_FILTRO. Movidos do popup
+# FILTROS do dash do MONITORAMENTO (resumo_acoes.py, RA_DATAS) pro painel
+# compartilhado #grade-mon, única fonte de filtros do MONITORAMENTO pro
+# PDF/HTML/PPTX e pro próprio dash — pedido do usuário em 20/11/2026. A
+# chave "STATUS ENTREGUE" do popup NÃO entra aqui: lá ela não filtra nada
+# (só reagrupa Concluída+Inaugurada num status só, pros quadros do próprio
+# resumo_acoes.py — ver _ra_juntar_entregues), então não tem o que mover.
+CAMPOS_DATA = [
+    ("atualizacao", "DT_ATUALIZACAO", "Última Atualização"),
+    ("estudos", "DT_ESTUDOS", "Conclusão dos Estudos"),
+    ("projeto", "DT_PROJETO", "Conclusão do Projeto"),
+    ("aviso", "AVISO_LICITACAO", "Aviso de Licitação"),
+    ("licitacao", "DT_LICITACAO_CONTRATACAO", "Licitação / Contratação"),
+    ("os", "DT_ORDEM_SERVICO", "Ordem de Serviço"),
+    ("entrega", "ENTREGA", "Entrega da Obra"),
+    ("equipamentos", "DT_EQUIPAMENTOS", "Instalação de Equipamentos"),
+    ("funcionalidade", "DT_FUNCIONALIDADE", "Funcionalidade"),
 ]
 
 # Colunas disponíveis no detalhamento: (rótulo, peso de largura, alinhamento)
@@ -370,6 +403,39 @@ def ler_base(caminho=None):
         lambda a: f"{int(a)}" if pd.notna(a) else SEM_PRAZO)
     out["PRAZO_MES"] = out["ENTREGA"].dt.strftime("%Y-%m").fillna("")
 
+    # Prazo Contratual e as demais datas/prazos — movidos do popup FILTROS
+    # do dash do MONITORAMENTO (resumo_acoes.py, RA_FILTROS/RA_DATAS) pro
+    # painel compartilhado (CAMPOS_FILTRO/CAMPOS_DATA acima) — pedido do
+    # usuário em 20/11/2026. Lidas com o MESMO conversor de resumo_acoes.py
+    # (_ra_data): algumas colunas (ex.: Última Atualização) vêm como data
+    # do Excel e não como texto "dd/mm/aaaa", e o "%d/%m/%Y" fixo de
+    # ENTREGA/AVISO_LICITACAO acima perderia todas elas. Coluna ausente vira
+    # tudo vazio (mesma cautela de resumo_acoes.py, "if coluna in
+    # df.columns").
+    ra = _modulo_resumo_acoes()
+
+    def _data_coluna(nome_coluna):
+        if nome_coluna not in df.columns:
+            return pd.Series(pd.NaT, index=df.index)
+        return pd.to_datetime(df[nome_coluna].map(ra._ra_data), errors="coerce")
+
+    out["PRAZO_CONTRATUAL"] = (_com_padrao(df["Prazo Contratual"])
+                               if "Prazo Contratual" in df.columns
+                               else SEM_INFO)
+    out["DT_ATUALIZACAO"] = _data_coluna("Última Atualização")
+    out["DT_ESTUDOS"] = _data_coluna("Conclusão dos Estudos")
+    out["DT_PROJETO"] = _data_coluna("Conclusão do Projeto")
+    out["DT_LICITACAO_CONTRATACAO"] = _data_coluna("Licitação / Contratação")
+    out["DT_ORDEM_SERVICO"] = _data_coluna("Ordem de Serviço")
+    out["DT_EQUIPAMENTOS"] = _data_coluna("Instalação Equipamentos")
+    out["DT_FUNCIONALIDADE"] = _data_coluna("Funcionalidade")
+
+    # "30 MAIORES MUNICÍPIOS" — mesma lista fixa por população (IBGE) e
+    # normalizador de nome do filtro homônimo de resumo_acoes.py (ver
+    # _modulo_resumo_acoes acima), pra nunca divergir de qual recorte conta
+    # como "top 30" entre os dois.
+    out["TOP30"] = out["MUNICIPIO"].map(ra._chave_municipio).isin(ra.RA_TOP30_CHAVES)
+
     # Atraso já calculado na base ("42 dias"); vazio = sem atraso
     out["DIAS_ATRASO"] = pd.to_numeric(
         _texto(df["Dias em Atraso (De Marco)"]).str.extract(r"(-?\d+)")[0],
@@ -405,6 +471,13 @@ def _ordem_opcoes(chave, valores):
     if chave == "SITUACAO":
         return ([g for g in ORDEM_GRUPOS if g in valores]
                 + sorted(v for v in valores if v not in ORDEM_GRUPOS))
+    if chave == "PRAZO_CONTRATUAL":
+        # "2 Meses" antes de "10 Meses" (ordem numérica, não alfabética)
+        def _num(v):
+            m = re.match(r"\s*(\d+)", v)
+            return (v == SEM_INFO, int(m.group(1)) if m else float("inf"),
+                    normalizar(v))
+        return sorted(valores, key=_num)
     return sorted(valores, key=lambda v: (v == SEM_INFO, normalizar(v)))
 
 
@@ -437,12 +510,24 @@ def dados_painel():
                "opcoes": _ordem_opcoes(chave, df[coluna].unique().tolist())}
               for chave, coluna, titulo in CAMPOS_FILTRO]
     colunas_linha = [coluna for _c, coluna, _t in CAMPOS_FILTRO]
-    linhas = df[colunas_linha + ["PRAZO_ANO", "PRAZO_MES"]].copy()
+    linhas = df[colunas_linha + ["PRAZO_ANO", "PRAZO_MES", "TOP30"]].copy()
     linhas.columns = [c for c, _col, _t in CAMPOS_FILTRO] + [
-        "PRAZO_ANO", "PRAZO_MES"]
+        "PRAZO_ANO", "PRAZO_MES", "TOP30"]
+    linhas["TOP30"] = linhas["TOP30"].astype(bool)
+    # Datas em "AAAA-MM-DD" (ou "" sem data): no navegador a comparação de
+    # texto já é cronológica, e o <input type="date"> usa o mesmo formato.
+    datas = []
+    for chave, coluna, rotulo in CAMPOS_DATA:
+        serie = df[coluna]
+        linhas["D_" + chave] = serie.dt.strftime("%Y-%m-%d").fillna("").values
+        validas = serie.dropna()
+        datas.append({"chave": chave, "rotulo": rotulo,
+                      "min": f"{validas.min():%Y-%m-%d}" if len(validas) else "",
+                      "max": f"{validas.max():%Y-%m-%d}" if len(validas) else ""})
     return {
         "blocos": blocos,
         "linhas": linhas.to_dict("records"),
+        "datas": datas,
         "conclusao": _arvore_conclusao(df),
         "ordens": [{"chave": c, "rotulo": r} for c, r in OPCOES_ORDEM],
         "colunas": [{"chave": r, "padrao": r in COLUNAS_PADRAO}
@@ -468,6 +553,24 @@ def filtrar(filtros):
         anos = {v for v in conclusao if "-" not in v}
         meses = {v for v in conclusao if "-" in v}
         df = df[df["PRAZO_ANO"].isin(anos) | df["PRAZO_MES"].isin(meses)]
+    # Intervalos de data (chave "D_<chave>": {"de", "ate"} em AAAA-MM-DD):
+    # com um lado preenchido, ação sem essa data fica de fora — mesma regra
+    # de resumo_acoes.py (marca_datas) — pedido do usuário em 20/11/2026.
+    for chave, coluna, _r in CAMPOS_DATA:
+        faixa = filtros.get("D_" + chave) or {}
+        de = pd.to_datetime(faixa.get("de") or None, errors="coerce")
+        ate = pd.to_datetime(faixa.get("ate") or None, errors="coerce")
+        if pd.isna(de) and pd.isna(ate):
+            continue
+        d = df[coluna]
+        marca = d.notna()
+        if pd.notna(de):
+            marca &= d >= de
+        if pd.notna(ate):
+            marca &= d <= ate
+        df = df[marca]
+    if filtros.get("TOP30"):
+        df = df[df["TOP30"]]
     return df
 
 

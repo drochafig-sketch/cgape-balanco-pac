@@ -141,7 +141,14 @@
       "Bash(awk 'NR==7775,NR==9650' \"CGAPE - BALANÇO PAC.py\")",
       "Bash(curl -s -X POST http://127.0.0.1:5055/api/resumo_acoes_codigos_do_recorte -H \"Content-Type: application/json\" -d '[{}]')",
       "Bash(sort -t: -k2 -n -u)",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('CGAPE - BALANÇO PAC.py', encoding='utf-8'\\).read\\(\\)\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('CGAPE - BALANÇO PAC.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('CGAPE - BALANÇO PAC.py', doraise=True\\); py_compile.compile\\('resumo_acoes.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(python verificar_base_irmas.py)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name='python.exe'\")",
+      "Bash(python verificar_base_irmas2.py)",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('CGAPE - BALANÇO PAC.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(python shot_layout.py)",
+      "Bash(python verificar_datas_mon.py)"
     ]
   }
 }

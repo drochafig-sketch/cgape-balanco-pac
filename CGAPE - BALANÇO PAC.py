@@ -10092,6 +10092,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
        escuro); ficam iguais aos tokens de fundo/borda acima. */
     --cor-acento-teal-texto: var(--cor-acento-teal);
     --cor-acento-mint-texto: var(--cor-acento-mint);
+    /* Cor de destaque da base MONITORAMENTO na chave PAC | MONITORAMENTO
+       (ver .troca-base acima) — teal real de identidade_visual.TEAL
+       (#2F7F92), pra não inventar cor nova nem reaproveitar o azul que o
+       --cor-acento-teal já usa pra PAC — pedido do usuário em 20/11/2026. */
+    --cor-acento-secundario: #2F7F92;
     --raio-sm: 4px;
     --raio-md: 10px;
     --raio-lg: 14px;
@@ -10125,6 +10130,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     --cor-acento-gold-claro: #C9D6EA;
     --cor-acento-teal-texto: #7DBBF3;
     --cor-acento-mint-texto: #7DBBF3;
+    --cor-acento-secundario: #4FA7B8;
     --sombra-card: 0 4px 16px rgba(0, 0, 0, 0.45);
   }
 
@@ -10284,10 +10290,18 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     min-height: 0;
   }
 
-  /* --- Seletor de seção PAC | MONITORAMENTO ---
-     Cada seção tem a sua grade de filtros; a do MONITORAMENTO (#grade-mon)
-     usa os mesmos blocos da do PAC. Dashboard, busca, gerencial e
-     apresentação continuam só do PAC e saem do topo no MONITORAMENTO. */
+  /* --- Chave PAC | MONITORAMENTO (troca a BASE ativa) ---
+     PAC e MONITORAMENTO são painéis irmãos: cada um tem sua grade de
+     filtros (#grade / #grade-mon) e seu próprio dashboard (#preview-overlay
+     / #ra-overlay, este último injetado por resumo_acoes.py). A MESMA chave
+     (classe "troca-base", ver trocarBase() no JS) aparece no topo do painel
+     de filtros e no cabeçalho das duas telas de dashboard — pedido do
+     usuário em 20/11/2026 ("PAC e MONITORAMENTO viram dois painéis
+     IRMÃOS"). Cor de destaque discreta por base (token de
+     identidade_visual.py): PAC usa o azul de acento já existente
+     (--cor-acento-teal); MONITORAMENTO usa o teal real da identidade
+     (identidade_visual.TEAL = #2F7F92), que não era usado em nenhuma
+     variável CSS daqui ainda. */
   .seletor-secao {
     display: inline-flex;
     align-self: flex-start;
@@ -10295,6 +10309,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     border-radius: var(--raio-md);
     overflow: hidden;
   }
+  .seletor-secao.troca-base.chave-mon { border-color: var(--cor-acento-secundario); }
   .seletor-secao button {
     background: transparent;
     color: var(--cor-texto-primario);
@@ -10307,6 +10322,21 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     background: var(--cor-acento-teal);
     color: #fff;
   }
+  .seletor-secao.troca-base button[data-secao="MON"].ativo {
+    background: var(--cor-acento-secundario);
+  }
+  .seletor-secao.troca-base button:focus-visible {
+    outline: 2px solid var(--cor-acento-gold);
+    outline-offset: -2px;
+  }
+  .seletor-secao.troca-base .contagem-base { font-weight: 400; opacity: 0.85; }
+  /* Sublinhado discreto no título, PAC (padrão) ou MONITORAMENTO, nas três
+     telas (filtros, dash do PAC e dash do MONITORAMENTO). */
+  .topo-titulo-principal, .modal-titulo-principal {
+    border-bottom: 2px solid var(--cor-acento-teal);
+    padding-bottom: 2px;
+  }
+  body.secao-mon .topo-titulo-principal { border-bottom-color: var(--cor-acento-secundario); }
   #grade-mon {
     flex: 1;
     display: none;
@@ -10318,10 +10348,81 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   }
   body.secao-mon #grade { display: none; }
   body.secao-mon #grade-mon { display: grid; }
+  /* DATAS E PRAZOS + "30 MAIORES MUNICÍPIOS" no fim da grade do
+     MONITORAMENTO, linha inteira e altura do próprio conteúdo (as duas
+     linhas de blocos acima dividem o resto) — vieram do popup FILTROS do
+     dash do MONITORAMENTO (resumo_acoes.py), mesmo visual de lá — pedido do
+     usuário em 20/11/2026. */
+  #grade-mon:has(.mon-datas-bloco) {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+  .mon-datas-bloco {
+    grid-column: 1 / -1;
+    background: var(--cor-card);
+    border-radius: var(--raio-lg);
+    padding: 10px 14px 12px;
+  }
+  .mon-datas-cabecalho {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; font-weight: 700;
+    letter-spacing: .5px; color: var(--cor-texto-secundario);
+  }
+  .mon-datas-cabecalho small { font-weight: 400; letter-spacing: 0; }
+  .mon-top30 { position: relative; display: inline-flex; align-items: center; gap: 8px;
+    cursor: pointer; font-size: 12px; font-weight: 600; user-select: none; }
+  .mon-top30 small { font-weight: 400; color: var(--cor-texto-terciario); }
+  .mon-top30 input { position: absolute; opacity: 0; pointer-events: none; }
+  .mon-top30-trilho { position: relative; width: 32px; height: 18px; border-radius: 9px;
+    background: var(--cor-card-elevado); border: 1px solid var(--cor-texto-terciario);
+    transition: background .15s ease; flex: none; }
+  .mon-top30-trilho span { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--cor-texto-secundario); transition: transform .15s ease; }
+  .mon-top30.ativo { color: var(--cor-texto-primario); }
+  .mon-top30.ativo .mon-top30-trilho { background: var(--cor-acento-secundario);
+    border-color: var(--cor-acento-secundario); }
+  .mon-top30.ativo .mon-top30-trilho span { transform: translateX(14px); background: #fff; }
+  .mon-top30 input:focus-visible + .mon-top30-trilho { outline: 2px solid var(--cor-acento-secundario);
+    outline-offset: 2px; }
+  .mon-datas-grade { display: grid; align-items: start; gap: 8px 10px;
+    grid-template-columns: repeat(9, minmax(0, 1fr)); }
+  @media (max-width: 1500px) {
+    .mon-datas-grade { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  .mon-data { min-width: 0; border: 1px solid var(--cor-card-elevado);
+    border-radius: 8px; padding: 6px 8px 8px; }
+  .mon-data.ativo { border-color: var(--cor-acento-secundario); }
+  .mon-data h4 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; margin: 0 0 6px;
+    font-size: 11px; font-weight: 600; color: var(--cor-texto-secundario);
+    text-transform: uppercase; letter-spacing: .3px; }
+  /* Título inteiro numa linha só (com 9 cartões lado a lado não cabia junto
+     da contagem) — "N com data" e o × descem pra linha de baixo. */
+  .mon-data h4 span { flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .mon-data h4 small { flex: 1; }
+  .mon-data h4 small { font-weight: 400; text-transform: none; letter-spacing: 0;
+    white-space: nowrap; color: var(--cor-texto-terciario); }
+  .mon-data-x { background: none; border: none; color: var(--cor-texto-secundario);
+    cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; visibility: hidden; }
+  .mon-data.ativo .mon-data-x { visibility: visible; }
+  .mon-mandatos { display: flex; gap: 4px; margin-bottom: 6px; }
+  .mon-mandatos button { flex: 1; background: var(--cor-fundo); color: var(--cor-texto-secundario);
+    border: 1px solid var(--cor-card-elevado); border-radius: 6px; padding: 3px 4px;
+    font-size: 11px; font-weight: 700; }
+  .mon-mandatos button:hover { color: var(--cor-texto-primario); border-color: var(--cor-acento-secundario); }
+  .mon-mandatos button.ativo { background: var(--cor-acento-secundario);
+    border-color: var(--cor-acento-secundario); color: #fff; }
+  .mon-data-campos { display: flex; flex-direction: column; gap: 4px; }
+  .mon-data-campos label { display: flex; align-items: center; gap: 6px; font-size: 11px;
+    color: var(--cor-texto-secundario); }
+  .mon-data-campos input { flex: 1; min-width: 0; background: var(--cor-fundo);
+    color: var(--cor-texto-primario); border: 1px solid var(--cor-card-elevado);
+    border-radius: 6px; padding: 3px 6px; font-size: 12px; font-family: var(--fonte); }
+  html[data-tema="escuro"] .mon-data-campos input { color-scheme: dark; }
+  /* DASHBOARD continua visível no MONITORAMENTO (leva ao dash da base
+     ativa — ver trocarBase()); só lupa/QC/GERENCIAL são exclusivos do PAC
+     e saem do topo — pedido do usuário em 20/11/2026. */
   body.secao-mon #filtros-busca-btn-lupa,
   body.secao-mon #filtros-qc-btn,
-  body.secao-mon #btn-gerencial-filtros,
-  body.secao-mon #btn-preview { display: none !important; }
+  body.secao-mon #btn-gerencial-filtros { display: none !important; }
   .mon-aviso {
     grid-column: 1 / -1;
     padding: 20px;
@@ -11287,7 +11388,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     background: var(--cor-card-elevado);
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 16px;
   }
   .modal-titulo-textos {
     display: flex;
@@ -11342,6 +11443,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     display: flex;
     align-items: center;
     gap: 8px;
+    /* A chave PAC | MONITORAMENTO saiu daqui (agora fica colada no título,
+       mesma posição do cabeçalho do dash do MONITORAMENTO — pedido do
+       usuário em 20/11/2026); margin-left:auto empurra o resto dos botões
+       de volta pra ponta direita, que é onde .modal-titulo (sem mais
+       justify-content:space-between) os deixaria por padrão. */
+    margin-left: auto;
   }
   .modal-titulo-botoes .btn-acento {
     font-size: 12px;
@@ -11660,7 +11767,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       box-shadow: none;
     }
     #preview-corpo { overflow: visible; max-height: none; }
-    .modal-titulo-botoes { display: none; }
+    .modal-titulo-botoes, #preview-modal .seletor-secao.troca-base { display: none; }
     * {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
@@ -12744,9 +12851,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         </span>
       </div>
       <p class="topo-orientacao">Selecione os filtros desejados. Caso nenhum item de um bloco seja selecionado, todos os itens desse bloco serão considerados automaticamente.</p>
-      <div class="seletor-secao" id="seletor-secao" role="tablist" title="Seção do relatório cujos filtros aparecem abaixo. O relatório gerado traz as duas seções.">
-        <button type="button" class="ativo" data-secao="PAC">PAC</button>
-        <button type="button" data-secao="MON">MONITORAMENTO</button>
+      <div class="seletor-secao troca-base" id="seletor-secao" data-tela="filtros" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
+        <button type="button" class="ativo" data-secao="PAC" role="tab" aria-selected="true" tabindex="0">PAC<span class="contagem-base"></span></button>
+        <button type="button" data-secao="MON" role="tab" aria-selected="false" tabindex="-1">MONITORAMENTO<span class="contagem-base"></span></button>
       </div>
     </div>
     <div id="botoes-topo">
@@ -12794,7 +12901,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
             </svg>
             <span>FILTROS</span>
           </button>
-          <button class="acesso-rapido-item" id="btn-gerar" title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
+          <button class="acesso-rapido-item" id="btn-gerar" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>
@@ -12928,11 +13035,17 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
           </button>
         </span>
       </span>
+      <!-- Colada no título (mesma posição do cabeçalho do dash do
+           MONITORAMENTO, ver ra-cabecalho em resumo_acoes.py) — pedido do
+           usuário em 20/11/2026. -->
+      <div class="seletor-secao troca-base" data-tela="dash" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
+        <button type="button" class="ativo" data-secao="PAC" role="tab" aria-selected="true" tabindex="0">PAC<span class="contagem-base"></span></button>
+        <button type="button" data-secao="MON" role="tab" aria-selected="false" tabindex="-1">MONITORAMENTO<span class="contagem-base"></span></button>
+      </div>
       <div class="modal-titulo-botoes">
         <button type="button" class="btn-inicio" id="btn-inicio-dash" title="Voltar à tela inicial">← Início</button>
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
-        <button class="btn" id="dash-resumo-acoes" title="Ações em monitoramento (base Ações do Cronograma)">AÇÕES EM MONITORAMENTO</button>
         <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
         <div class="acesso-rapido-wrap" id="acesso-rapido-dash-wrap">
           <button class="botao-icone-topo" id="acesso-rapido-dash-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
@@ -12958,7 +13071,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
               </svg>
               <span>FILTROS</span>
             </button>
-            <button class="acesso-rapido-item" id="preview-gerar-topo" title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
+            <button class="acesso-rapido-item" id="preview-gerar-topo" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
@@ -14320,7 +14433,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     if (campoDescricao) campoDescricao.value = "";
     if (campoMunicipio) campoMunicipio.value = "";
   }
-  document.getElementById("btn-limpar-tudo").onclick = limparTodosFiltros;
+  // Age só na base ativa (PAC ou MONITORAMENTO); Shift+clique limpa as
+  // duas — ver limparFiltrosBaseAtiva() — pedido do usuário em 20/11/2026.
+  document.getElementById("btn-limpar-tudo").onclick = function (ev) {
+    limparFiltrosBaseAtiva(ev && ev.shiftKey);
+  };
 
   document.getElementById("btn-gerencial-filtros").onclick = function () {
     var blocoStatus = DADOS.blocos.find(b => b.chave === "STATUS");
@@ -15855,26 +15972,22 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     document.getElementById("preview-overlay").style.display = "flex";
   }
 
-  // Botão "DASHBOARD" DENTRO do painel de filtros: agora fecha o painel
-  // (que passou a ser um overlay por cima do dashboard) e atualiza o
-  // dashboard por trás, para refletir os filtros que acabaram de mudar.
-  btnPreview.onclick = async function () {
-    document.getElementById("app").style.display = "none";
-    montarFiltroGestaoDash();
-    montarFiltroSecretariaDash();
-    await carregarDashboard();
+  // Botão "DASHBOARD" DENTRO do painel de filtros: fecha o painel e mostra
+  // o dashboard da BASE ATIVA (PAC ou MONITORAMENTO) — ver trocarBase().
+  btnPreview.onclick = function () {
+    trocarBase(window.baseAtiva, { tela: "dash" });
   };
 
   // Botão "FILTROS" (dentro do menu de Acesso Rápido, nas duas barras):
-  // abre o painel de filtros maximizado, por cima do dashboard. No próprio
-  // painel de filtros não tem efeito visível (já está aberto) — existe ali
-  // só pra manter o mesmo menu nas duas telas.
+  // abre o painel de filtros maximizado, já na grade da base ativa. No
+  // próprio painel de filtros não tem efeito visível (já está aberto) —
+  // existe ali só pra manter o mesmo menu nas duas telas.
   [
     document.getElementById("acesso-rapido-filtros-filtros"),
     document.getElementById("acesso-rapido-dash-filtros"),
   ].forEach(function (btnFiltros) {
     btnFiltros.onclick = function () {
-      document.getElementById("app").style.display = "flex";
+      trocarBase(window.baseAtiva, { tela: "filtros" });
     };
   });
 
@@ -15930,34 +16043,39 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     await carregarDashboard();
   };
 
-  // Botão "LIMPAR TODOS OS FILTROS" no topo do dashboard: mesma função do
-  // botão de dentro do painel de filtros, acionável direto do dashboard —
-  // e já atualiza o dashboard com o resultado.
-  document.getElementById("dash-limpar").onclick = async function () {
-    limparTodosFiltros();
-    await carregarDashboard();
+  // Botão "LIMPAR TODOS OS FILTROS" no topo do dashboard: age só na base
+  // ativa (PAC ou MONITORAMENTO — ver limparFiltrosBaseAtiva) e atualiza o
+  // dash dessa mesma base — pedido do usuário em 20/11/2026.
+  document.getElementById("dash-limpar").onclick = function (ev) {
+    limparFiltrosBaseAtiva(ev && ev.shiftKey);
+    mostrarDashDaBaseAtiva();
   };
 
   const btnGerar = document.getElementById("btn-gerar");
-  const previewGerarTopo = document.getElementById("preview-gerar-topo");
-  const botoesGerar = [btnGerar, previewGerarTopo].filter(Boolean);
   // Agora um item do menu de Acesso Rápido (com ícone): o texto de
   // carregamento ("Gerando...") vai só no <span> interno, pra não apagar o
   // ícone — antes era o textContent do botão inteiro — pedido do usuário em
-  // 18/11/2026.
+  // 18/11/2026. botoesGerarAtuais() busca os botões de novo a cada chamada
+  // (em vez de uma lista fixa), porque o botão do dash do MONITORAMENTO
+  // (ra-cabecalho, "GERAR RELATÓRIO") só existe no DOM depois do HTML
+  // injetado por resumo_acoes.py, que vem DEPOIS deste <script> — pedido do
+  // usuário em 20/11/2026 (PAC e MONITORAMENTO viram painéis irmãos).
+  function botoesGerarAtuais() {
+    return Array.prototype.slice.call(document.querySelectorAll("[data-botao-gerar]"));
+  }
   function textoBotaoGerar(b) {
     return b.querySelector(".acesso-rapido-texto") || b;
   }
   const textoOriginalBtnGerar = textoBotaoGerar(btnGerar).textContent;
 
   function travarBotaoGerar(texto) {
-    botoesGerar.forEach(function (b) {
+    botoesGerarAtuais().forEach(function (b) {
       b.disabled = true;
       textoBotaoGerar(b).textContent = texto;
     });
   }
   function destravarBotaoGerar() {
-    botoesGerar.forEach(function (b) {
+    botoesGerarAtuais().forEach(function (b) {
       b.disabled = false;
       textoBotaoGerar(b).textContent = textoOriginalBtnGerar;
     });
@@ -16175,17 +16293,24 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // janela de seleção de slides — "nenhum filtro" vira "base completa" em
   // vez de uma lista vazia, que parece erro — pedido do usuário em
   // 15/11/2026.
-  function resumoFiltrosAtivos(filtrosObj, ignorarChaves) {
-    if (!filtrosObj) return "base completa";
-    var chaves = Object.keys(filtrosObj).filter(function (k) {
+  // Separado de resumoFiltrosAtivos (pra virar também o contador "PAC (N)" /
+  // "MONITORAMENTO (N)" da chave de base — ver atualizarContadoresBase()) —
+  // pedido do usuário em 20/11/2026.
+  function contarFiltrosAtivos(filtrosObj, ignorarChaves) {
+    if (!filtrosObj) return 0;
+    return Object.keys(filtrosObj).filter(function (k) {
       if (ignorarChaves && ignorarChaves[k]) return false;
       var v = filtrosObj[k];
       if (Array.isArray(v)) return v.length > 0;
       if (v && typeof v === "object") return Object.keys(v).length > 0;
       return !!v;
-    });
-    if (!chaves.length) return "base completa";
-    return chaves.length + " filtro" + (chaves.length > 1 ? "s" : "") + " ativo" + (chaves.length > 1 ? "s" : "");
+    }).length;
+  }
+  function resumoFiltrosAtivos(filtrosObj, ignorarChaves) {
+    if (!filtrosObj) return "base completa";
+    var n = contarFiltrosAtivos(filtrosObj, ignorarChaves);
+    if (!n) return "base completa";
+    return n + " filtro" + (n > 1 ? "s" : "") + " ativo" + (n > 1 ? "s" : "");
   }
 
   // Um botão GERAR RELATÓRIO só, com uma chave de formato dentro da janela
@@ -16981,7 +17106,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     }
   }
 
-  botoesGerar.forEach(function (b) { b.onclick = function () { gerarSaida(); }; });
+  botoesGerarAtuais().forEach(function (b) { b.onclick = function () { gerarSaida(); }; });
+  // Exposto pro botão "GERAR RELATÓRIO" do dash do MONITORAMENTO
+  // (ra-cabecalho, resumo_acoes.py), que chega ao DOM só depois deste
+  // <script> — pedido do usuário em 20/11/2026.
+  window.gerarSaida = gerarSaida;
 
   // Atalho "INCLUIR NA APRESENTAÇÃO" (botão do overlay de Monitoramento,
   // ver HTML_JANELA em resumo_acoes.py) — mesmo fluxo do botão GERAR
@@ -17029,20 +17158,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 
   configurarAccordionSecoes();
 
-  // O dashboard agora é a tela inicial — carrega os dados assim que a
-  // página abre, sem esperar nenhum clique. No modo desktop, o pywebview
-  // injeta o objeto "window.pywebview" de forma assíncrona (evento
-  // "pywebviewready"), então é preciso esperar esse evento explicitamente
-  // antes de chamar a API, ou "window.pywebview" pode ainda não existir no
-  // instante certo. No modo web esse objeto nunca existe — carrega direto,
-  // sem esperar nada (chamarAPI já fala com o servidor por HTTP).
-  if (window.PAC_MODO_WEB || window.pywebview) {
-    carregarDashboard();
-  } else {
-    window.addEventListener("pywebviewready", function () {
-      carregarDashboard();
-    });
-  }
+  // O carregamento inicial do dash fica lá no fim deste <script> (ver
+  // "INÍCIO — BASE PAC" perto do fechamento), depois da seção MONITORAMENTO
+  // abaixo: trocarBase() usa MON.dados/monFiltrosAtuais(), que só existem
+  // depois que a seção toda (logo abaixo) executar — pedido do usuário em
+  // 20/11/2026.
 
   // =====================================================
   // SEÇÃO MONITORAMENTO (relatorio_monitoramento.py)
@@ -17055,6 +17175,8 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     carregando: false,
     sel: {},                 // chave do bloco -> Set de opções marcadas
     conclusao: new Set(),    // anos ("2026"), meses ("2026-03") ou SEM PRAZO
+    datas: {},               // chave de CAMPOS_DATA -> {de, ate} ("AAAA-MM-DD")
+    top30: false,            // "30 MAIORES MUNICÍPIOS"
     ordem: "MUNICIPIO",
     colunas: null,           // Set das colunas do detalhamento
   };
@@ -17066,6 +17188,8 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       f.CONCLUSAO = Array.from(MON.conclusao);
       f.ORDEM = MON.ordem;
       f.COLUNAS = Array.from(MON.colunas);
+      Object.keys(MON.datas).forEach(function (c) { f["D_" + c] = MON.datas[c]; });
+      if (MON.top30) f.TOP30 = true;
     }
     return f;
   }
@@ -17078,24 +17202,163 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     return f;
   };
 
-  // Botão "AÇÕES EM MONITORAMENTO" do dash: abre o overlay (resumo_acoes.py)
-  // já sincronizado com o recorte atual da grade #grade-mon acima — mesma
-  // fonte de filtros usada pelo relatório/apresentação — pedido do usuário
-  // em 20/11/2026. Busca os "Código" desse recorte e repassa pro overlay
-  // (window.abrirResumoAcoes); o usuário ainda filtra mais à vontade dentro
-  // dele, sem perder essa base.
-  var btnDashResumoAcoes = document.getElementById("dash-resumo-acoes");
-  if (btnDashResumoAcoes) {
-    btnDashResumoAcoes.onclick = async function () {
-      if (!window.abrirResumoAcoes) return;
-      var codigos = null;
-      try {
-        var r = await chamarAPI("resumo_acoes_codigos_do_recorte", monFiltrosAtuais());
-        if (r && r.ok) codigos = r.codigos;
-      } catch (e) { /* segue sem sincronizar — overlay abre com a base toda */ }
-      window.abrirResumoAcoes(codigos);
-    };
+  // =====================================================
+  // ESTADO GLOBAL "BASE ATIVA" (PAC | MONITORAMENTO) — pedido do usuário em
+  // 20/11/2026: "PAC e MONITORAMENTO viram dois painéis IRMÃOS, de mesmo
+  // nível". trocarBase() é a ÚNICA função que mostra/oculta o dash de cada
+  // base (#preview-overlay / #ra-overlay, este injetado por
+  // resumo_acoes.py) e a grade de filtros de cada uma (#grade / #grade-mon,
+  // via body.secao-mon). Exposta em window.* porque o HTML/JS de
+  // resumo_acoes.py (ra-cabecalho) e o <script> final injetado no final do
+  // body (atalho vindo da tela HOME) chegam DEPOIS deste <script>.
+  // =====================================================
+  var CHAVE_BASE_ATIVA = "pacBaseAtiva";
+  window.baseAtiva = "PAC";
+  var basePedidoMon = 0;
+
+  function telaAtualDetectada() {
+    return document.getElementById("app").style.display === "flex" ? "filtros" : "dash";
   }
+
+  // Role=tablist/tab + setas do teclado, nas três chaves (painel de
+  // filtros, dash do PAC, dash do MONITORAMENTO) — mesmo componente,
+  // reconfigurado em cada uma (ver window.configurarSeletorSecao mais
+  // abaixo, usado por resumo_acoes.py pro seu próprio seletor).
+  function configurarSeletorSecao(container) {
+    var botoes = Array.prototype.slice.call(container.querySelectorAll("button[data-secao]"));
+    botoes.forEach(function (botao, indice) {
+      botao.addEventListener("click", function () { trocarBase(botao.dataset.secao); });
+      botao.addEventListener("keydown", function (ev) {
+        if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+        ev.preventDefault();
+        var prox = botoes[(indice + (ev.key === "ArrowRight" ? 1 : botoes.length - 1)) % botoes.length];
+        prox.focus();
+        trocarBase(prox.dataset.secao);
+      });
+    });
+  }
+  document.querySelectorAll(".troca-base").forEach(configurarSeletorSecao);
+  window.configurarSeletorSecao = configurarSeletorSecao;
+  // Atalho opcional (TAREFA B) — Alt+1 (PAC) / Alt+2 (MONITORAMENTO).
+  document.addEventListener("keydown", function (ev) {
+    if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
+    if (ev.key === "1") { ev.preventDefault(); trocarBase("PAC"); }
+    else if (ev.key === "2") { ev.preventDefault(); trocarBase("MON"); }
+  });
+
+  function atualizarSeletoresSecao() {
+    document.querySelectorAll(".troca-base").forEach(function (container) {
+      container.classList.toggle("chave-mon", window.baseAtiva === "MON");
+      container.querySelectorAll("button[data-secao]").forEach(function (b) {
+        var ativo = b.dataset.secao === window.baseAtiva;
+        b.classList.toggle("ativo", ativo);
+        b.setAttribute("aria-selected", ativo ? "true" : "false");
+        b.tabIndex = ativo ? 0 : -1;
+      });
+    });
+  }
+
+  // Contador "PAC (N)" / "MONITORAMENTO (N)" de filtros ativos (TAREFA E) —
+  // atualizado ao trocar de base/tela e ao limpar filtros (não a cada
+  // clique dentro da grade, pra não precisar instrumentar toda a lógica de
+  // seleção dos blocos — o essencial é refletir o estado sempre que a
+  // própria chave é usada).
+  // ORDEM/COLUNAS do MONITORAMENTO são opções de impressão, não filtros —
+  // sempre vêm preenchidas (ORDEM tem padrão, COLUNAS nunca fica vazia), e
+  // entrariam na contagem como "filtro ativo" mesmo com a grade inteira
+  // limpa — pedido do usuário em 20/11/2026 (só pro contador da chave; o
+  // resumo da janela de geração, mais acima, já é como estava antes).
+  var CHAVES_NAO_FILTRO_MON = { ORDEM: 1, COLUNAS: 1 };
+  function atualizarContadoresBase() {
+    var filtros = montarFiltrosAtuais();
+    var nPac = contarFiltrosAtivos(filtros, CHAVES_NAO_FILTRO_PAC);
+    var nMon = contarFiltrosAtivos(filtros.MONITORAMENTO, CHAVES_NAO_FILTRO_MON);
+    document.querySelectorAll('.troca-base button[data-secao="PAC"] .contagem-base').forEach(function (el) {
+      el.textContent = nPac ? " (" + nPac + ")" : "";
+    });
+    document.querySelectorAll('.troca-base button[data-secao="MON"] .contagem-base').forEach(function (el) {
+      el.textContent = nMon ? " (" + nMon + ")" : "";
+    });
+  }
+
+  function atualizarRotulosLimpar() {
+    var rotulo = "LIMPAR FILTROS (" + (window.baseAtiva === "MON" ? "MONITORAMENTO" : "PAC") + ")";
+    [document.getElementById("btn-limpar-tudo"), document.getElementById("dash-limpar"),
+     document.getElementById("raLimparBase")].forEach(function (b) {
+      if (b) b.textContent = rotulo;
+    });
+  }
+
+  // LIMPAR FILTROS: só a base ativa; Shift+clique ("ambas") limpa as duas —
+  // "Oferecer limpar as duas" (TAREFA D) — pedido do usuário em 20/11/2026.
+  function limparFiltrosBaseAtiva(ambas) {
+    if (ambas || window.baseAtiva === "PAC") limparTodosFiltros();
+    if (ambas || window.baseAtiva === "MON") monLimpar();
+    atualizarContadoresBase();
+  }
+  window.limparFiltrosBaseAtiva = limparFiltrosBaseAtiva;
+
+  // Mostra o dash da base ativa, ocultando o outro — nunca os dois ao mesmo
+  // tempo, e sem fundo de modal entre eles (TAREFA C). O dash do
+  // MONITORAMENTO é o próprio #ra-overlay de resumo_acoes.py, sincronizado
+  // de novo a cada chamada com o recorte atual de #grade-mon (mesma fonte
+  // usada pela seção MONITORAMENTO do relatório — resumo_acoes_codigos_do_
+  // recorte), pra refletir filtros alterados desde a última vez.
+  function mostrarDashDaBaseAtiva() {
+    var preview = document.getElementById("preview-overlay");
+    var ra = document.getElementById("ra-overlay");
+    if (window.baseAtiva === "MON") {
+      preview.style.display = "none";
+      if (!window.abrirResumoAcoes) return;
+      var pedido = ++basePedidoMon;
+      // top30 também liga as seções próprias dos 30 maiores do dash do
+      // MONITORAMENTO (a chave saiu do popup de lá e veio pra cá).
+      var opcoesRa = { top30: MON.top30 };
+      chamarAPI("resumo_acoes_codigos_do_recorte", monFiltrosAtuais()).then(function (r) {
+        if (pedido !== basePedidoMon) return;
+        window.abrirResumoAcoes(r && r.ok ? r.codigos : null, opcoesRa);
+      }).catch(function () {
+        if (pedido === basePedidoMon) window.abrirResumoAcoes(null, opcoesRa);
+      });
+    } else {
+      basePedidoMon++;
+      if (ra) { ra.classList.remove("aberto"); ra.setAttribute("aria-hidden", "true"); }
+      // Mostra o frame do dash já (com o "Carregando..." que carregarDashboard()
+      // desenha a seguir) em vez de deixar a tela em branco até a API
+      // responder — preview-overlay pode ter ficado "none" numa visita
+      // anterior à base MONITORAMENTO.
+      preview.style.display = "flex";
+      montarFiltroGestaoDash();
+      montarFiltroSecretariaDash();
+      carregarDashboard();
+    }
+  }
+  window.mostrarDashDaBaseAtiva = mostrarDashDaBaseAtiva;
+
+  // Única função que troca a base ativa (TAREFA A). opcoes.tela ("filtros"
+  // ou "dash") decide a TELA; sem informar, mantém a tela atual (trocar de
+  // base no dash troca o dash; trocar no painel de filtros troca a grade —
+  // TAREFA B). Os filtros de cada base continuam vivos nos dois lados
+  // (estadoSelecao/MON.sel não são tocados aqui).
+  function trocarBase(base, opcoes) {
+    if (base !== "PAC" && base !== "MON") return;
+    opcoes = opcoes || {};
+    var tela = opcoes.tela || telaAtualDetectada();
+    window.baseAtiva = base;
+    try { localStorage.setItem(CHAVE_BASE_ATIVA, base); } catch (e) {}
+    document.body.classList.toggle("secao-mon", base === "MON");
+    atualizarSeletoresSecao();
+    atualizarRotulosLimpar();
+    atualizarContadoresBase();
+    if (base === "MON" && !MON.dados && !MON.carregando) monCarregar();
+    if (tela === "filtros") {
+      document.getElementById("app").style.display = "flex";
+    } else {
+      document.getElementById("app").style.display = "none";
+      mostrarDashDaBaseAtiva();
+    }
+  }
+  window.trocarBase = trocarBase;
 
   function monLinhaPassa(l, chaveExcluida) {
     var blocos = MON.dados.blocos;
@@ -17108,6 +17371,17 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     if (chaveExcluida !== "CONCLUSAO" && MON.conclusao.size > 0
         && !MON.conclusao.has(l.PRAZO_ANO) && !MON.conclusao.has(l.PRAZO_MES)) {
       return false;
+    }
+    if (MON.top30 && !l.TOP30) return false;
+    // Intervalos de data: com um lado preenchido, sem data fica de fora
+    // (mesma regra de relatorio_monitoramento.filtrar). Texto AAAA-MM-DD
+    // compara em ordem cronológica.
+    for (var c2 in MON.datas) {
+      if ("D_" + c2 === chaveExcluida) continue;
+      var faixa = MON.datas[c2], v = l["D_" + c2];
+      if (!v) return false;
+      if (faixa.de && v < faixa.de) return false;
+      if (faixa.ate && v > faixa.ate) return false;
     }
     return true;
   }
@@ -17137,6 +17411,97 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var total = linhas.filter(function (l) { return monLinhaPassa(l, null); }).length;
     var contador = document.getElementById("mon-contador");
     if (contador) contador.textContent = total + " de " + MON.dados.total + " ações no recorte";
+    (MON.dados.datas || []).forEach(function (d) {
+      var bloco = document.querySelector('#grade-mon .mon-data[data-chave="' + d.chave + '"]');
+      if (bloco) monAtualizarDataBloco(bloco, d);
+    });
+    var rotTop30 = document.getElementById("mon-top30-rotulo");
+    if (rotTop30) {
+      rotTop30.classList.toggle("ativo", MON.top30);
+      document.getElementById("mon-top30").checked = MON.top30;
+    }
+  }
+
+  // DATAS E PRAZOS + "30 MAIORES MUNICÍPIOS" — vieram do popup FILTROS do
+  // dash do MONITORAMENTO (resumo_acoes.py, raDesenharFiltros/raMontarData),
+  // mesmo visual e mesmos atalhos de mandato na Entrega da Obra — pedido do
+  // usuário em 20/11/2026 ("mova os recursos adicionais dos filtros do dash
+  // monitoramento pro painel de filtros").
+  var MON_MANDATOS = [
+    { rotulo: "1º M", de: "2023-01-01", ate: "2026-12-31" },
+    { rotulo: "2º M", de: "2027-01-01", ate: "2030-12-31" },
+    { rotulo: "Jerônimo", de: "2023-01-01", ate: "2030-12-31" }];
+  var MON_DATAS_COM_MANDATO = ["entrega"];
+
+  function monAtualizarDataBloco(bloco, d) {
+    var faixa = MON.datas[d.chave] || {};
+    var de = bloco.querySelector(".de"), ate = bloco.querySelector(".ate");
+    de.value = faixa.de || ""; ate.value = faixa.ate || "";
+    de.min = ate.min = d.min; de.max = ate.max = d.max;
+    if (faixa.ate) de.max = faixa.ate;
+    if (faixa.de) ate.min = faixa.de;
+    bloco.classList.toggle("ativo", !!(faixa.de || faixa.ate));
+    var n = MON.dados.linhas.filter(function (l) {
+      return l["D_" + d.chave] && monLinhaPassa(l, "D_" + d.chave);
+    }).length;
+    bloco.querySelector("h4 small").textContent = n + " com data";
+    bloco.querySelectorAll(".mon-mandatos button").forEach(function (b) {
+      var m = MON_MANDATOS[+b.dataset.i];
+      b.classList.toggle("ativo", faixa.de === m.de && faixa.ate === m.ate);
+    });
+  }
+
+  function monDefinirData(chave, faixa) {
+    if (faixa && (faixa.de || faixa.ate)) MON.datas[chave] = faixa;
+    else delete MON.datas[chave];
+    monAtualizarDisponibilidade();
+  }
+
+  function monMontarData(d) {
+    var bloco = document.createElement("div");
+    bloco.className = "mon-data";
+    bloco.dataset.chave = d.chave;
+    var comMandato = MON_DATAS_COM_MANDATO.indexOf(d.chave) !== -1;
+    bloco.innerHTML = "<h4><span>" + escaparHtmlFicha(d.rotulo) + "</span><small></small>" +
+      '<button type="button" class="mon-data-x" title="Limpar este filtro">×</button></h4>' +
+      (comMandato ? '<div class="mon-mandatos">' + MON_MANDATOS.map(function (m, i) {
+        return '<button type="button" data-i="' + i + '" title="' + m.de.split("-").reverse().join("/") +
+          " a " + m.ate.split("-").reverse().join("/") + '">' + m.rotulo + "</button>";
+      }).join("") + "</div>" : "") +
+      '<div class="mon-data-campos"><label>de <input type="date" class="de"></label>' +
+      '<label>até <input type="date" class="ate"></label></div>';
+    bloco.querySelectorAll(".mon-mandatos button").forEach(function (b) {
+      b.onclick = function () {
+        var m = MON_MANDATOS[+b.dataset.i], faixa = MON.datas[d.chave] || {};
+        var mesma = faixa.de === m.de && faixa.ate === m.ate;
+        monDefinirData(d.chave, mesma ? null : { de: m.de, ate: m.ate });
+      };
+    });
+    bloco.querySelectorAll("input").forEach(function (i) {
+      i.onchange = function () {
+        monDefinirData(d.chave, { de: bloco.querySelector(".de").value, ate: bloco.querySelector(".ate").value });
+      };
+    });
+    bloco.querySelector(".mon-data-x").onclick = function () { monDefinirData(d.chave, null); };
+    return bloco;
+  }
+
+  function monMontarBlocoDatas() {
+    var el = document.createElement("div");
+    el.className = "mon-datas-bloco";
+    el.innerHTML = '<div class="mon-datas-cabecalho"><span>DATAS E PRAZOS <small>(com um intervalo ' +
+      'preenchido, ações sem essa data ficam de fora)</small></span>' +
+      '<label class="mon-top30" id="mon-top30-rotulo"><input type="checkbox" id="mon-top30">' +
+      '<span class="mon-top30-trilho"><span></span></span>30 MAIORES MUNICÍPIOS ' +
+      "<small>(população IBGE 2026)</small></label></div>" +
+      '<div class="mon-datas-grade"></div>';
+    var gradeDatas = el.querySelector(".mon-datas-grade");
+    MON.dados.datas.forEach(function (d) { gradeDatas.appendChild(monMontarData(d)); });
+    el.querySelector("#mon-top30").onchange = function (e) {
+      MON.top30 = e.target.checked;
+      monAtualizarDisponibilidade();
+    };
+    return el;
   }
 
   function monItem(valor, rotulo, marcado, aoMudar) {
@@ -17294,6 +17659,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     contador.style.paddingBottom = "10px";
     elImp.appendChild(contador);
     grade.appendChild(elImp);
+    if (MON.dados.datas && MON.dados.datas.length) grade.appendChild(monMontarBlocoDatas());
     monAtualizarDisponibilidade();
   }
 
@@ -17322,26 +17688,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     if (!MON.dados) return;
     Object.keys(MON.sel).forEach(function (k) { MON.sel[k].clear(); });
     MON.conclusao.clear();
+    MON.datas = {};
+    MON.top30 = false;
     monRenderizar();
   }
 
-  document.querySelectorAll("#seletor-secao button").forEach(function (botao) {
-    botao.addEventListener("click", function () {
-      var mon = botao.dataset.secao === "MON";
-      document.body.classList.toggle("secao-mon", mon);
-      document.querySelectorAll("#seletor-secao button").forEach(function (b) {
-        b.classList.toggle("ativo", b === botao);
-      });
-      if (mon) monCarregar();
-    });
-  });
-
-  // LIMPAR FILTROS age só na seção que está à mostra.
-  document.getElementById("btn-limpar-tudo").addEventListener("click", function (ev) {
-    if (!document.body.classList.contains("secao-mon")) return;
-    ev.stopImmediatePropagation();
-    monLimpar();
-  }, true);
+  // A troca PAC | MONITORAMENTO e o LIMPAR FILTROS por base agora vivem em
+  // trocarBase()/limparFiltrosBaseAtiva() (ver "ESTADO GLOBAL BASE ATIVA"
+  // mais acima) — pedido do usuário em 20/11/2026.
 
   // Controle de qualidade do MONITORAMENTO: mesmo modal do PAC, com a lista
   // de ações em atraso (coluna "Dias em Atraso (De Marco)") por status.
@@ -17384,6 +17738,26 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       btnCancelar.onclick = function () { finalizar(false); };
     });
   }
+
+  // INÍCIO — BASE PAC: o dash da base PAC é a tela inicial, carregada assim
+  // que a página abre, sem esperar nenhum clique (ver trocarBase() lá em
+  // cima). Fica aqui embaixo (depois da seção MONITORAMENTO acima) porque
+  // trocarBase()/atualizarContadoresBase() já leem MON.dados/
+  // monFiltrosAtuais(), que só existem depois dela executar. Quando a
+  // página chega pelo cartão "Ações em Monitoramento" da tela HOME
+  // (abrir_monitoramento=True), um <script> depois do HTML de
+  // resumo_acoes.py (mais abaixo) troca pra base MONITORAMENTO por cima
+  // deste carregamento (TAREFA F) — pedido do usuário em 20/11/2026. No
+  // modo desktop, o pywebview injeta "window.pywebview" de forma assíncrona
+  // (evento "pywebviewready"); no modo web esse objeto nunca existe —
+  // carrega direto (chamarAPI já fala com o servidor por HTTP).
+  if (window.PAC_MODO_WEB || window.pywebview) {
+    trocarBase("PAC", { tela: "dash" });
+  } else {
+    window.addEventListener("pywebviewready", function () {
+      trocarBase("PAC", { tela: "dash" });
+    });
+  }
 </script>
 </body>
 </html>
@@ -17394,22 +17768,23 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     # dash) — ver resumo_acoes.py.
     try:
         injetar = _modulo_resumo_acoes().HTML_JANELA
-        # Tela HOME → "Ações em Monitoramento" (rota "/monitoramento" ou
-        # API ir_para_monitoramento, no desktop): abre esse overlay já
-        # direto, sem precisar passar pelo painel PAC antes — pedido do
-        # usuário em 14/11/2026. window.abrirResumoAcoes já foi definido
-        # pelo <script> de cima (HTML_JANELA). Mesma espera por
-        # "pywebviewready" do carregarDashboard() logo acima: no desktop,
-        # chamar antes do evento faz pacApiDesktopDisponivel() mentir que
-        # está no modo web (window.pywebview ainda não existe) e cair no
-        # fetch() de "/api/..." — que não existe numa página file://, e
-        # devolve HTML de erro em vez de JSON ("corrija" do usuário em
-        # 14/11/2026).
+        # Tela HOME → "Ações em Monitoramento" (rota "/monitoramento" ou API
+        # ir_para_monitoramento, no desktop): troca já direto pra base
+        # MONITORAMENTO (trocarBase, definida no <script> de cima), sem
+        # precisar passar pelo dash do PAC antes — pedido do usuário em
+        # 14/11/2026 (refeito em 20/11/2026: PAC e MONITORAMENTO viram
+        # painéis irmãos, trocarBase substitui a chamada direta a
+        # window.abrirResumoAcoes). Mesma espera por "pywebviewready" do
+        # carregamento inicial logo acima: no desktop, chamar antes do
+        # evento faz pacApiDesktopDisponivel() mentir que está no modo web
+        # (window.pywebview ainda não existe) e cair no fetch() de
+        # "/api/..." — que não existe numa página file://, e devolve HTML de
+        # erro em vez de JSON ("corrija" do usuário em 14/11/2026).
         if abrir_monitoramento:
             injetar += (
                 '\n<script>'
-                'if (window.PAC_MODO_WEB || window.pywebview) { window.abrirResumoAcoes(); }'
-                'else { window.addEventListener("pywebviewready", window.abrirResumoAcoes, { once: true }); }'
+                'if (window.PAC_MODO_WEB || window.pywebview) { window.trocarBase("MON", {tela:"dash"}); }'
+                'else { window.addEventListener("pywebviewready", function () { window.trocarBase("MON", {tela:"dash"}); }, { once: true }); }'
                 '</script>'
             )
         html_paginal = html_paginal.replace("</body>", injetar + "\n</body>", 1)
