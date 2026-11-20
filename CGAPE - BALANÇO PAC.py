@@ -10330,6 +10330,25 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     outline-offset: -2px;
   }
   .seletor-secao.troca-base .contagem-base { font-weight: 400; opacity: 0.85; }
+  /* Botão Início (tela HOME) DENTRO da chave, à esquerda (casa | PAC |
+     MONITORAMENTO — pedido do usuário em 20/11/2026), só
+     com o ícone de casa (o "home" do Android / Material) no lugar do antigo
+     "← Início" solto no cabeçalho — pedido do usuário em 20/11/2026. Não é
+     uma aba (sem data-secao): as setas do teclado continuam pulando de PAC
+     pra MONITORAMENTO direto. */
+  .seletor-secao .btn-casa {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 11px;
+    background: transparent;
+    color: var(--cor-texto-secundario);
+    border-right: 1px solid var(--cor-card-elevado);
+    cursor: pointer;
+  }
+  .seletor-secao .btn-casa:hover { color: var(--cor-texto-primario); background: var(--cor-card-elevado); }
+  .seletor-secao .btn-casa:focus-visible { outline: 2px solid var(--cor-acento-gold); outline-offset: -2px; }
+  .seletor-secao .btn-casa svg { display: block; }
   /* Sublinhado discreto no título, PAC (padrão) ou MONITORAMENTO, nas três
      telas (filtros, dash do PAC e dash do MONITORAMENTO). */
   .topo-titulo-principal, .modal-titulo-principal {
@@ -10383,10 +10402,42 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .mon-top30.ativo .mon-top30-trilho span { transform: translateX(14px); background: #fff; }
   .mon-top30 input:focus-visible + .mon-top30-trilho { outline: 2px solid var(--cor-acento-secundario);
     outline-offset: 2px; }
+  /* Quatro prazos principais + o botão OUTROS PRAZOS numa linha só; os
+     outros cinco (Última Atualização, Estudos, Projeto, Equipamentos,
+     Funcionalidade) ficam no painel suspenso desse botão — pedido do
+     usuário em 20/11/2026. */
   .mon-datas-grade { display: grid; align-items: start; gap: 8px 10px;
-    grid-template-columns: repeat(9, minmax(0, 1fr)); }
-  @media (max-width: 1500px) {
-    .mon-datas-grade { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+    grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .mon-datas-chaves { display: inline-flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .mon-outros { position: relative; min-width: 0; align-self: stretch; }
+  .mon-outros-btn { width: 100%; height: 100%; min-height: 64px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 4px; background: transparent;
+    border: 1px dashed var(--cor-texto-terciario); border-radius: 8px; padding: 6px 8px;
+    color: var(--cor-texto-secundario); font-family: var(--fonte); font-size: 12px;
+    font-weight: 700; letter-spacing: .4px; cursor: pointer; }
+  .mon-outros-btn small { font-weight: 400; font-size: 11px; letter-spacing: 0;
+    color: var(--cor-texto-terciario); }
+  .mon-outros-btn:hover, .mon-outros.aberto .mon-outros-btn { color: var(--cor-texto-primario);
+    border-color: var(--cor-acento-secundario); border-style: solid; }
+  .mon-outros.ativo .mon-outros-btn { color: var(--cor-texto-primario);
+    border: 1px solid var(--cor-acento-secundario); }
+  .mon-outros-btn:focus-visible { outline: 2px solid var(--cor-acento-secundario); outline-offset: 2px; }
+  .mon-outros-seta { display: inline-block; margin-left: 6px; transition: transform .15s; }
+  .mon-outros.aberto .mon-outros-seta { transform: rotate(180deg); }
+  /* Abre PRA CIMA (o bloco fica no rodapé da tela), alinhado à direita. */
+  .mon-outros-painel { display: none; position: absolute; right: 0; bottom: calc(100% + 8px);
+    z-index: 30; width: min(1080px, calc(100vw - 48px)); background: var(--cor-card);
+    border: 1px solid var(--cor-acento-secundario); border-radius: var(--raio-lg);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .35); padding: 10px 12px 12px; }
+  .mon-outros.aberto .mon-outros-painel { display: block; }
+  .mon-outros-painel-topo { display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px; font-size: 12px; font-weight: 700; letter-spacing: .5px;
+    color: var(--cor-texto-secundario); }
+  .mon-outros-fechar { background: none; border: none; color: var(--cor-texto-secundario);
+    font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  .mon-outros-fechar:hover { color: var(--cor-texto-primario); }
+  .mon-outros-grade { display: grid; align-items: start; gap: 8px 10px;
+    grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .mon-data { min-width: 0; border: 1px solid var(--cor-card-elevado);
     border-radius: 8px; padding: 6px 8px 8px; }
   .mon-data.ativo { border-color: var(--cor-acento-secundario); }
@@ -11380,15 +11431,32 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     flex-direction: column;
     overflow: hidden;
   }
+  /* Duas linhas, igual ao cabeçalho do dash do MONITORAMENTO (.ra-cabecalho
+     em resumo_acoes.py): 1ª linha = título + data de atualização na mesma
+     linha; 2ª linha = chave casa | PAC | MONITORAMENTO colada à esquerda e
+     os botões à direita. Padding/espaçamento iguais aos de lá, pra chave
+     ficar EXATAMENTE no mesmo lugar nos dois dashes — pedido do usuário em
+     20/11/2026. */
   #preview-modal .modal-titulo {
-    padding: 12px 22px;
+    padding: 10px 18px;
     font-size: 15px;
     font-weight: 700;
     color: var(--cor-texto-primario);
     background: var(--cor-card-elevado);
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 16px;
+    column-gap: 16px;
+    /* 8px (e não os 12px de lá): o título daqui tem o sublinhado, 4px mais
+       alto que o h2 do MONITORAMENTO. */
+    row-gap: 8px;
+  }
+  #preview-modal .modal-titulo-textos {
+    flex: 0 0 100%;
+    flex-direction: row;
+    align-items: baseline;
+    flex-wrap: wrap;
+    column-gap: 10px;
   }
   .modal-titulo-textos {
     display: flex;
@@ -12852,12 +12920,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       </div>
       <p class="topo-orientacao">Selecione os filtros desejados. Caso nenhum item de um bloco seja selecionado, todos os itens desse bloco serão considerados automaticamente.</p>
       <div class="seletor-secao troca-base" id="seletor-secao" data-tela="filtros" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
+        <button type="button" class="btn-casa" id="btn-inicio-filtros" title="Início (voltar à tela inicial)" aria-label="Início — voltar à tela inicial"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path></svg></button>
         <button type="button" class="ativo" data-secao="PAC" role="tab" aria-selected="true" tabindex="0">PAC<span class="contagem-base"></span></button>
         <button type="button" data-secao="MON" role="tab" aria-selected="false" tabindex="-1">MONITORAMENTO<span class="contagem-base"></span></button>
       </div>
     </div>
     <div id="botoes-topo">
-      <button type="button" class="btn-inicio" id="btn-inicio-filtros" title="Voltar à tela inicial">← Início</button>
       <button id="filtros-busca-btn-lupa" class="dash-busca-btn-lupa" title="Buscar ação e abrir a Ficha Cadastral">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="7"></circle>
@@ -13035,15 +13103,15 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
           </button>
         </span>
       </span>
-      <!-- Colada no título (mesma posição do cabeçalho do dash do
-           MONITORAMENTO, ver ra-cabecalho em resumo_acoes.py) — pedido do
-           usuário em 20/11/2026. -->
+      <!-- 2ª linha do cabeçalho, colada à esquerda — mesma posição exata da
+           chave no dash do MONITORAMENTO (ver ra-cabecalho em
+           resumo_acoes.py) — pedido do usuário em 20/11/2026. -->
       <div class="seletor-secao troca-base" data-tela="dash" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
+        <button type="button" class="btn-casa" id="btn-inicio-dash" title="Início (voltar à tela inicial)" aria-label="Início — voltar à tela inicial"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path></svg></button>
         <button type="button" class="ativo" data-secao="PAC" role="tab" aria-selected="true" tabindex="0">PAC<span class="contagem-base"></span></button>
         <button type="button" data-secao="MON" role="tab" aria-selected="false" tabindex="-1">MONITORAMENTO<span class="contagem-base"></span></button>
       </div>
       <div class="modal-titulo-botoes">
-        <button type="button" class="btn-inicio" id="btn-inicio-dash" title="Voltar à tela inicial">← Início</button>
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
         <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
@@ -17177,6 +17245,20 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     conclusao: new Set(),    // anos ("2026"), meses ("2026-03") ou SEM PRAZO
     datas: {},               // chave de CAMPOS_DATA -> {de, ate} ("AAAA-MM-DD")
     top30: false,            // "30 MAIORES MUNICÍPIOS"
+    // "STATUS ENTREGUE" (Obras Concluídas + Inauguradas num só status no
+    // dash do MONITORAMENTO) — veio do popup FILTROS de lá pra cá, pedido do
+    // usuário em 20/11/2026. Ajuste de EXIBIÇÃO do dash, não filtro: fica
+    // fora de monFiltrosAtuais (não conta no contador, não vai pro relatório
+    // nem é zerado pelo LIMPAR FILTROS, como já era lá) e é lembrado entre
+    // sessões, como era lá (a 1ª vez herda o valor salvo pelo dash antigo).
+    entregue: (function () {
+      try {
+        var salvo = localStorage.getItem("monStatusEntregue");
+        if (salvo !== null) return salvo === "1";
+        var antigo = JSON.parse(localStorage.getItem("monRaFiltros") || "{}") || {};
+        return !!antigo.entregue;
+      } catch (e) { return false; }
+    })(),
     ordem: "MUNICIPIO",
     colunas: null,           // Set das colunas do detalhamento
   };
@@ -17313,7 +17395,8 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       var pedido = ++basePedidoMon;
       // top30 também liga as seções próprias dos 30 maiores do dash do
       // MONITORAMENTO (a chave saiu do popup de lá e veio pra cá).
-      var opcoesRa = { top30: MON.top30 };
+      // entregue: chave STATUS ENTREGUE, também movida pra cá.
+      var opcoesRa = { top30: MON.top30, entregue: MON.entregue };
       chamarAPI("resumo_acoes_codigos_do_recorte", monFiltrosAtuais()).then(function (r) {
         if (pedido !== basePedidoMon) return;
         window.abrirResumoAcoes(r && r.ok ? r.codigos : null, opcoesRa);
@@ -17420,6 +17503,24 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       rotTop30.classList.toggle("ativo", MON.top30);
       document.getElementById("mon-top30").checked = MON.top30;
     }
+    var rotEntregue = document.getElementById("mon-entregue-rotulo");
+    if (rotEntregue) {
+      rotEntregue.classList.toggle("ativo", MON.entregue);
+      document.getElementById("mon-entregue").checked = MON.entregue;
+    }
+    monAtualizarOutrosPrazos();
+  }
+
+  // Botão OUTROS PRAZOS: destaca e conta quantos dos prazos guardados no
+  // painel suspenso estão com intervalo preenchido (eles não aparecem na
+  // linha principal, então sem isso o filtro ficaria "escondido").
+  function monAtualizarOutrosPrazos() {
+    var caixa = document.querySelector("#grade-mon .mon-outros");
+    if (!caixa) return;
+    var n = MON_DATAS_OUTROS.filter(function (c) { return !!MON.datas[c]; }).length;
+    caixa.classList.toggle("ativo", n > 0);
+    caixa.querySelector(".mon-outros-qtd").textContent =
+      n ? n + (n === 1 ? " filtro ativo" : " filtros ativos") : "5 prazos";
   }
 
   // DATAS E PRAZOS + "30 MAIORES MUNICÍPIOS" — vieram do popup FILTROS do
@@ -17432,6 +17533,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     { rotulo: "2º M", de: "2027-01-01", ate: "2030-12-31" },
     { rotulo: "Jerônimo", de: "2023-01-01", ate: "2030-12-31" }];
   var MON_DATAS_COM_MANDATO = ["entrega"];
+  // Prazos agrupados no botão OUTROS PRAZOS (chaves de
+  // relatorio_monitoramento.CAMPOS_DATA) — pedido do usuário em 20/11/2026.
+  var MON_DATAS_OUTROS = ["atualizacao", "estudos", "projeto", "equipamentos", "funcionalidade"];
+  var monOuvindoOutrosFora = false;
 
   function monAtualizarDataBloco(bloco, d) {
     var faixa = MON.datas[d.chave] || {};
@@ -17491,14 +17596,67 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     el.className = "mon-datas-bloco";
     el.innerHTML = '<div class="mon-datas-cabecalho"><span>DATAS E PRAZOS <small>(com um intervalo ' +
       'preenchido, ações sem essa data ficam de fora)</small></span>' +
+      '<span class="mon-datas-chaves">' +
+      '<label class="mon-top30" id="mon-entregue-rotulo" title="Obras Concluídas e Obras Inauguradas ' +
+      'somadas num só status no dashboard do MONITORAMENTO (não filtra ações)">' +
+      '<input type="checkbox" id="mon-entregue">' +
+      '<span class="mon-top30-trilho"><span></span></span>STATUS ENTREGUE ' +
+      "<small>(concluídas + inauguradas)</small></label>" +
       '<label class="mon-top30" id="mon-top30-rotulo"><input type="checkbox" id="mon-top30">' +
       '<span class="mon-top30-trilho"><span></span></span>30 MAIORES MUNICÍPIOS ' +
-      "<small>(população IBGE 2026)</small></label></div>" +
+      "<small>(população IBGE 2026)</small></label></span></div>" +
       '<div class="mon-datas-grade"></div>';
     var gradeDatas = el.querySelector(".mon-datas-grade");
-    MON.dados.datas.forEach(function (d) { gradeDatas.appendChild(monMontarData(d)); });
+    var outros = MON.dados.datas.filter(function (d) { return MON_DATAS_OUTROS.indexOf(d.chave) !== -1; });
+    MON.dados.datas.forEach(function (d) {
+      if (MON_DATAS_OUTROS.indexOf(d.chave) === -1) gradeDatas.appendChild(monMontarData(d));
+    });
+    if (outros.length) {
+      var caixa = document.createElement("div");
+      caixa.className = "mon-outros";
+      caixa.innerHTML = '<button type="button" class="mon-outros-btn" aria-expanded="false" ' +
+        'aria-haspopup="true" title="' + escaparHtmlFicha(outros.map(function (d) { return d.rotulo; }).join(", ")) + '">' +
+        '<span>OUTROS PRAZOS<span class="mon-outros-seta" aria-hidden="true">▴</span></span>' +
+        '<small class="mon-outros-qtd"></small></button>' +
+        '<div class="mon-outros-painel" role="dialog" aria-label="Outros prazos">' +
+        '<div class="mon-outros-painel-topo"><span>OUTROS PRAZOS</span>' +
+        '<button type="button" class="mon-outros-fechar" title="Fechar" aria-label="Fechar">×</button></div>' +
+        '<div class="mon-outros-grade"></div></div>';
+      var gradeOutros = caixa.querySelector(".mon-outros-grade");
+      outros.forEach(function (d) { gradeOutros.appendChild(monMontarData(d)); });
+      var botao = caixa.querySelector(".mon-outros-btn");
+      var abrir = function (sim) {
+        caixa.classList.toggle("aberto", sim);
+        botao.setAttribute("aria-expanded", sim ? "true" : "false");
+      };
+      botao.onclick = function () { abrir(!caixa.classList.contains("aberto")); };
+      caixa.querySelector(".mon-outros-fechar").onclick = function () { abrir(false); botao.focus(); };
+      // Fecha clicando fora (ouvinte registrado uma vez só no documento,
+      // não a cada redesenho da grade) ou com Esc.
+      if (!monOuvindoOutrosFora) {
+        monOuvindoOutrosFora = true;
+        document.addEventListener("mousedown", function (ev) {
+          document.querySelectorAll("#grade-mon .mon-outros.aberto").forEach(function (c) {
+            if (c.contains(ev.target)) return;
+            c.classList.remove("aberto");
+            c.querySelector(".mon-outros-btn").setAttribute("aria-expanded", "false");
+          });
+        });
+      }
+      caixa.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape" && caixa.classList.contains("aberto")) {
+          ev.stopPropagation(); abrir(false); botao.focus();
+        }
+      });
+      gradeDatas.appendChild(caixa);
+    }
     el.querySelector("#mon-top30").onchange = function (e) {
       MON.top30 = e.target.checked;
+      monAtualizarDisponibilidade();
+    };
+    el.querySelector("#mon-entregue").onchange = function (e) {
+      MON.entregue = e.target.checked;
+      try { localStorage.setItem("monStatusEntregue", MON.entregue ? "1" : "0"); } catch (err) {}
       monAtualizarDisponibilidade();
     };
     return el;
