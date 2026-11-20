@@ -18831,6 +18831,35 @@ def abrir_interface_filtros(df_base):
         # não abrir num branco antes da página carregar
         background_color="#0A1628",
     )
+
+    # Entrega do retorno da API à prova de troca de tela — corrigido a
+    # pedido do usuário em 20/11/2026 ("TypeError: Cannot read properties of
+    # undefined (reading '<id>')" no evaluate_js). Quando uma função de
+    # APIFiltros termina, o pywebview (webview/util.py, js_bridge_call) roda
+    # na página window.pywebview._returnValuesCallbacks["<função>"]["<id>"]
+    # (<retorno>). Se nesse meio-tempo a tela foi trocada (load_url de
+    # HOME/PAC/MONITORAMENTO), a página nova não tem esse callback e o JS
+    # estoura. A espera de _navegar_quando_livre (acima) não fecha essa
+    # brecha: o contador de chamadas zera quando a função Python retorna, um
+    # instante ANTES dessa entrega. Aqui a entrega só chama o callback se ele
+    # ainda existir; na página nova ela vira um não-faz-nada (quem pediu o
+    # valor era a página que já saiu).
+    _padrao_entrega = re.compile(
+        r'^window\.pywebview\._returnValuesCallbacks\["([^"]*)"\]\["([^"]*)"\]\((.*)\)$',
+        re.DOTALL)
+    _evaluate_js_original = janela.evaluate_js
+
+    def _evaluate_js_seguro(script, *args, **kwargs):
+        casou = _padrao_entrega.match(script) if isinstance(script, str) else None
+        if casou:
+            func, id_valor, retorno = casou.groups()
+            script = (
+                "(function(){var p=window.pywebview,m=p&&p._returnValuesCallbacks,"
+                f'f=m&&m["{func}"],c=f&&f["{id_valor}"];if(typeof c==="function")c({retorno});}})()'
+            )
+        return _evaluate_js_original(script, *args, **kwargs)
+
+    janela.evaluate_js = _evaluate_js_seguro
     # No Windows, o pywebview usa o WebView2 (motor do Edge) por padrão,
     # já presente de fábrica no Windows 10/11 — não exige instalar nada
     # além do pacote "pywebview" (pip install pywebview) para empacotar

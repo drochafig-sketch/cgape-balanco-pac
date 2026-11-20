@@ -148,7 +148,10 @@
       "Bash(python verificar_base_irmas2.py)",
       "Bash(python -c \"import py_compile; py_compile.compile\\('CGAPE - BALANÇO PAC.py', doraise=True\\); print\\('OK'\\)\")",
       "Bash(python shot_layout.py)",
-      "Bash(python verificar_datas_mon.py)"
+      "Bash(python verificar_datas_mon.py)",
+      "PowerShell(Copy-Item -LiteralPath \"dist\\\\CGAPE - BALANCO PAC.exe\" -Destination \"CGAPE - BALANCO PAC.exe\" -Force; \\(Get-Item -LiteralPath \"CGAPE - BALANCO PAC.exe\" | Select-Object Length, LastWriteTime | Format-List | Out-String\\).Trim\\(\\); git status --short -- \"CGAPE - BALANCO PAC.spec\"; \"spec-check-done\")",
+      "Bash(python -c \"import webview; print\\(webview.__version__ if hasattr\\(webview,'__version__'\\) else ''\\)\")",
+      "Bash(python teste_entrega_segura.py)"
     ]
   }
 }
