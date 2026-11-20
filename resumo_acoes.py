@@ -3037,11 +3037,10 @@ HTML_JANELA = r"""
           <button type="button" class="ativo" data-secao="MON" role="tab" aria-selected="true" tabindex="0">MONITORAMENTO<span class="contagem-base"></span></button>
         </div>
         <button type="button" class="btn-inicio" id="raLimparBase" title="Limpar filtros (MONITORAMENTO) — Shift+clique limpa PAC e MONITORAMENTO">LIMPAR FILTROS</button>
-        <!-- "PAINEL DE FILTROS" (não só "FILTROS"): esta janela já tem um
-             botão FILTROS próprio (#raFiltrosBtn, datas/busca rápida deste
-             overlay) — este aqui abre o painel #app/#grade-mon compartilhado
-             com o PAC — pedido do usuário em 20/11/2026. -->
-        <button type="button" class="btn-inicio" id="raFiltrosPainel" title="Abrir o painel de filtros completo, na grade do MONITORAMENTO">PAINEL DE FILTROS</button>
+        <!-- "PAINEL DE FILTROS" saiu daqui: virou o botão flutuante
+             #fab-filtros (ícone de funil, canto inferior direito), comum aos
+             dashes do PAC e do MONITORAMENTO e definido em "CGAPE - BALANÇO
+             PAC.py" — pedido do usuário em 20/11/2026. -->
         <button type="button" class="btn-inicio" id="ra-gerar-relatorio" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados (o mesmo relatório do PAC, que já traz as duas bases)">GERAR RELATÓRIO</button>
         <div class="ra-busca-geral">
           <input type="search" id="raBuscaGeral" autocomplete="off"
@@ -3061,15 +3060,10 @@ HTML_JANELA = r"""
         <button type="button" id="raIncluirApresentacao" title="Abre a Apresentação CGAPE (HTML) já com as páginas do Monitoramento marcadas — você escolhe quais páginas do PAC entram junto">INCLUIR NA APRESENTAÇÃO</button>
       </div>
     </div>
-    <!-- Filtros/datas numa janela suspensa, aberta pelo botão FILTROS que
-         fica parado no canto superior esquerdo, logo abaixo do cabeçalho,
-         enquanto a página rola — pedido do usuário em 19/11/2026. -->
+    <!-- Botão FILTROS (e sua janela suspensa de filtros) removido: o dash
+         do MONITORAMENTO usa só os filtros do PAINEL DE FILTROS (#grade-mon)
+         — pedido do usuário em 20/11/2026. -->
     <div class="ra-area">
-    <button type="button" class="ra-filtros-btn" id="raFiltrosBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="raFiltrosJanela" title="Filtros, datas e prazos">
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M1.5 2.5h13l-5 6v4.5l-3 1.5v-6z"/></svg>FILTROS<span class="ra-filtros-qtd" id="raFiltrosQtd"></span></button>
-    <div class="ra-filtros-janela" id="raFiltrosJanela" role="dialog" aria-label="Filtros, datas e prazos">
-      <div class="ra-filtros" id="raFiltros"></div>
-    </div>
     <div class="ra-corpo">
       <div class="ra-msg" id="raMsg"></div>
       <div id="raQuadro"></div>
@@ -3108,11 +3102,11 @@ HTML_JANELA = r"""
   .ra-botoes .seletor-secao.troca-base { margin-right:auto; }
   .ra-cabecalho { flex-wrap:wrap; }
   .ra-botoes > button { white-space:nowrap; flex-shrink:0; }
-  .ra-botoes button, #raLimpar, .ra-mais { background:transparent;
+  .ra-botoes button, .ra-mais { background:transparent;
     border:1px solid var(--cor-texto-terciario); color:var(--cor-texto-primario);
     border-radius:6px; padding:6px 14px; font-size:12px; cursor:pointer;
     font-family:inherit; }
-  .ra-botoes button:hover, #raLimpar:hover, .ra-mais:hover {
+  .ra-botoes button:hover, .ra-mais:hover {
     border-color:var(--cor-acento-teal); color:var(--cor-acento-teal-texto); }
   /* A chave PAC | MONITORAMENTO (.seletor-secao.troca-base, definida em
      "CGAPE - BALANÇO PAC.py") precisa continuar com a cara de pílula de lá
@@ -3167,28 +3161,10 @@ HTML_JANELA = r"""
     background:var(--cor-fundo); color:var(--cor-acento-teal-texto); }
   #raGerar:disabled, #raXlsx:disabled, #raHtml:disabled, #raConder:disabled { opacity:.6; cursor:default; }
   .ra-area { flex:1; min-height:0; position:relative; display:flex; flex-direction:column; }
-  .ra-corpo { flex:1; overflow:auto; padding:54px 18px 40px; }
-  .ra-filtros-btn { position:absolute; top:10px; left:18px; z-index:36;
-    display:inline-flex; align-items:center; gap:7px; padding:7px 14px;
-    border-radius:18px; border:1px solid var(--cor-acento-teal);
-    background:var(--cor-acento-teal); color:#fff; font-size:12px; font-weight:700;
-    letter-spacing:.5px; cursor:pointer; font-family:inherit;
-    box-shadow:0 4px 14px rgba(0,0,0,.3); }
-  .ra-filtros-btn svg { fill:currentColor; }
-  .ra-filtros-btn:hover, .ra-filtros-btn[aria-expanded="true"] { background:var(--cor-acento-teal-hover, var(--cor-acento-teal)); }
-  .ra-filtros-qtd { display:none; min-width:18px; height:18px; padding:0 5px; box-sizing:border-box;
-    border-radius:9px; background:#fff; color:var(--cor-acento-teal); font-size:11px;
-    line-height:18px; text-align:center; }
-  .ra-filtros-qtd.tem { display:inline-block; }
-  .ra-filtros-janela { display:none; position:absolute; top:50px; left:18px; right:18px;
-    z-index:35; max-height:calc(100% - 64px); overflow:auto; border-radius:10px;
-    border:1px solid var(--cor-card-elevado); box-shadow:0 16px 48px rgba(0,0,0,.45); }
-  .ra-filtros-janela.aberto { display:block; }
-  .ra-filtros-janela .ra-filtros { margin:0; border-radius:10px; box-shadow:none;
-    padding:12px 16px 14px; }
-  /* lista dos filtros de seleção: com espaço, aparece inteira por cima da
-     janela (sem barra de rolagem cortando) */
-  @media (min-height:760px) { .ra-filtros-janela { overflow:visible; max-height:none; } }
+  /* Topo 62px: espaço do botão flutuante do painel de filtros (#fab-filtros,
+     44px, canto superior esquerdo, definido em "CGAPE - BALANÇO PAC.py")
+     — pedido do usuário em 20/11/2026. */
+  .ra-corpo { flex:1; overflow:auto; padding:62px 18px 40px; }
   .ra-msg { font-size:13px; color:var(--cor-texto-secundario); min-height:18px;
     margin-bottom:10px; }
   .ra-cards { display:grid; gap:12px; margin-bottom:14px; }
@@ -3357,110 +3333,6 @@ HTML_JANELA = r"""
     min-width:92px; background:transparent; }
   .ra-vazio { padding:40px 0; text-align:center; font-size:14px;
     color:var(--cor-texto-secundario); }
-  .ra-filtros { background:var(--cor-card); border-radius:8px;
-    padding:10px 14px 12px; margin-bottom:10px; box-shadow:var(--sombra-card); }
-  .ra-filtros:empty { display:none; }
-  .ra-filtros-topo { display:flex; justify-content:space-between; align-items:center;
-    min-height:26px; margin-bottom:6px; font-size:12px; letter-spacing:.5px;
-    color:var(--cor-texto-secundario); }
-  .ra-filtros-topo b { flex:1; }
-  .ra-top30 { display:inline-flex; align-items:center; gap:8px; margin-right:14px;
-    cursor:pointer; font-size:12px; font-weight:600; color:var(--cor-texto-secundario);
-    user-select:none; }
-  .ra-top30 small { font-weight:400; color:var(--cor-texto-terciario); }
-  .ra-top30 input { position:absolute; opacity:0; pointer-events:none; }
-  .ra-top30-trilho { position:relative; width:32px; height:18px; border-radius:9px;
-    background:var(--cor-card-elevado); border:1px solid var(--cor-texto-terciario);
-    transition:background .15s ease; flex:none; }
-  .ra-top30-trilho span { position:absolute; top:2px; left:2px; width:12px; height:12px;
-    border-radius:50%; background:var(--cor-texto-secundario); transition:transform .15s ease; }
-  .ra-top30.ativo { color:var(--cor-acento-teal-texto); }
-  .ra-top30.ativo .ra-top30-trilho { background:var(--cor-acento-teal);
-    border-color:var(--cor-acento-teal); }
-  /* Bolinha branca — #10251F (quase preto) ficava escondida em cima do
-     trilho, que virou um azul escuro saturado na identidade única do
-     projeto (antes era um teal claro) — corrigido a pedido do usuário em
-     14/11/2026. */
-  .ra-top30.ativo .ra-top30-trilho span { transform:translateX(14px); background:#fff; }
-  .ra-top30 input:focus-visible + .ra-top30-trilho { outline:2px solid var(--cor-acento-teal);
-    outline-offset:2px; }
-  .ra-filtros-grade { display:grid; align-items:start; gap:10px 12px;
-    grid-template-columns:repeat(8, minmax(0, 1fr)); }
-  @media (max-width:1100px) {
-    .ra-filtros-grade { grid-template-columns:repeat(4, minmax(0, 1fr)); } }
-  /* 16:9 largo: os 10 filtros de seleção numa linha só, janela mais baixa */
-  @media (min-width:1600px) {
-    .ra-filtros-grade { grid-template-columns:repeat(10, minmax(0, 1fr)); } }
-  .ra-ms { position:relative; min-width:0; }
-  .ra-ms h3 { margin:0 0 4px; font-size:11px; font-weight:600;
-    color:var(--cor-texto-secundario); text-transform:uppercase; letter-spacing:.3px; }
-  .ra-ms-botao { width:100%; text-align:left; background:var(--cor-fundo);
-    color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado);
-    border-radius:6px; padding:6px 22px 6px 10px; font-size:12px; cursor:pointer;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; position:relative;
-    font-family:inherit; }
-  .ra-ms-botao::after { content:"\25BE"; position:absolute; right:8px; top:5px;
-    color:var(--cor-texto-terciario); }
-  .ra-ms.marcado .ra-ms-botao { border-color:var(--cor-acento-teal); }
-  .ra-ms-lista { display:none; position:absolute; z-index:30; top:100%; left:0;
-    min-width:100%; width:max-content; max-width:340px; margin-top:4px;
-    background:var(--cor-card); border:1px solid var(--cor-card-elevado);
-    border-radius:8px; box-shadow:var(--sombra-card); padding:6px; }
-  .ra-ms.aberto .ra-ms-lista { display:block; }
-  .ra-ms-lista input[type=text] { width:100%; margin-bottom:6px;
-    background:var(--cor-fundo); color:var(--cor-texto-primario);
-    border:1px solid var(--cor-card-elevado); border-radius:6px; padding:4px 8px;
-    font-size:12px; font-family:inherit; }
-  .ra-ms-opcoes { max-height:260px; overflow-y:auto; }
-  .ra-ms-opcoes label { display:flex; align-items:center; gap:6px; padding:3px 4px;
-    font-size:12px; cursor:pointer; border-radius:4px; }
-  .ra-ms-opcoes label:hover { background:var(--cor-card-elevado); }
-  .ra-ms-opcoes label span { flex:1; }
-  .ra-ms-opcoes label small { color:var(--cor-texto-terciario); }
-  .ra-ms-opcoes label.zerado { opacity:.5; }
-  .ra-chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px;
-    max-height:78px; overflow-y:auto; }
-  .ra-chip { display:inline-flex; align-items:center; gap:2px; max-width:100%;
-    background:var(--cor-card-elevado); border-radius:10px; padding:1px 4px 1px 8px;
-    font-size:11px; }
-  .ra-chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .ra-chip button { background:none; border:none; color:var(--cor-texto-secundario);
-    cursor:pointer; font-size:13px; line-height:1; padding:0 2px; }
-  .ra-datas-topo { font-size:12px; letter-spacing:.5px; color:var(--cor-texto-secundario);
-    font-weight:700; margin:14px 0 6px; padding-top:10px;
-    border-top:1px solid var(--cor-card-elevado); }
-  .ra-datas-topo small { font-weight:400; letter-spacing:0; }
-  .ra-datas-grade { display:grid; align-items:start; gap:10px 12px;
-    grid-template-columns:repeat(5, minmax(0, 1fr)); }
-  @media (max-width:1100px) {
-    .ra-datas-grade { grid-template-columns:repeat(3, minmax(0, 1fr)); } }
-  .ra-data { min-width:0; border:1px solid var(--cor-card-elevado);
-    border-radius:8px; padding:6px 8px 8px; }
-  .ra-data.ativo { border-color:var(--cor-acento-teal); }
-  .ra-data h3 { display:flex; align-items:baseline; gap:6px; margin:0 0 6px;
-    font-size:11px; color:var(--cor-texto-secundario); text-transform:uppercase;
-    letter-spacing:.3px; }
-  .ra-data h3 span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
-    white-space:nowrap; }
-  .ra-data h3 small { font-weight:400; text-transform:none; letter-spacing:0;
-    white-space:nowrap; color:var(--cor-texto-terciario); }
-  .ra-data-x { background:none; border:none; color:var(--cor-texto-secundario);
-    cursor:pointer; font-size:14px; line-height:1; padding:0 2px; visibility:hidden; }
-  .ra-data.ativo .ra-data-x { visibility:visible; }
-  .ra-mandatos { display:flex; gap:6px; margin-bottom:6px; }
-  .ra-mandatos button { flex:1; background:var(--cor-fundo); color:var(--cor-texto-secundario);
-    border:1px solid var(--cor-card-elevado); border-radius:6px; padding:4px 6px; font-size:11px;
-    font-weight:700; letter-spacing:.3px; font-family:inherit; cursor:pointer; }
-  .ra-mandatos button:hover { color:var(--cor-texto-primario); border-color:var(--cor-acento-teal); }
-  .ra-mandatos button.ativo { background:var(--cor-acento-teal); border-color:var(--cor-acento-teal);
-    color:#fff; }
-  .ra-data-campos { display:flex; flex-direction:column; gap:4px; }
-  .ra-data-campos label { display:flex; align-items:center; gap:6px; font-size:11px;
-    color:var(--cor-texto-secundario); }
-  .ra-data-campos input { flex:1; min-width:0; background:var(--cor-fundo);
-    color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado);
-    border-radius:6px; padding:3px 6px; font-size:12px; font-family:inherit; }
-  html[data-tema="escuro"] .ra-data-campos input { color-scheme:dark; }
   #raTabela { margin-top:18px; }
   #raTabela:not(:empty) { min-height:calc(70vh + 90px); }
   .ra-tabela-topo { display:flex; align-items:center; gap:12px; margin-bottom:8px;
@@ -3548,12 +3420,17 @@ HTML_JANELA = r"""
   // 30 maiores desta janela). Sobras dessas chaves salvas numa sessão
   // antiga filtrariam sem nenhum controle na tela pra desfazer — por isso
   // saem ao carregar e nunca são salvas.
+  // Depois, o próprio botão FILTROS saiu (pedido do usuário em 20/11/2026:
+  // "vamos usar apenas os filtros do painel de filtros") — então NENHUMA
+  // chave de filtro desse popup (eixo, status, município...) pode
+  // sobreviver; daqui só ficam a busca geral ("busca") e as buscas das
+  // colunas da tabela ("bcol"), que continuam na tela. "entregue" (STATUS
+  // ENTREGUE) e "top30" chegam do painel a cada abertura, via
+  // abrirResumoAcoes(opcoes).
+  var RA_CHAVES_DA_TELA = { busca: 1, bcol: 1 };
   function raTirarMovidos(obj) {
     Object.keys(obj).forEach(function (c) {
-      // "entregue" (STATUS ENTREGUE) também foi pro painel de filtros —
-      // chega de lá a cada abertura via abrirResumoAcoes(opcoes.entregue)
-      // — pedido do usuário em 20/11/2026.
-      if (c === "prazo" || c === "top30" || c === "entregue" || c.indexOf("d_") === 0) delete obj[c];
+      if (!RA_CHAVES_DA_TELA[c]) delete obj[c];
     });
     return obj;
   }
@@ -3596,194 +3473,11 @@ HTML_JANELA = r"""
              : "<td" + cl + ">–</td>";
   }
   function raStatusAlvo(s) { return s === "TOTAL" ? "" : s; }
-  function raAlternar(chave, valor, marcar) {
-    var atual = raFiltros[chave] || [];
-    var nova = marcar ? atual.concat([valor]) : atual.filter(function (v) { return v !== valor; });
-    if (nova.length) raFiltros[chave] = nova; else delete raFiltros[chave];
-    raConsultar();
-  }
-  // "entregue" é configuração do quadro, não filtro: o LIMPAR não mexe nele.
-  // "_codigos" e "top30" vêm do painel de filtros compartilhado (ver
-  // raTirarMovidos) — também ficam de fora daqui.
-  function raChavesFiltro() {
-    return Object.keys(raFiltros).filter(function (c) {
-      return c !== "entregue" && c !== "_codigos" && c !== "top30";
-    });
-  }
-  function raLimparFiltros() {
-    raChavesFiltro().forEach(function (c) { delete raFiltros[c]; });
-    raConsultar();
-  }
-  function raBuscar(bloco) {
-    var termo = norm(bloco.querySelector(".ra-ms-lista input").value);
-    bloco.querySelectorAll(".ra-ms-opcoes label").forEach(function (l) {
-      l.style.display = norm(l.querySelector("span").textContent).indexOf(termo) >= 0 ? "" : "none";
-    });
-  }
-  function raMontarBloco(f) {
-    var bloco = document.createElement("div");
-    bloco.className = "ra-ms";
-    bloco.dataset.ra = f.chave;
-    bloco.innerHTML = "<h3>" + esc(f.rotulo) + "</h3>" +
-      '<button type="button" class="ra-ms-botao">Escolher opções…</button>' +
-      '<div class="ra-ms-lista"><input type="text" placeholder="Buscar…">' +
-      '<div class="ra-ms-opcoes"></div></div><div class="ra-chips"></div>';
-    bloco.querySelector(".ra-ms-botao").onclick = function (e) {
-      e.stopPropagation();
-      var abrir = !bloco.classList.contains("aberto");
-      document.querySelectorAll("#ra-overlay .ra-ms.aberto").forEach(function (b) { b.classList.remove("aberto"); });
-      if (abrir) {
-        // a lista abre logo abaixo do botão (não abaixo das etiquetas dos
-        // itens escolhidos): marcar itens não empurra a lista, que fica por
-        // cima das etiquetas — pedido do usuário em 18/11/2026
-        var bt = bloco.querySelector(".ra-ms-botao");
-        bloco.querySelector(".ra-ms-lista").style.top = (bt.offsetTop + bt.offsetHeight) + "px";
-        bloco.classList.add("aberto"); bloco.querySelector(".ra-ms-lista input").focus();
-      }
-    };
-    bloco.querySelector(".ra-ms-lista").onclick = function (e) { e.stopPropagation(); };
-    bloco.querySelector(".ra-ms-lista input").oninput = function () { raBuscar(bloco); };
-    return bloco;
-  }
-  function raOpcoes(bloco, f) {
-    var marcados = raFiltros[f.chave] || [];
-    var lista = bloco.querySelector(".ra-ms-opcoes");
-    var rolagem = lista.scrollTop;
-    lista.innerHTML = "";
-    f.opcoes.forEach(function (o) {
-      var rotulo = document.createElement("label");
-      if (!o.n) rotulo.className = "zerado";
-      var caixa = document.createElement("input");
-      caixa.type = "checkbox";
-      caixa.checked = marcados.indexOf(o.v) >= 0;
-      caixa.onchange = function (e) { e.stopPropagation(); raAlternar(f.chave, o.v, caixa.checked); };
-      var nome = document.createElement("span");
-      nome.textContent = f.chave === "status" ? semNum(o.v) : o.v;
-      var qtd = document.createElement("small");
-      qtd.textContent = o.n;
-      rotulo.append(caixa, nome, qtd);
-      lista.appendChild(rotulo);
-    });
-    lista.scrollTop = rolagem;
-    raBuscar(bloco);
-    bloco.classList.toggle("marcado", marcados.length > 0);
-    bloco.querySelector(".ra-ms-botao").textContent = marcados.length
-      ? marcados.length + " escolhido(s)" : "Escolher opções…";
-    var chips = bloco.querySelector(".ra-chips");
-    chips.innerHTML = "";
-    marcados.forEach(function (v) {
-      var chip = document.createElement("span");
-      chip.className = "ra-chip";
-      var nome = document.createElement("span");
-      nome.textContent = f.chave === "status" ? semNum(v) : v; nome.title = nome.textContent;
-      var x = document.createElement("button");
-      x.type = "button"; x.textContent = "×"; x.title = "Remover";
-      x.onclick = function (e) { e.stopPropagation(); raAlternar(f.chave, v, false); };
-      chip.append(nome, x);
-      chips.appendChild(chip);
-    });
-  }
-  function raData(chave) {
-    var bloco = document.querySelector('.ra-data[data-ra="' + chave + '"]');
-    var de = bloco.querySelector(".de").value;
-    var ate = bloco.querySelector(".ate").value;
-    if (de || ate) raFiltros["d_" + chave] = {de: de, ate: ate};
-    else delete raFiltros["d_" + chave];
-    raConsultar();
-  }
-  // Atalhos de período por mandato na Entrega da Obra (pedido do usuário em
-  // 13/11/2026): um clique preenche de/até; clicar no ativo limpa. "Macro
-  // Jerônimo" (os dois mandatos somados) adicionada a pedido do usuário em
-  // 15/11/2026, mantendo M01/M02 com os mesmos períodos de cada mandato.
-  var RA_MANDATOS = [
-    {rotulo: "1º M", de: "2023-01-01", ate: "2026-12-31"},
-    {rotulo: "2º M", de: "2027-01-01", ate: "2030-12-31"},
-    {rotulo: "Jerônimo", de: "2023-01-01", ate: "2030-12-31"}];
-  var RA_DATAS_COM_MANDATO = ["entrega"];
-  function raMontarData(f) {
-    var bloco = document.createElement("div");
-    bloco.className = "ra-data";
-    bloco.dataset.ra = f.chave;
-    var mandatos = RA_DATAS_COM_MANDATO.indexOf(f.chave) !== -1;
-    bloco.innerHTML = "<h3><span>" + esc(f.rotulo) + '</span><small></small>' +
-      '<button type="button" class="ra-data-x" title="Limpar este filtro">×</button></h3>' +
-      (mandatos ? '<div class="ra-mandatos">' + RA_MANDATOS.map(function (m, i) {
-        return '<button type="button" data-i="' + i + '" title="' + m.de.split("-").reverse().join("/") +
-          " a " + m.ate.split("-").reverse().join("/") + '">' + m.rotulo + "</button>";
-      }).join("") + "</div>" : "") +
-      '<div class="ra-data-campos"><label>de <input type="date" class="de"></label>' +
-      '<label>até <input type="date" class="ate"></label></div>';
-    bloco.querySelectorAll(".ra-mandatos button").forEach(function (b) {
-      b.onclick = function (e) {
-        e.stopPropagation();
-        var m = RA_MANDATOS[+b.dataset.i], faixa = raFiltros["d_" + f.chave] || {};
-        if (faixa.de === m.de && faixa.ate === m.ate) delete raFiltros["d_" + f.chave];
-        else raFiltros["d_" + f.chave] = {de: m.de, ate: m.ate};
-        raConsultar();
-      };
-    });
-    bloco.querySelectorAll("input").forEach(function (i) {
-      i.onchange = function (e) { e.stopPropagation(); raData(f.chave); };
-    });
-    bloco.querySelector(".ra-data-x").onclick = function () {
-      delete raFiltros["d_" + f.chave]; raConsultar();
-    };
-    return bloco;
-  }
-  function raAtualizarData(bloco, f) {
-    var faixa = raFiltros["d_" + f.chave] || {};
-    var de = bloco.querySelector(".de"), ate = bloco.querySelector(".ate");
-    de.value = faixa.de || ""; ate.value = faixa.ate || "";
-    de.min = ate.min = f.min; de.max = ate.max = f.max;
-    if (faixa.ate) de.max = faixa.ate;
-    if (faixa.de) ate.min = faixa.de;
-    bloco.classList.toggle("ativo", !!(faixa.de || faixa.ate));
-    bloco.querySelector("small").textContent = f.n + " com data";
-    bloco.querySelectorAll(".ra-mandatos button").forEach(function (b) {
-      var m = RA_MANDATOS[+b.dataset.i];
-      b.classList.toggle("ativo", faixa.de === m.de && faixa.ate === m.ate);
-    });
-  }
-  function raDesenharFiltros(lista, datas) {
-    var caixa = document.getElementById("raFiltros");
-    // Prazo contratual, DATAS E PRAZOS e "30 MAIORES MUNICÍPIOS" agora
-    // ficam no painel de filtros compartilhado (ver raTirarMovidos) —
-    // pedido do usuário em 20/11/2026. O backend continua mandando os
-    // dois (são usados no HTML autônomo/.pptx), só não aparecem aqui.
-    lista = (lista || []).filter(function (f) { return f.chave !== "prazo"; });
-    datas = [];
-    // STATUS ENTREGUE também saiu daqui pro painel de filtros (bloco DATAS
-    // E PRAZOS da grade do MONITORAMENTO) — pedido do usuário em 20/11/2026.
-    if (!caixa.children.length) {
-      caixa.innerHTML = '<div class="ra-filtros-topo"><b>FILTROS</b>' +
-        '<button type="button" id="raLimpar">LIMPAR FILTROS</button></div>' +
-        '<div class="ra-filtros-grade"></div>' +
-        '<div class="ra-datas-topo">DATAS E PRAZOS <small>(com um intervalo ' +
-        'preenchido, ações sem essa data ficam de fora)</small></div>' +
-        '<div class="ra-datas-grade"></div>';
-      caixa.querySelector("#raLimpar").onclick = raLimparFiltros;
-      var grade = caixa.querySelector(".ra-filtros-grade");
-      lista.forEach(function (f) { grade.appendChild(raMontarBloco(f)); });
-      var gradeDatas = caixa.querySelector(".ra-datas-grade");
-      datas.forEach(function (f) { gradeDatas.appendChild(raMontarData(f)); });
-      if (!datas.length) caixa.querySelector(".ra-datas-topo").remove();
-    }
-    lista.forEach(function (f) {
-      raOpcoes(caixa.querySelector('.ra-ms[data-ra="' + f.chave + '"]'), f);
-    });
-    datas.forEach(function (f) {
-      var bloco = caixa.querySelector('.ra-data[data-ra="' + f.chave + '"]');
-      if (bloco) raAtualizarData(bloco, f);
-    });
-    document.getElementById("raLimpar").style.visibility =
-      raChavesFiltro().length ? "visible" : "hidden";
-    // quantos filtros em uso, no botão FILTROS (busca geral e buscas das
-    // colunas ficam fora: elas têm campo próprio na tela)
-    var qtdF = Object.keys(raFiltros).filter(function (c) { return c !== "busca" && c !== "bcol" && c !== "_codigos" && c !== "top30" && c !== "entregue"; }).length;
-    var marca = document.getElementById("raFiltrosQtd");
-    if (marca) { marca.textContent = qtdF || ""; marca.classList.toggle("tem", qtdF > 0); }
-    raSincronizarBuscaGeral();
-  }
+  // O popup de filtros próprio deste dash (botão FILTROS: blocos de
+  // seleção, datas, mandatos, LIMPAR) foi removido — o MONITORAMENTO usa só
+  // o PAINEL DE FILTROS compartilhado (#grade-mon), que chega aqui como
+  // _codigos/top30/entregue em window.abrirResumoAcoes — pedido do usuário
+  // em 20/11/2026. Código morto do popup apagado na refatoração do mesmo dia.
 
   // ---- tabela das ações do recorte ----------------------------------------
   var raBase = null, raBaseVersao = null, raBasePedido = null;
@@ -3969,7 +3663,7 @@ HTML_JANELA = r"""
   function raMontarConteudo(d) {
     var atu = document.getElementById("raAtualizado");
     if (atu) atu.textContent = d.atualizado_em ? " · atualizada em " + d.atualizado_em : "";
-    raDesenharFiltros(d.filtros, d.datas);
+    raSincronizarBuscaGeral();
     raTabelaAtualizar(d);
     if (d.vazio) {
       document.getElementById("raQuadro").innerHTML =
@@ -4325,8 +4019,8 @@ HTML_JANELA = r"""
       "</tbody><tfoot><tr>" + linha(q.total, "tot") + "</tr></tfoot></table></div>";
   }
   function raConsultar() {
-    // Chamada depois de QUALQUER mutação de raFiltros (ver raAlternar,
-    // raLimparFiltros etc.) — ponto único pra persistir em localStorage,
+    // Chamada depois de QUALQUER mutação de raFiltros (busca geral, buscas
+    // das colunas, abrirResumoAcoes) — ponto único pra persistir em localStorage,
     // sem precisar repetir isso em cada lugar que mexe no filtro.
     raSalvarFiltros();
     var msg = document.getElementById("raMsg");
@@ -4390,6 +4084,10 @@ HTML_JANELA = r"""
     else delete raFiltros.entregue;
     overlay.classList.add("aberto");
     overlay.setAttribute("aria-hidden", "false");
+    // Botão flutuante do painel de filtros (definido no painel): acerta a
+    // altura agora que este dash está à mostra — pedido do usuário em
+    // 20/11/2026.
+    if (window.posicionarFabFiltros) window.posicionarFabFiltros();
     raConsultar();
   };
   // Botão FECHAR removido (pedido do usuário em 20/11/2026): esta janela é
@@ -4497,56 +4195,34 @@ HTML_JANELA = r"""
       if (window.mostrarDashDaBaseAtiva) window.mostrarDashDaBaseAtiva();
     };
   }
-  var btnRaFiltrosPainel = document.getElementById("raFiltrosPainel");
-  if (btnRaFiltrosPainel) {
-    btnRaFiltrosPainel.onclick = function () {
-      if (window.trocarBase) window.trocarBase("MON", { tela: "filtros" });
-    };
-  }
   var btnRaGerarRelatorio = document.getElementById("ra-gerar-relatorio");
   if (btnRaGerarRelatorio) {
     btnRaGerarRelatorio.onclick = function () {
       if (window.gerarSaida) window.gerarSaida();
     };
   }
-  overlay.addEventListener("click", function () {
-    overlay.querySelectorAll(".ra-ms.aberto").forEach(function (b) { b.classList.remove("aberto"); });
-  });
+  // Esc neste dash. Só age quando ele é MESMO a tela à vista: desde que
+  // virou o dash irmão do PAC, #ra-overlay continua "aberto" por baixo do
+  // painel de filtros (#app) e de janelas do painel (Ficha Cadastral, gerar
+  // relatório...) — antes, um Esc dado nelas (ex.: fechar o OUTROS PRAZOS)
+  // era capturado aqui e jogava a pessoa pro dash do PAC. Ordem: janela de
+  // cards das ações (pedido do usuário em 19/11/2026) > menu de grade >
+  // volta pro PAC — corrigido na refatoração de 20/11/2026.
+  function raEhTelaVisivel() {
+    if (!overlay.classList.contains("aberto")) return false;
+    var noCentro = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+    return !!noCentro && overlay.contains(noCentro);
+  }
   document.addEventListener("keydown", function (e) {
-    if (e.key !== "Escape" || !overlay.classList.contains("aberto")) return;
-    var aberto = overlay.querySelector(".ra-ms.aberto");
-    // Esc com a janela de cards das ações aberta fecha SÓ ela e volta para
-    // Ações em Monitoramento (pedido do usuário em 19/11/2026)
+    if (e.key !== "Escape" || !raEhTelaVisivel()) return;
     var cardsAbertos = document.getElementById("raOcFundo");
+    // Menu de grade aberto: deixa o Esc seguir até o fecharMenu() dele (que
+    // também acerta o aria-expanded) em vez de sair do dash.
+    if (overlay.querySelector(".ra-menu.aberto")) return;
     if (cardsAbertos && cardsAbertos.classList.contains("aberta")) cardsAbertos.classList.remove("aberta");
-    else if (aberto) aberto.classList.remove("aberto");
-    else if (raFiltrosJanelaAberta()) raFiltrosJanela(false);
     else fechar();
     e.stopPropagation();
   }, true);
-  // Janela suspensa dos filtros: abre/fecha no botão FILTROS; fecha com
-  // Esc (ver acima) ou clicando fora dela.
-  function raFiltrosJanelaAberta() {
-    return document.getElementById("raFiltrosJanela").classList.contains("aberto");
-  }
-  function raFiltrosJanela(abrir) {
-    document.getElementById("raFiltrosJanela").classList.toggle("aberto", abrir);
-    document.getElementById("raFiltrosBtn").setAttribute("aria-expanded", abrir ? "true" : "false");
-    if (!abrir) overlay.querySelectorAll(".ra-ms.aberto").forEach(function (b) { b.classList.remove("aberto"); });
-  }
-  document.getElementById("raFiltrosBtn").addEventListener("click", function (ev) {
-    ev.stopPropagation();
-    raFiltrosJanela(!raFiltrosJanelaAberta());
-  });
-  document.addEventListener("mousedown", function (ev) {
-    if (!raFiltrosJanelaAberta()) return;
-    var j = document.getElementById("raFiltrosJanela"), b = document.getElementById("raFiltrosBtn");
-    if (j.contains(ev.target) || b.contains(ev.target)) return;
-    raFiltrosJanela(false);
-  });
-  document.querySelectorAll("[data-abrir-resumo-acoes]").forEach(function (b) {
-    b.addEventListener("click", window.abrirResumoAcoes);
-  });
 })();
 </script>
 """
