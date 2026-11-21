@@ -123,7 +123,8 @@ MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
 # Filtros do painel: (chave, coluna derivada, título do bloco)
 CAMPOS_FILTRO = [
     ("EIXO", "EIXO", "Eixo"),
-    ("SITUACAO", "GRUPO_STATUS", "Situação"),
+    # Rótulo "Status" (era "Situação") — pedido do usuário em 21/11/2026.
+    ("SITUACAO", "GRUPO_STATUS", "Status"),
     ("RESPONSAVEL", "RESPONSAVEL", "Responsável Informação"),
     ("SECRETARIA", "SECRETARIA", "Secretaria"),
     ("EXECUTOR", "EXECUTOR", "Executor"),

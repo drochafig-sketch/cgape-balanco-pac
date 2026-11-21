@@ -3059,18 +3059,26 @@ HTML_JANELA = r"""
           <button type="button" data-secao="PAC" role="tab" aria-selected="false" tabindex="-1">PAC<span class="contagem-base"></span></button>
           <button type="button" class="ativo" data-secao="MON" role="tab" aria-selected="true" tabindex="0">MONITORAMENTO<span class="contagem-base"></span></button>
         </div>
-        <button type="button" class="btn-inicio" id="raLimparBase" title="Limpar filtros (MONITORAMENTO) — Shift+clique limpa PAC e MONITORAMENTO">LIMPAR FILTROS</button>
-        <!-- "PAINEL DE FILTROS" saiu daqui: virou o botão flutuante
-             #fab-filtros (ícone de funil, canto inferior direito), comum aos
-             dashes do PAC e do MONITORAMENTO e definido em "CGAPE - BALANÇO
-             PAC.py" — pedido do usuário em 20/11/2026. -->
-        <button type="button" class="btn-inicio" id="ra-gerar-relatorio" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados (o mesmo relatório do PAC, que já traz as duas bases)">GERAR RELATÓRIO</button>
+        <!-- Busca geral logo à direita da chave casa | PAC | MONITORAMENTO,
+             igual nos três cabeçalhos (dash do PAC, este e painel de
+             filtros) — pedido do usuário em 21/11/2026. -->
         <div class="ra-busca-geral">
           <input type="search" id="raBuscaGeral" autocomplete="off"
             placeholder="Buscar em todas as colunas (código, ação, município, executor, objeto…)"
             title="Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha Ações do Cronograma">
           <button type="button" id="raBuscaGeralLimpar" title="Limpar a busca">×</button>
         </div>
+        <button type="button" class="btn-inicio" id="raLimparBase" title="Limpar filtros (MONITORAMENTO) — Shift+clique limpa PAC e MONITORAMENTO">LIMPAR FILTROS</button>
+        <!-- "PAINEL DE FILTROS" saiu daqui: virou o botão flutuante
+             #fab-filtros (ícone de funil, canto inferior direito), comum aos
+             dashes do PAC e do MONITORAMENTO e definido em "CGAPE - BALANÇO
+             PAC.py" — pedido do usuário em 20/11/2026. -->
+        <button type="button" class="btn-inicio" id="ra-gerar-relatorio" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados (o mesmo relatório do PAC, que já traz as duas bases)">GERAR RELATÓRIO</button>
+        <!-- Tema claro/escuro, mesma posição do dash do PAC (depois do
+             GERAR RELATÓRIO, antes do menu de grade) — pedido do usuário em
+             21/11/2026. Ligado a window.alternarTema (definida em "CGAPE -
+             BALANÇO PAC.py") lá embaixo no script. -->
+        <button type="button" class="botao-tema ra-botao-tema" id="raTema" title="Tema escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
         <div class="ra-menu" id="raMenu">
           <button type="button" class="ra-menu-btn" id="raMenuBtn" aria-haspopup="true" aria-expanded="false" title="Mais opções: atualizar da CONDER, qualidade da Secretaria e gerar apresentação"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.2"/></svg></button>
           <div class="ra-menu-lista" id="raMenuLista" role="menu">
@@ -3079,8 +3087,9 @@ HTML_JANELA = r"""
             <button type="button" id="raGerar" title="Lê de novo a planilha Ações do Cronograma e gera o slide em Downloads">GERAR APRESENTAÇÃO</button>
           </div>
         </div>
-        <button type="button" id="raHtml" title="Gera uma página HTML com o gráfico de investimento dos 30 maiores municípios por população, a avaliação da carteira e o quadro Status × Eixo do recorte atual">GERAR HTML</button>
-        <button type="button" id="raIncluirApresentacao" title="Abre a Apresentação CGAPE (HTML) já com as páginas do Monitoramento marcadas — você escolhe quais páginas do PAC entram junto">INCLUIR NA APRESENTAÇÃO</button>
+        <!-- GERAR HTML e INCLUIR NA APRESENTAÇÃO removidos do cabeçalho —
+             pedido do usuário em 21/11/2026 (a Apresentação CGAPE em HTML,
+             com as páginas do Monitoramento, sai pelo GERAR RELATÓRIO). -->
       </div>
     </div>
     <!-- Botão FILTROS (e sua janela suspensa de filtros) removido: o dash
@@ -3122,7 +3131,11 @@ HTML_JANELA = r"""
      posição no dash do PAC (#preview-modal .modal-titulo) — pedido do
      usuário em 20/11/2026. */
   .ra-cabecalho h2 { flex-basis:100%; }
-  .ra-botoes .seletor-secao.troca-base { margin-right:auto; }
+  /* Desde 21/11/2026 (sem GERAR HTML / INCLUIR NA APRESENTAÇÃO) os botões
+     seguem logo depois da chave, com o mesmo espaço (16px) e a mesma ordem
+     do dash do PAC: busca, LIMPAR, GERAR RELATÓRIO, sol/lua, grade. */
+  .ra-botoes { justify-content:flex-start; }
+  .ra-botoes .seletor-secao.troca-base { margin-right:8px; }
   .ra-cabecalho { flex-wrap:wrap; }
   .ra-botoes > button { white-space:nowrap; flex-shrink:0; }
   .ra-botoes button, .ra-mais { background:transparent;
@@ -3171,6 +3184,8 @@ HTML_JANELA = r"""
      GERAR APRESENTAÇÃO — pedido do usuário em 18/11/2026. */
   .ra-menu { position:relative; display:inline-flex; }
   .ra-botoes .ra-menu-btn { padding:5px 9px; display:inline-flex; align-items:center; }
+  /* Botão sol/lua: mesmo tamanho do botão do menu de grade ao lado. */
+  .ra-botoes .ra-botao-tema { padding:5px 9px; display:inline-flex; align-items:center; }
   .ra-menu-btn svg { fill:currentColor; }
   .ra-menu.aberto .ra-menu-btn { border-color:var(--cor-acento-teal); color:var(--cor-acento-teal-texto); }
   .ra-menu-lista { display:none; position:absolute; top:calc(100% + 6px); right:0;
@@ -3182,7 +3197,7 @@ HTML_JANELA = r"""
     padding:8px 12px; border-radius:5px; white-space:nowrap; }
   .ra-botoes .ra-menu-lista button:hover:not(:disabled) {
     background:var(--cor-fundo); color:var(--cor-acento-teal-texto); }
-  #raGerar:disabled, #raXlsx:disabled, #raHtml:disabled, #raConder:disabled { opacity:.6; cursor:default; }
+  #raGerar:disabled, #raXlsx:disabled, #raConder:disabled { opacity:.6; cursor:default; }
   .ra-area { flex:1; min-height:0; position:relative; display:flex; flex-direction:column; }
   /* Topo 62px: espaço do botão flutuante do painel de filtros (#fab-filtros,
      44px, canto superior esquerdo, definido em "CGAPE - BALANÇO PAC.py")
@@ -3533,6 +3548,8 @@ HTML_JANELA = r"""
     function aplicar(texto) {
       if (texto.trim()) raFiltros.busca = texto; else delete raFiltros.busca;
       caixa.parentNode.classList.toggle("ativo", !!texto.trim());
+      // contador "MONITORAMENTO (N)" e selinho do botão de filtros
+      if (window.agendarContadoresBase) window.agendarContadoresBase();
     }
     caixa.oninput = function () { aplicar(caixa.value); raConsultarDepois(); };
     caixa.onkeydown = function (e) {
@@ -3540,6 +3557,16 @@ HTML_JANELA = r"""
       if (e.key === "Escape" && caixa.value) { e.stopPropagation(); caixa.value = ""; aplicar(""); raConsultar(); }
     };
     limpar.onclick = function () { caixa.value = ""; aplicar(""); raConsultar(); caixa.focus(); };
+    // O campo de busca do topo do painel de filtros (base MONITORAMENTO)
+    // mexe nesta mesma busca — ver ligarBuscaPainelFiltros em "CGAPE -
+    // BALANÇO PAC.py" — pedido do usuário em 21/11/2026. Só guarda o
+    // texto: o dash é refeito quando volta a aparecer (abrirResumoAcoes).
+    window.raBuscaGeralAtual = function () { return raFiltros.busca || ""; };
+    window.raDefinirBuscaGeral = function (texto) {
+      texto = String(texto || "");
+      caixa.value = texto;
+      aplicar(texto);
+    };
   })();
   function raSincronizarBuscaGeral() {
     var caixa = document.getElementById("raBuscaGeral");
@@ -4068,21 +4095,6 @@ HTML_JANELA = r"""
     }).catch(function (e) { msg.textContent = "Erro ao gerar a apresentação: " + e; })
       .finally(function () { botao.disabled = false; });
   }
-  function raHtml() {
-    var msg = document.getElementById("raMsg");
-    var botao = document.getElementById("raHtml");
-    botao.disabled = true;
-    msg.textContent = "Gerando o HTML…";
-    // no navegador (servidor web) a aba é aberta já, no clique, para não
-    // ser barrada como pop-up; o conteúdo chega depois
-    var aba = window.PAC_MODO_WEB ? window.open("", "_blank") : null;
-    api("resumo_acoes_html", raFiltros).then(function (r) {
-      msg.textContent = r.mensagem || "";
-      if (r.html && aba) { aba.document.open(); aba.document.write(r.html); aba.document.close(); }
-      else if (aba) aba.close();
-    }).catch(function (e) { msg.textContent = "Erro ao gerar o HTML: " + e; if (aba) aba.close(); })
-      .finally(function () { botao.disabled = false; });
-  }
   // codigosRestricao (pedido do usuário em 20/11/2026): quando o overlay é
   // aberto pelo botão "AÇÕES EM MONITORAMENTO" do dash, chega aqui com os
   // "Código" do recorte atual da grade #grade-mon do painel (ver
@@ -4149,7 +4161,23 @@ HTML_JANELA = r"""
     });
     document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") fecharMenu(); });
   })();
-  document.getElementById("raHtml").onclick = raHtml;
+  // Sol/lua: a troca de tema é a do painel (window.alternarTema, que também
+  // sincroniza o rótulo de todos os .botao-tema); depois repinta o mapa,
+  // única parte deste dash com cor calculada no desenho (raMapaCores) — o
+  // resto segue as variáveis CSS do tema — pedido do usuário em 21/11/2026.
+  var btnRaTema = document.getElementById("raTema");
+  if (btnRaTema) {
+    if (window.alternarTema) {
+      btnRaTema.onclick = function () {
+        window.alternarTema();
+        var s = document.querySelector("#raQuadro .ra-mapa-slot");
+        if (s && raMapaSvg) raPintarMapa(s, document.querySelector("#raQuadro .ra-mapa-leg"), raMapaDados);
+      };
+      if (window.sincronizarBotoesTema) window.sincronizarBotoesTema();
+    } else {
+      btnRaTema.style.display = "none";
+    }
+  }
   // "ATUALIZAR DA CONDER" (pedido do usuário em 17/11/2026): baixa a base
   // do serviço da CONDER e relê tudo (a tabela recarrega pela versão nova)
   document.getElementById("raConder").onclick = function () {
@@ -4187,25 +4215,6 @@ HTML_JANELA = r"""
       }
     }).catch(function (e) { msg.textContent = "Erro ao apurar a qualidade da Secretaria: " + e; });
   };
-  // "INCLUIR NA APRESENTAÇÃO" — abre a mesma janela de seleção de slides
-  // da Apresentação CGAPE (definida no script do painel, injetado nesta
-  // mesma página — ver window.abrirApresentacaoComMonitoramento em "CGAPE
-  // - BALANÇO PAC.py"), já com as páginas MON_* marcadas. Os filtros do
-  // Monitoramento usados são os deste overlay (raFiltros, via
-  // window.monRaFiltrosAtuais); os do PAC são os últimos do painel (ou
-  // base completa, se o painel nunca foi aberto) — pedido do usuário em
-  // 15/11/2026.
-  var botaoIncluirApresentacao = document.getElementById("raIncluirApresentacao");
-  if (botaoIncluirApresentacao) {
-    if (window.abrirApresentacaoComMonitoramento) {
-      botaoIncluirApresentacao.onclick = window.abrirApresentacaoComMonitoramento;
-    } else {
-      // Nunca deveria acontecer (este overlay só existe injetado no painel
-      // do PAC, que sempre define essa função) — esconde em vez de deixar
-      // um botão quebrado.
-      botaoIncluirApresentacao.style.display = "none";
-    }
-  }
   // irParaHome vem do próprio documento do painel (ver montar_html_painel)
   // — este overlay vive dentro dele, nunca sozinho — pedido do usuário em
   // 14/11/2026.

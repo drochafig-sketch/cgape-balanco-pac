@@ -6402,7 +6402,56 @@ def _filtrar_dataframe(filtros_selecionados):
     df = _aplicar_filtro_arvore_data(
         df, col_prazo_atual, filtros_selecionados.get("DATAS_CONCLUSAO_ATUAL"))
 
+    # Busca digitada no cabeçalho do dash do PAC (campo "Buscar em todas as
+    # colunas…", mesmo padrão do dash do MONITORAMENTO) — pedido do usuário
+    # em 21/11/2026. Fica só as ações cujas colunas, juntas, têm TODAS as
+    # palavras digitadas (sem acento, sem diferença de maiúsculas). Como
+    # entra aqui, dash, relatórios e apresentações seguem o mesmo recorte.
+    termos = _termos_busca_pac(filtros_selecionados.get("BUSCA"))
+    if termos and not df.empty:
+        texto = _texto_busca_pac().reindex(df.index).fillna("")
+        marca = pd.Series(True, index=df.index)
+        for termo in termos:
+            marca &= texto.str.contains(termo, regex=False)
+        df = df[marca]
+
     return df
+
+
+def _texto_celula_busca_pac(v):
+    # Célula como texto pesquisável: data em dd/mm/aaaa, número também no
+    # formato brasileiro (1.234,56), tudo sem acento e em minúsculas — a
+    # mesma regra de resumo_acoes._ra_texto_busca (MONITORAMENTO).
+    if v is None or (isinstance(v, float) and pd.isna(v)) or v is pd.NaT:
+        return ""
+    if isinstance(v, (datetime, pd.Timestamp)):
+        return f"{v:%d/%m/%Y}"
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        br = f"{float(v):,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
+        inteiro = float(v) == int(float(v))
+        return f"{int(float(v)) if inteiro else v} {br}"
+    return remover_acentos(" ".join(str(v).split())).lower()
+
+
+def _termos_busca_pac(texto):
+    return [p for p in remover_acentos(str(texto or "")).lower().split() if p]
+
+
+# Texto de TODAS as colunas de cada linha de df_original, normalizado —
+# montado uma vez só (na primeira busca) e reaproveitado enquanto
+# df_original for o mesmo objeto.
+_cache_texto_busca_pac = (None, None)
+
+
+def _texto_busca_pac():
+    global _cache_texto_busca_pac
+    if _cache_texto_busca_pac[0] is not df_original:
+        texto = pd.Series(
+            [" | ".join(_texto_celula_busca_pac(v) for v in linha)
+             for linha in df_original.itertuples(index=False, name=None)],
+            index=df_original.index)
+        _cache_texto_busca_pac = (df_original, texto)
+    return _cache_texto_busca_pac[1]
 
 
 def _aplicar_filtro_arvore_data(df, coluna, datas_selecionadas):
@@ -10354,9 +10403,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
      teal), contagem de filtros ativos no selinho. Canto SUPERIOR ESQUERDO,
      logo abaixo do cabeçalho fixo de cada dash (top calculado no JS por
      posicionarFabFiltros(), já que os cabeçalhos têm alturas diferentes);
-     o espaço dele é reservado no começo da barra de seções do PAC
-     (#preview-nav-rapida) e no topo do corpo do MONITORAMENTO (.ra-corpo,
-     em resumo_acoes.py). */
+     no PAC, a barra vertical de seções (#preview-nav-rapida) fica logo
+     abaixo dele, e o espaço da coluna é reservado à esquerda de
+     #preview-corpo; no MONITORAMENTO, no topo do corpo (.ra-corpo, em
+     resumo_acoes.py). */
   .fab-filtros {
     position: fixed; left: 18px; top: 134px; z-index: 80;
     width: 44px; height: 44px; border-radius: 50%; border: none; padding: 0;
@@ -10376,9 +10426,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   body.secao-mon .fab-filtros-qtd { color: var(--cor-acento-secundario); }
   .fab-filtros-qtd.tem { display: block; }
   @media print { .fab-filtros { display: none !important; } }
-  /* Abre espaço pro botão flutuante à esquerda das abas 01 Visão geral...
-     (18px de margem + 44px do botão + 18px). */
-  #preview-nav-rapida { padding-left: 80px; }
   /* Sublinhado discreto no título, PAC (padrão) ou MONITORAMENTO, nas três
      telas (filtros, dash do PAC e dash do MONITORAMENTO). */
   .topo-titulo-principal, .modal-titulo-principal {
@@ -10386,10 +10433,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     padding-bottom: 2px;
   }
   body.secao-mon .topo-titulo-principal { border-bottom-color: var(--cor-acento-secundario); }
+  /* 5 colunas (antes 6): com RESPONSÁVEL INFORMAÇÃO, TERRITÓRIO DE
+     IDENTIDADE e PRAZO CONTRATUAL guardados no botão OUTROS FILTROS, sobram
+     8 blocos + DETALHAMENTO + o botão = 2 linhas de 5 — pedido do usuário
+     em 21/11/2026. */
   #grade-mon {
     flex: 1;
     display: none;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     grid-auto-rows: 1fr;
     gap: 14px;
     overflow: hidden;
@@ -10397,13 +10448,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   }
   body.secao-mon #grade { display: none; }
   body.secao-mon #grade-mon { display: grid; }
-  /* DATAS E PRAZOS + "30 MAIORES MUNICÍPIOS" no fim da grade do
-     MONITORAMENTO, linha inteira e altura do próprio conteúdo (as duas
-     linhas de blocos acima dividem o resto) — vieram do popup FILTROS do
-     dash do MONITORAMENTO (resumo_acoes.py), mesmo visual de lá — pedido do
-     usuário em 20/11/2026. */
+  /* DATAS E PRAZOS + "30 MAIORES MUNICÍPIOS" no TOPO da grade do
+     MONITORAMENTO (desde 21/11/2026; antes ficava no fim), linha inteira e
+     altura do próprio conteúdo (as duas linhas de blocos abaixo dividem o
+     resto) — vieram do popup FILTROS do dash do MONITORAMENTO
+     (resumo_acoes.py), mesmo visual de lá — pedido do usuário em
+     20/11/2026. */
   #grade-mon:has(.mon-datas-bloco) {
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
   }
   .mon-datas-bloco {
     grid-column: 1 / -1;
@@ -10454,11 +10506,22 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .mon-outros-btn:focus-visible { outline: 2px solid var(--cor-acento-secundario); outline-offset: 2px; }
   .mon-outros-seta { display: inline-block; margin-left: 6px; transition: transform .15s; }
   .mon-outros.aberto .mon-outros-seta { transform: rotate(180deg); }
-  /* Abre PRA CIMA (o bloco fica no rodapé da tela), alinhado à direita. */
-  .mon-outros-painel { display: none; position: absolute; right: 0; bottom: calc(100% + 8px);
+  /* OUTROS PRAZOS abre PRA BAIXO (o bloco de datas agora fica no topo da
+     grade); OUTROS FILTROS (última célula da grade, embaixo à direita) abre
+     PRA CIMA. Os dois alinhados à direita. */
+  .mon-outros-painel { display: none; position: absolute; right: 0; top: calc(100% + 8px);
     z-index: 30; width: min(1080px, calc(100vw - 48px)); background: var(--cor-card);
     border: 1px solid var(--cor-acento-secundario); border-radius: var(--raio-lg);
     box-shadow: 0 10px 30px rgba(0, 0, 0, .35); padding: 10px 12px 12px; }
+  /* OUTROS FILTROS: célula da grade (no lugar de um bloco), com RESPONSÁVEL
+     INFORMAÇÃO, TERRITÓRIO DE IDENTIDADE e PRAZO CONTRATUAL no painel
+     suspenso — pedido do usuário em 21/11/2026. */
+  .mon-outros-filtros { background: var(--cor-card); border-radius: var(--raio-lg); padding: 10px; }
+  .mon-outros-filtros .mon-outros-btn { font-size: 13px; }
+  .mon-outros-filtros .mon-outros-painel { top: auto; bottom: 0; right: calc(100% + 10px);
+    width: min(980px, calc(100vw - 80px)); }
+  .mon-outros-grade-filtros { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mon-outros-grade-filtros .bloco { height: min(340px, 52vh); border: 1px solid var(--cor-card-elevado); }
   .mon-outros.aberto .mon-outros-painel { display: block; }
   .mon-outros-painel-topo { display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 8px; font-size: 12px; font-weight: 700; letter-spacing: .5px;
@@ -10499,9 +10562,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     border-radius: 6px; padding: 3px 6px; font-size: 12px; font-family: var(--fonte); }
   html[data-tema="escuro"] .mon-data-campos input { color-scheme: dark; }
   /* DASHBOARD continua visível no MONITORAMENTO (leva ao dash da base
-     ativa — ver trocarBase()); só lupa/QC/GERENCIAL são exclusivos do PAC
-     e saem do topo — pedido do usuário em 20/11/2026. */
-  body.secao-mon #filtros-busca-btn-lupa,
+     ativa — ver trocarBase()); só QC/GERENCIAL são exclusivos do PAC
+     e saem do topo — pedido do usuário em 20/11/2026. (O campo de busca
+     fica nas duas bases: busca a base ativa — 21/11/2026.) */
   body.secao-mon #filtros-qc-btn,
   body.secao-mon #btn-gerencial-filtros { display: none !important; }
   .mon-aviso {
@@ -11213,6 +11276,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
      .seletor-secao (PAC | MONITORAMENTO) do painel de filtros. */
   .paginas-formato {
     margin: 14px 22px 0 22px;
+    /* A janela é uma coluna flex: em tela baixa a chave era espremida na
+       altura e os rótulos saíam cortados (pedido do usuário em
+       21/11/2026) — quem encolhe/rola é só a grade de páginas. */
+    flex-shrink: 0;
   }
   /* Rótulo sempre numa linha só: com "flex: 1" os três botões dividiam a
      largura do texto mais curto e "APRESENTAÇÃO HTML/PPTX" quebrava em duas
@@ -11537,6 +11604,43 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
        justify-content:space-between) os deixaria por padrão. */
     margin-left: auto;
   }
+  /* No dash do PAC a fileira começa logo depois da chave e o campo de busca
+     ocupa o espaço que sobra — mesma posição do campo no dash do
+     MONITORAMENTO (depois de LIMPAR FILTROS / GERAR RELATÓRIO) — pedido do
+     usuário em 21/11/2026. */
+  #preview-modal .modal-titulo-botoes { margin-left: 0; flex: 1 1 auto; min-width: 0; }
+  .dash-busca-geral { position: relative; flex: 1 1 320px; max-width: 620px; min-width: 180px; }
+  .busca-geral-campo {
+    width: 100%; box-sizing: border-box; background: var(--cor-card);
+    color: var(--cor-texto-primario); border: 1px solid var(--cor-card-elevado);
+    border-radius: 8px; padding: 7px 36px 7px 38px; font-size: 13px; font-family: inherit;
+    font-weight: 400; box-shadow: var(--sombra-card); outline: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23889' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: 12px center;
+  }
+  .busca-geral-campo::-webkit-search-cancel-button { display: none; }
+  .busca-geral-campo:focus, .dash-busca-geral.ativo .busca-geral-campo { border-color: var(--cor-acento-teal); }
+  body.secao-mon .busca-geral-campo:focus,
+  body.secao-mon .dash-busca-geral.ativo .busca-geral-campo { border-color: var(--cor-acento-secundario); }
+  .busca-geral-limpar {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--cor-texto-secundario); font-size: 18px;
+    line-height: 1; cursor: pointer; padding: 2px 6px; display: none;
+  }
+  .dash-busca-geral.ativo .busca-geral-limpar { display: block; }
+  /* Mesmo campo no painel de filtros, no lugar da lupa, logo à direita da
+     chave pizza | PAC | MONITORAMENTO (ver #filtros-busca-geral) — pedido
+     do usuário em 21/11/2026. */
+  .linha-chave-busca { display: flex; align-items: center; gap: 16px; }
+  .linha-chave-busca .seletor-secao { flex-shrink: 0; }
+  .linha-chave-busca .dash-busca-geral { flex: 1 1 320px; max-width: 460px; }
+  /* Busca sem nenhuma ação: aviso no lugar das seções (sem o alerta que
+     aparecia a cada tecla). */
+  #dash-busca-vazia { display: none; margin: 24px 0; padding: 22px; text-align: center;
+    color: var(--cor-texto-secundario); background: var(--cor-card); border-radius: var(--raio-lg); }
+  #preview-corpo.busca-sem-resultado #dash-busca-vazia { display: block; }
+  #preview-corpo.busca-sem-resultado .preview-secao,
+  #preview-corpo.busca-sem-resultado #preview-nota-secretaria { display: none; }
   .modal-titulo-botoes .btn-acento {
     font-size: 12px;
     padding: 7px 14px;
@@ -11833,6 +11937,15 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
      dos lados — pedido do usuário em 18/11/2026. */
   @media (min-width: 1600px) {
     #preview-corpo { max-width: 1880px; padding: 18px 28px 32px 28px; }
+  }
+  /* Espaço à esquerda do conteúdo para a coluna do botão flutuante do
+     painel de filtros + barra vertical de seções (18px de margem + 44px +
+     18px = 80px a partir da borda da tela). Quando o corpo fica
+     centralizado (tela mais larga que o max-width), a margem que sobra do
+     lado já conta — pedido do usuário em 21/11/2026. */
+  #preview-corpo { padding-left: max(32px, calc(80px - max(0px, (100vw - 1400px) / 2))); }
+  @media (min-width: 1600px) {
+    #preview-corpo { padding-left: max(28px, calc(80px - max(0px, (100vw - 1880px) / 2))); }
   }
 
   /* Impressão manual (Ctrl+P do navegador) — garante que as cores do tema
@@ -12345,7 +12458,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     box-shadow: var(--sombra-card);
     margin-top: 32px;
     overflow: hidden;
-    scroll-margin-top: 64px;
+    scroll-margin-top: 16px;
   }
   .preview-secao:first-of-type { margin-top: 8px; }
   .preview-secao-titulo {
@@ -12397,45 +12510,67 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     background: var(--cor-fundo);
     padding: 20px 20px 24px;
   }
-  /* Barra de atalhos, fixa no topo da área que rola */
+  /* Barra de atalhos das seções: coluna vertical fixa na borda esquerda da
+     tela, logo abaixo do botão flutuante do painel de filtros (mesmo eixo
+     dele, 44px). Só os números aparecem; o nome da seção abre para a
+     direita ao passar o mouse (ou no foco do teclado) — pedido do usuário
+     em 21/11/2026. O top é calculado no JS por posicionarFabFiltros(). */
   .preview-nav-rapida {
+    position: fixed;
+    left: 18px;
+    top: 192px;
+    z-index: 6;
     display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 8px;
-    overflow-x: auto;
-    position: sticky;
-    top: -24px;
-    z-index: 5;
-    margin: -24px -32px 4px;
-    padding: 12px 32px;
-    background: var(--cor-fundo);
-    border-bottom: 1px solid var(--cor-card-elevado);
-    scrollbar-width: thin;
   }
   .preview-nav-rapida button {
-    flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    height: 40px;
+    min-width: 44px;
+    box-sizing: border-box;
     background: var(--cor-card);
     color: var(--cor-texto-primario);
     border: 1px solid var(--cor-card-elevado);
-    border-radius: 18px;
-    padding: 6px 14px;
+    border-radius: 20px;
+    padding: 0;
     font-family: var(--fonte);
     font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
     cursor: pointer;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
     transition: background var(--transicao-rapida), border-color var(--transicao-rapida);
   }
-  .preview-nav-rapida button:hover { border-color: var(--cor-acento-teal-texto); }
-  .preview-nav-rapida button .nav-num { font-weight: 800; color: var(--cor-acento-gold); }
+  .preview-nav-rapida button .nav-num {
+    flex: 0 0 42px;
+    text-align: center;
+    font-weight: 800;
+    color: var(--cor-acento-gold);
+  }
+  .preview-nav-rapida button .nav-rotulo {
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-width .2s ease, opacity .15s ease, padding .2s ease;
+  }
+  .preview-nav-rapida button:hover,
+  .preview-nav-rapida button:focus-visible { border-color: var(--cor-acento-teal-texto); }
+  .preview-nav-rapida button:hover .nav-rotulo,
+  .preview-nav-rapida button:focus-visible .nav-rotulo {
+    max-width: 260px;
+    opacity: 1;
+    padding-right: 16px;
+  }
   .preview-nav-rapida button.ativo {
     background: var(--cor-acento-teal);
     border-color: var(--cor-acento-teal);
     color: #fff;
   }
-  .preview-nav-rapida button.ativo .nav-num { color: #fff; opacity: 0.85; }
+  .preview-nav-rapida button.ativo .nav-num { color: #fff; }
+  @media print { .preview-nav-rapida { display: none !important; } }
   .preview-texto-explicativo {
     font-size: 14px;
     color: var(--cor-texto-secundario);
@@ -12940,6 +13075,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         </span>
       </div>
       <p class="topo-orientacao">Selecione os filtros desejados. Caso nenhum item de um bloco seja selecionado, todos os itens desse bloco serão considerados automaticamente.</p>
+      <!-- Chave pizza | PAC | MONITORAMENTO com a busca geral logo à direita
+           — mesma posição dos dashes — pedido do usuário em 21/11/2026. -->
+      <div class="linha-chave-busca">
       <div class="seletor-secao troca-base" id="seletor-secao" data-tela="filtros" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
         <!-- Só no painel de filtros: no lugar da casa (Início), o ícone de
              gráfico de pizza volta pro DASH da base exibida (PAC ou
@@ -12949,14 +13087,19 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         <button type="button" class="ativo" data-secao="PAC" role="tab" aria-selected="true" tabindex="0">PAC<span class="contagem-base"></span></button>
         <button type="button" data-secao="MON" role="tab" aria-selected="false" tabindex="-1">MONITORAMENTO<span class="contagem-base"></span></button>
       </div>
+      <!-- Busca geral digitada, no lugar da lupa da janela de busca de ficha
+           — mesmo campo dos dashes — pedido do usuário em 21/11/2026. É o
+           MESMO filtro da base ativa: no PAC, o BUSCA do campo do dash
+           (#dash-busca-geral-campo); no MONITORAMENTO, a busca geral do
+           dash de lá (#raBuscaGeral) — ver ligarBuscaPainelFiltros. -->
+      <div class="dash-busca-geral" id="filtros-busca-geral">
+        <input type="search" id="filtros-busca-geral-campo" class="busca-geral-campo" autocomplete="off"
+          placeholder="Buscar em todas as colunas…">
+        <button type="button" id="filtros-busca-geral-limpar" class="busca-geral-limpar" title="Limpar a busca" aria-label="Limpar a busca">×</button>
+      </div>
+      </div>
     </div>
     <div id="botoes-topo">
-      <button id="filtros-busca-btn-lupa" class="dash-busca-btn-lupa" title="Buscar ação e abrir a Ficha Cadastral">
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="7"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-      </button>
       <button id="filtros-qc-btn" class="dash-qc-btn" style="display:none;" title="Controle de Qualidade da Base de Dados">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
@@ -13133,8 +13276,25 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         <button type="button" data-secao="MON" role="tab" aria-selected="false" tabindex="-1">MONITORAMENTO<span class="contagem-base"></span></button>
       </div>
       <div class="modal-titulo-botoes">
+        <!-- Busca geral digitada, no lugar da lupa que abria a janela de
+             busca de ficha — mesmo padrão e função do campo do dash do
+             MONITORAMENTO (#raBuscaGeral em resumo_acoes.py) — pedido do
+             usuário em 21/11/2026. Vira o filtro BUSCA do PAC (ver
+             montarFiltrosAtuais e _filtrar_dataframe). Logo à direita da
+             chave casa | PAC | MONITORAMENTO, nos três cabeçalhos (dash do
+             PAC, dash do MONITORAMENTO e painel de filtros). -->
+        <div class="dash-busca-geral" id="dash-busca-geral">
+          <input type="search" id="dash-busca-geral-campo" class="busca-geral-campo" autocomplete="off"
+            placeholder="Buscar em todas as colunas (item, objeto, município, executor, status…)"
+            title="Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha do PAC">
+          <button type="button" id="dash-busca-geral-limpar" class="busca-geral-limpar" title="Limpar a busca" aria-label="Limpar a busca">×</button>
+        </div>
         <button class="btn" id="dash-limpar">LIMPAR FILTROS</button>
         <button class="btn" id="dash-gerencial">GERENCIAL</button>
+        <!-- GERAR RELATÓRIO saiu do menu de Acesso Rápido e veio pra cá, à
+             direita do GERENCIAL — pedido do usuário em 21/11/2026. Mesmo
+             id/data-botao-gerar de antes (ver botoesGerarAtuais/gerarSaida). -->
+        <button class="btn" id="preview-gerar-topo" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">GERAR RELATÓRIO</button>
         <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
         <div class="acesso-rapido-wrap" id="acesso-rapido-dash-wrap">
           <button class="botao-icone-topo" id="acesso-rapido-dash-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
@@ -13146,15 +13306,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
             </svg>
           </button>
           <div class="acesso-rapido-menu" id="acesso-rapido-dash-menu">
-            <button class="acesso-rapido-item" id="preview-gerar-topo" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-              </svg>
-              <span class="acesso-rapido-texto">GERAR RELATÓRIO</span>
-            </button>
             <!-- Só existe no modo desktop (roda git de verdade na máquina de
                  quem clica) — nasce escondido e o JS decide se mostra, ver
                  window.PAC_MODO_WEB logo no início do <script> principal. -->
@@ -13180,12 +13331,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         <div id="dash-separador-objeto" class="dash-separador-executor"></div>
         <div id="dash-objeto-filtro" class="dash-secretaria-filtro"></div>
       </div>
-      <button id="dash-busca-btn-lupa" class="dash-busca-btn-lupa" title="Buscar ação e abrir a Ficha Cadastral">
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="7"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-      </button>
+      <!-- (Lupa da busca de ficha saiu daqui: virou o campo de busca do
+           cabeçalho, #dash-busca-geral — pedido do usuário em 21/11/2026.
+           A janela de busca de ficha segue na lupa do painel de filtros.) -->
       <button id="dash-qc-btn" class="dash-qc-btn" style="display:none;" title="Controle de Qualidade da Base de Dados">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
@@ -13201,18 +13349,20 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
            pras seções de baixo sem precisar rolar a tela toda. Também
            reabre a seção-alvo se ela estiver fechada no acordeão (ver
            configurarAccordionSecoes() no JS). -->
-      <!-- Barra de atalhos das seções (pedido do usuário em 17/11/2026): fixa
-           no topo da área que rola, em todas as larguras; o clique reabre a
+      <!-- Barra de atalhos das seções (pedido do usuário em 17/11/2026; desde
+           21/11/2026 vertical, na borda esquerda abaixo do botão de filtros,
+           só com os números — o nome abre na passagem do mouse); o clique reabre a
            seção se estiver recolhida e rola até ela; o chip da seção visível
            fica destacado (ver configurarAccordionSecoes() no JS). -->
       <nav class="preview-nav-rapida" id="preview-nav-rapida" aria-label="Seções do dashboard">
-        <button type="button" data-alvo="secao-visao-geral"><span class="nav-num">01</span>Visão geral</button>
-        <button type="button" data-alvo="secao-financeiro"><span class="nav-num">02</span>Financeiro</button>
-        <button type="button" data-alvo="secao-clausulas"><span class="nav-num">03</span>Cláusulas</button>
-        <button type="button" data-alvo="secao-secretaria"><span class="nav-num">04</span>Secretaria | Executor</button>
-        <button type="button" data-alvo="secao-desempenho"><span class="nav-num">05</span>Desempenho</button>
-        <button type="button" data-alvo="secao-mapa"><span class="nav-num">06</span>Mapa</button>
+        <button type="button" data-alvo="secao-visao-geral"><span class="nav-num">01</span><span class="nav-rotulo">Visão geral</span></button>
+        <button type="button" data-alvo="secao-financeiro"><span class="nav-num">02</span><span class="nav-rotulo">Financeiro</span></button>
+        <button type="button" data-alvo="secao-clausulas"><span class="nav-num">03</span><span class="nav-rotulo">Cláusulas</span></button>
+        <button type="button" data-alvo="secao-secretaria"><span class="nav-num">04</span><span class="nav-rotulo">Secretaria | Executor</span></button>
+        <button type="button" data-alvo="secao-desempenho"><span class="nav-num">05</span><span class="nav-rotulo">Desempenho</span></button>
+        <button type="button" data-alvo="secao-mapa"><span class="nav-num">06</span><span class="nav-rotulo">Mapa</span></button>
       </nav>
+      <div id="dash-busca-vazia" role="status"></div>
       <div id="preview-nota-secretaria"></div>
       <section class="preview-secao" id="secao-visao-geral">
         <h3 class="preview-secao-titulo"><span class="secao-num">01</span><span class="secao-textos"><span class="secao-nome">Visão geral</span><span class="secao-desc">Quantidade de ações e investimento do recorte, previsão de conclusão da fase, resumo financeiro por fonte, panorama das fases e situação do Termo de Compromisso.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
@@ -13843,7 +13993,16 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     // Chave "Detalhar contratado" do Resumo Financeiro — também não filtra
     // nada: só define como o gráfico financeiro sai no PDF.
     filtros.FINANCEIRO_DETALHADO = financeiroDetalhadoLigado();
+    // Busca geral digitada no cabeçalho do dash (#dash-busca-geral-campo) —
+    // filtra de verdade (ver _filtrar_dataframe), então conta como filtro
+    // ativo e vai junto pros relatórios — pedido do usuário em 21/11/2026.
+    var busca = textoBuscaDashPac();
+    if (busca) filtros.BUSCA = busca;
     return filtros;
+  }
+  function textoBuscaDashPac() {
+    var campo = document.getElementById("dash-busca-geral-campo");
+    return campo ? campo.value.trim() : "";
   }
 
   // --- CUSTOMIZAÇÃO DE COLUNAS do Detalhamento ---
@@ -14507,6 +14666,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var campoMunicipio = document.getElementById("busca-ficha-municipio");
     if (campoDescricao) campoDescricao.value = "";
     if (campoMunicipio) campoMunicipio.value = "";
+    // Busca geral do cabeçalho do dash também é filtro do PAC.
+    var campoBuscaGeral = document.getElementById("dash-busca-geral-campo");
+    if (campoBuscaGeral) {
+      campoBuscaGeral.value = "";
+      campoBuscaGeral.parentNode.classList.remove("ativo");
+    }
   }
   // Age só na base ativa (PAC ou MONITORAMENTO); Shift+clique limpa as
   // duas — ver limparFiltrosBaseAtiva() — pedido do usuário em 20/11/2026.
@@ -14616,6 +14781,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     // gráficos são desenhados com cores calculadas: redesenha com as novas
     if (_ultimosDadosPreview) montarPreVisualizacao(_ultimosDadosPreview);
   };
+  // O sol/lua do dash do MONITORAMENTO (#raTema, resumo_acoes.py) nasce
+  // depois deste script: ele se liga sozinho e usa esta função para
+  // acertar o rótulo — pedido do usuário em 21/11/2026.
+  window.sincronizarBotoesTema = sincronizarBotoesTema;
   document.querySelectorAll(".botao-tema").forEach(function (b) {
     b.addEventListener("click", window.alternarTema);
   });
@@ -15900,6 +16069,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     document.getElementById("acesso-rapido-filtros-publicar"),
     document.getElementById("acesso-rapido-dash-publicar"),
   ];
+  // Sem o GERAR RELATÓRIO (que virou botão visível no topo do dash — pedido
+  // do usuário em 21/11/2026), o menu de Acesso Rápido do dash só tem o
+  // PUBLICAR: no site, onde ele não existe, o ícone de grade sairia vazio.
+  if (window.PAC_MODO_WEB) {
+    var wrapAcessoDash = document.getElementById("acesso-rapido-dash-wrap");
+    if (wrapAcessoDash) wrapAcessoDash.style.display = "none";
+  }
   if (!window.PAC_MODO_WEB) {
     botoesPublicar.forEach(function (btnPublicar) {
       btnPublicar.style.display = "";
@@ -16005,6 +16181,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   }
 
 
+  var _pedidoDashboard = 0;
   // Busca os dados atualizados e (re)desenha o dashboard — chamada tanto no
   // carregamento inicial da página (o dashboard agora É a tela inicial)
   // quanto sempre que os filtros mudam através de um dos atalhos no topo
@@ -16032,18 +16209,32 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var filtros = montarFiltrosAtuais();
     var cards = document.getElementById("preview-cards");
     cards.innerHTML = '<div class="preview-destaque-carteira"><div class="preview-destaque-bloco"><div class="rotulo">Investimento total da carteira</div><div class="valor">—</div><div class="subtexto">Carregando...</div></div></div>';
+    // Com a busca digitada, cada tecla pede o dash de novo: só a resposta
+    // do último pedido é desenhada (as atrasadas são descartadas).
+    var minhaVez = ++_pedidoDashboard;
+    var corpoDash = document.getElementById("preview-corpo");
 
     var resultado;
     try {
       resultado = await chamarAPI("pre_visualizar", filtros);
     } catch (erro) {
+      if (minhaVez !== _pedidoDashboard) return;
       alert("Ocorreu um erro ao carregar o dashboard:" + NL + NL + erro);
       return;
     }
+    if (minhaVez !== _pedidoDashboard) return;
+    if (corpoDash) corpoDash.classList.remove("busca-sem-resultado");
 
     if (!resultado || resultado.ok === false) {
       atualizarBotaoQualidade(null);
-      if (resultado && resultado.vazio) {
+      if (resultado && resultado.vazio && filtros.BUSCA && corpoDash) {
+        // Busca sem nenhuma ação: aviso no lugar das seções, sem alerta
+        // (apareceria a cada tecla digitada).
+        document.getElementById("dash-busca-vazia").textContent =
+          "Nenhuma ação com “" + filtros.BUSCA + "” nos filtros escolhidos.";
+        corpoDash.classList.add("busca-sem-resultado");
+        document.getElementById("preview-overlay").style.display = "flex";
+      } else if (resultado && resultado.vazio) {
         alert("Nenhum registro encontrado para os filtros selecionados.");
       } else {
         alert("Ocorreu um erro ao carregar o dashboard:" + NL + NL + (resultado ? resultado.erro : "erro desconhecido"));
@@ -17056,13 +17247,91 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     atualizarListaBuscaFicha();
   }
 
-  document.getElementById("dash-busca-btn-lupa").onclick = abrirJanelaBuscaFicha;
-  // Mesma lupa no painel de filtros: a busca por ação é útil nos dois
-  // lugares, e quem está montando o recorte não precisa passar pelo
-  // dashboard só para consultar uma ficha. A janela de busca já respeita
-  // os filtros marcados no momento (montarFiltrosAtuais), então o
-  // resultado é o mesmo recorte nos dois pontos de entrada.
-  document.getElementById("filtros-busca-btn-lupa").onclick = abrirJanelaBuscaFicha;
+  // As duas lupas (dash e painel de filtros) viraram campos de busca geral
+  // digitada — pedido do usuário em 21/11/2026; a janela de busca de ficha
+  // (abrirJanelaBuscaFicha) ficou sem botão que a abra.
+
+  // Busca geral do dash do PAC — mesmo comportamento do campo do dash do
+  // MONITORAMENTO (resumo_acoes.py): filtra enquanto digita (350ms depois
+  // da última tecla), Enter aplica na hora, Esc ou × limpam.
+  (function () {
+    var campo = document.getElementById("dash-busca-geral-campo");
+    var limpar = document.getElementById("dash-busca-geral-limpar");
+    if (!campo) return;
+    var timer = null;
+    function aplicar(imediato) {
+      campo.parentNode.classList.toggle("ativo", !!campo.value.trim());
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        carregarDashboard();
+        agendarContadoresBase();
+      }, imediato ? 0 : 350);
+    }
+    campo.addEventListener("input", function () { aplicar(false); });
+    campo.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") aplicar(true);
+      if (e.key === "Escape" && campo.value) { e.stopPropagation(); campo.value = ""; aplicar(true); }
+    });
+    limpar.addEventListener("click", function () { campo.value = ""; aplicar(true); campo.focus(); });
+  })();
+
+  // Campo de busca do topo do painel de filtros (#filtros-busca-geral-campo)
+  // — pedido do usuário em 21/11/2026. Não tem estado próprio: é uma
+  // janela pra busca da base ativa — no PAC, o campo do dash
+  // (#dash-busca-geral-campo, filtro BUSCA); no MONITORAMENTO, a busca
+  // geral do dash de lá (raFiltros.busca, via window.raDefinirBuscaGeral).
+  // Aqui só guarda o texto e atualiza o contador; o dash da base é refeito
+  // ao voltar pra ele (mostrarDashDaBaseAtiva).
+  var PLACEHOLDER_BUSCA = {
+    PAC: "Buscar em todas as colunas (item, objeto, município, executor, status…)",
+    MON: "Buscar em todas as colunas (código, ação, município, executor, objeto…)",
+  };
+  var TITULO_BUSCA = {
+    PAC: "Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha do PAC",
+    MON: "Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha Ações do Cronograma",
+  };
+  function textoBuscaDaBaseAtiva() {
+    if (window.baseAtiva === "MON") return window.raBuscaGeralAtual ? window.raBuscaGeralAtual() : "";
+    var campoDash = document.getElementById("dash-busca-geral-campo");
+    return campoDash ? campoDash.value : "";
+  }
+  function sincronizarBuscaPainelFiltros() {
+    var campo = document.getElementById("filtros-busca-geral-campo");
+    // (pode ser chamada pelo contador antes destas constantes existirem)
+    if (!campo || !PLACEHOLDER_BUSCA) return;
+    var base = window.baseAtiva === "MON" ? "MON" : "PAC";
+    campo.placeholder = PLACEHOLDER_BUSCA[base];
+    campo.title = TITULO_BUSCA[base];
+    // Não sobrescreve o que a pessoa está digitando agora.
+    if (document.activeElement !== campo) campo.value = textoBuscaDaBaseAtiva();
+    campo.parentNode.classList.toggle("ativo", !!campo.value.trim());
+  }
+  (function ligarBuscaPainelFiltros() {
+    var campo = document.getElementById("filtros-busca-geral-campo");
+    var limpar = document.getElementById("filtros-busca-geral-limpar");
+    if (!campo) return;
+    function aplicar() {
+      var texto = campo.value;
+      campo.parentNode.classList.toggle("ativo", !!texto.trim());
+      if (window.baseAtiva === "MON") {
+        if (window.raDefinirBuscaGeral) window.raDefinirBuscaGeral(texto);
+      } else {
+        var campoDash = document.getElementById("dash-busca-geral-campo");
+        if (campoDash) {
+          campoDash.value = texto;
+          campoDash.parentNode.classList.toggle("ativo", !!texto.trim());
+        }
+      }
+      agendarContadoresBase();
+    }
+    campo.addEventListener("input", aplicar);
+    campo.addEventListener("keydown", function (e) {
+      // Enter mostra o resultado: volta pro dash da base ativa.
+      if (e.key === "Enter") { e.preventDefault(); aplicar(); trocarBase(window.baseAtiva, { tela: "dash" }); }
+      if (e.key === "Escape" && campo.value) { e.stopPropagation(); campo.value = ""; aplicar(); }
+    });
+    limpar.addEventListener("click", function () { campo.value = ""; aplicar(); campo.focus(); });
+  })();
   [campoBuscaMunicipio(), campoBuscaDescricao()].forEach(function (campo) {
     campo.addEventListener("input", agendarAtualizacaoListaBusca);
     campo.addEventListener("keydown", function (ev) {
@@ -17370,9 +17639,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // resumo da janela de geração, mais acima, já é como estava antes).
   var CHAVES_NAO_FILTRO_MON = { ORDEM: 1, COLUNAS: 1 };
   function atualizarContadoresBase() {
+    sincronizarBuscaPainelFiltros();
     var filtros = montarFiltrosAtuais();
     var nPac = contarFiltrosAtivos(filtros, CHAVES_NAO_FILTRO_PAC);
     var nMon = contarFiltrosAtivos(filtros.MONITORAMENTO, CHAVES_NAO_FILTRO_MON);
+    // Busca geral digitada do MONITORAMENTO também conta (no PAC ela já vem
+    // em montarFiltrosAtuais como BUSCA) — pedido do usuário em 21/11/2026.
+    if (window.raBuscaGeralAtual && window.raBuscaGeralAtual().trim()) nMon++;
     document.querySelectorAll('.troca-base button[data-secao="PAC"] .contagem-base').forEach(function (el) {
       el.textContent = nPac ? " (" + nPac + ")" : "";
     });
@@ -17398,6 +17671,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     clearTimeout(_timerContadoresBase);
     _timerContadoresBase = setTimeout(atualizarContadoresBase, 80);
   }
+  window.agendarContadoresBase = agendarContadoresBase;   // busca do dash do MONITORAMENTO
   ["app", "dash-filtros-rapidos"].forEach(function (id) {
     var area = document.getElementById(id);
     if (!area) return;
@@ -17410,11 +17684,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   document.getElementById("fab-filtros").addEventListener("click", function () {
     trocarBase(window.baseAtiva, { tela: "filtros" });
   });
-  // Altura certa do botão flutuante em cada dash: no PAC, centralizado na
-  // barra fixa de seções (#preview-nav-rapida, sticky), no espaço reservado
-  // à esquerda dela; no MONITORAMENTO, 10px abaixo do cabeçalho (topo de
-  // .ra-corpo). Recalculado ao trocar de base/tela e ao redimensionar a
-  // janela (o cabeçalho do PAC quebra linha em tela estreita).
+  // Altura certa do botão flutuante em cada dash: no PAC, 6px abaixo do
+  // topo da área que rola (#preview-corpo), com a barra vertical de seções
+  // (#preview-nav-rapida, fixa) logo abaixo dele; no MONITORAMENTO, 10px
+  // abaixo do cabeçalho (topo de .ra-corpo). Recalculado ao trocar de
+  // base/tela e ao redimensionar a janela (o cabeçalho do PAC quebra linha
+  // em tela estreita).
   function posicionarFabFiltros() {
     var fab = document.getElementById("fab-filtros");
     if (!fab) return;
@@ -17423,17 +17698,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       var corpoRa = document.querySelector("#ra-overlay .ra-corpo");
       if (corpoRa && corpoRa.offsetParent !== null) topo = corpoRa.getBoundingClientRect().top + 10;
     } else {
-      var aba = document.querySelector("#preview-nav-rapida button");
       var corpo = document.getElementById("preview-corpo");
-      if (aba && aba.offsetHeight) {
-        // Centro alinhado com o das abas "01 Visão geral"...
-        var r = aba.getBoundingClientRect();
-        topo = r.top + (r.height - fab.offsetHeight) / 2;
-      } else if (corpo && corpo.offsetParent !== null) {
-        topo = corpo.getBoundingClientRect().top + 10;
-      }
+      if (corpo && corpo.offsetParent !== null) topo = corpo.getBoundingClientRect().top + 6;
     }
-    if (topo !== null) fab.style.top = Math.round(topo) + "px";
+    if (topo === null) return;
+    fab.style.top = Math.round(topo) + "px";
+    var navSecoes = document.getElementById("preview-nav-rapida");
+    if (navSecoes) navSecoes.style.top = Math.round(topo + (fab.offsetHeight || 44) + 14) + "px";
   }
   window.posicionarFabFiltros = posicionarFabFiltros;
   window.addEventListener("resize", posicionarFabFiltros);
@@ -17474,7 +17745,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // "Oferecer limpar as duas" (TAREFA D) — pedido do usuário em 20/11/2026.
   function limparFiltrosBaseAtiva(ambas) {
     if (ambas || window.baseAtiva === "PAC") limparTodosFiltros();
-    if (ambas || window.baseAtiva === "MON") monLimpar();
+    if (ambas || window.baseAtiva === "MON") {
+      monLimpar();
+      // A busca geral digitada também é filtro (igual ao PAC, que a limpa
+      // em limparTodosFiltros) — pedido do usuário em 21/11/2026.
+      if (window.raDefinirBuscaGeral) window.raDefinirBuscaGeral("");
+    }
     atualizarContadoresBase();
   }
   window.limparFiltrosBaseAtiva = limparFiltrosBaseAtiva;
@@ -17585,7 +17861,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       var disp = new Set();
       linhas.forEach(function (l) { if (monLinhaPassa(l, b.chave)) disp.add(l[b.chave]); });
       document.querySelectorAll('#grade-mon .bloco[data-chave="' + b.chave + '"] label.item').forEach(function (label) {
-        var ok = disp.has(label.dataset.valor);
+        var ok = monValoresDoItem(label).some(function (v) { return disp.has(v); });
         label.classList.toggle("indisponivel", !ok);
         label.querySelector("input").disabled = !ok;
       });
@@ -17614,12 +17890,23 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // painel suspenso estão com intervalo preenchido (eles não aparecem na
   // linha principal, então sem isso o filtro ficaria "escondido").
   function monAtualizarOutrosPrazos() {
-    var caixa = document.querySelector("#grade-mon .mon-outros");
-    if (!caixa) return;
-    var n = MON_DATAS_OUTROS.filter(function (c) { return !!MON.datas[c]; }).length;
-    caixa.classList.toggle("ativo", n > 0);
-    caixa.querySelector(".mon-outros-qtd").textContent =
-      n ? n + (n === 1 ? " filtro ativo" : " filtros ativos") : "5 prazos";
+    var caixa = document.querySelector("#grade-mon .mon-outros-prazos");
+    if (caixa) {
+      var n = MON_DATAS_OUTROS.filter(function (c) { return !!MON.datas[c]; }).length;
+      caixa.classList.toggle("ativo", n > 0);
+      caixa.querySelector(".mon-outros-qtd").textContent =
+        n ? n + (n === 1 ? " filtro ativo" : " filtros ativos") : MON_DATAS_OUTROS.length + " prazos";
+    }
+    // Mesmo aviso no OUTROS FILTROS: quantos dos blocos guardados nele têm
+    // alguma opção marcada.
+    var caixaF = document.querySelector("#grade-mon .mon-outros-filtros");
+    if (caixaF) {
+      var nF = MON_BLOCOS_OUTROS.filter(function (c) { return MON.sel[c] && MON.sel[c].size > 0; }).length;
+      var total = caixaF.querySelectorAll(".bloco").length;
+      caixaF.classList.toggle("ativo", nF > 0);
+      caixaF.querySelector(".mon-outros-qtd").textContent =
+        nF ? nF + (nF === 1 ? " filtro ativo" : " filtros ativos") : total + " filtros";
+    }
   }
 
   // DATAS E PRAZOS + "30 MAIORES MUNICÍPIOS" — vieram do popup FILTROS do
@@ -17635,6 +17922,25 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // Prazos agrupados no botão OUTROS PRAZOS (chaves de
   // relatorio_monitoramento.CAMPOS_DATA) — pedido do usuário em 20/11/2026.
   var MON_DATAS_OUTROS = ["atualizacao", "estudos", "projeto", "equipamentos", "funcionalidade"];
+  // Blocos guardados no botão OUTROS FILTROS (chaves de
+  // relatorio_monitoramento.CAMPOS_FILTRO) — pedido do usuário em 21/11/2026.
+  var MON_BLOCOS_OUTROS = ["RESPONSAVEL", "TERRITORIO", "PRAZO_CONTRATUAL"];
+  // STATUS ENTREGUE no bloco STATUS (ver desenharLista em monRenderizar):
+  // os status juntados são os mesmos de resumo_acoes._ra_juntar_entregues
+  // (concluída/inaugurada) — pedido do usuário em 21/11/2026.
+  var MON_ROTULO_ENTREGUE = "ENTREGUE";
+  var monRedesenharLista = {};
+  function monStatusEntregues(opcoes) {
+    return opcoes.filter(function (op) {
+      var n = normalizarBusca(op);   // sem acento, em MAIÚSCULAS
+      return n.indexOf("CONCLU") !== -1 || n.indexOf("INAUGUR") !== -1;
+    });
+  }
+  // Valores reais (da planilha) que um item da lista representa: o próprio
+  // valor, ou os vários do item "ENTREGUE".
+  function monValoresDoItem(label) {
+    return label.dataset.valores ? label.dataset.valores.split("|") : [label.dataset.valor];
+  }
   var monOuvindoOutrosFora = false;
 
   function monAtualizarDataBloco(bloco, d) {
@@ -17690,6 +17996,48 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     return bloco;
   }
 
+  // Botão tracejado com painel suspenso que guarda itens "de segunda linha"
+  // — usado pelo OUTROS PRAZOS (dentro de DATAS E PRAZOS) e pelo OUTROS
+  // FILTROS (célula da grade, com três blocos de seleção) — pedido do
+  // usuário em 20 e 21/11/2026. Fecha clicando fora, no × ou com Esc.
+  function monCaixaOutros(classeExtra, rotulo, seta, nomes, classeGrade) {
+    var caixa = document.createElement("div");
+    caixa.className = "mon-outros " + classeExtra;
+    caixa.innerHTML = '<button type="button" class="mon-outros-btn" aria-expanded="false" ' +
+      'aria-haspopup="true" title="' + escaparHtmlFicha(nomes.join(", ")) + '">' +
+      "<span>" + rotulo + '<span class="mon-outros-seta" aria-hidden="true">' + seta + "</span></span>" +
+      '<small class="mon-outros-qtd"></small></button>' +
+      '<div class="mon-outros-painel" role="dialog" aria-label="' + escaparHtmlFicha(rotulo) + '">' +
+      '<div class="mon-outros-painel-topo"><span>' + rotulo + "</span>" +
+      '<button type="button" class="mon-outros-fechar" title="Fechar" aria-label="Fechar">×</button></div>' +
+      '<div class="' + classeGrade + '"></div></div>';
+    var botao = caixa.querySelector(".mon-outros-btn");
+    var abrir = function (sim) {
+      caixa.classList.toggle("aberto", sim);
+      botao.setAttribute("aria-expanded", sim ? "true" : "false");
+    };
+    botao.onclick = function () { abrir(!caixa.classList.contains("aberto")); };
+    caixa.querySelector(".mon-outros-fechar").onclick = function () { abrir(false); botao.focus(); };
+    // Ouvinte de clique fora registrado uma vez só no documento (não a
+    // cada redesenho da grade).
+    if (!monOuvindoOutrosFora) {
+      monOuvindoOutrosFora = true;
+      document.addEventListener("mousedown", function (ev) {
+        document.querySelectorAll("#grade-mon .mon-outros.aberto").forEach(function (c) {
+          if (c.contains(ev.target)) return;
+          c.classList.remove("aberto");
+          c.querySelector(".mon-outros-btn").setAttribute("aria-expanded", "false");
+        });
+      });
+    }
+    caixa.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && caixa.classList.contains("aberto")) {
+        ev.stopPropagation(); abrir(false); botao.focus();
+      }
+    });
+    return caixa;
+  }
+
   function monMontarBlocoDatas() {
     var el = document.createElement("div");
     el.className = "mon-datas-bloco";
@@ -17711,42 +18059,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       if (MON_DATAS_OUTROS.indexOf(d.chave) === -1) gradeDatas.appendChild(monMontarData(d));
     });
     if (outros.length) {
-      var caixa = document.createElement("div");
-      caixa.className = "mon-outros";
-      caixa.innerHTML = '<button type="button" class="mon-outros-btn" aria-expanded="false" ' +
-        'aria-haspopup="true" title="' + escaparHtmlFicha(outros.map(function (d) { return d.rotulo; }).join(", ")) + '">' +
-        '<span>OUTROS PRAZOS<span class="mon-outros-seta" aria-hidden="true">▴</span></span>' +
-        '<small class="mon-outros-qtd"></small></button>' +
-        '<div class="mon-outros-painel" role="dialog" aria-label="Outros prazos">' +
-        '<div class="mon-outros-painel-topo"><span>OUTROS PRAZOS</span>' +
-        '<button type="button" class="mon-outros-fechar" title="Fechar" aria-label="Fechar">×</button></div>' +
-        '<div class="mon-outros-grade"></div></div>';
+      var caixa = monCaixaOutros("mon-outros-prazos", "OUTROS PRAZOS", "▾",
+        outros.map(function (d) { return d.rotulo; }), "mon-outros-grade");
       var gradeOutros = caixa.querySelector(".mon-outros-grade");
       outros.forEach(function (d) { gradeOutros.appendChild(monMontarData(d)); });
-      var botao = caixa.querySelector(".mon-outros-btn");
-      var abrir = function (sim) {
-        caixa.classList.toggle("aberto", sim);
-        botao.setAttribute("aria-expanded", sim ? "true" : "false");
-      };
-      botao.onclick = function () { abrir(!caixa.classList.contains("aberto")); };
-      caixa.querySelector(".mon-outros-fechar").onclick = function () { abrir(false); botao.focus(); };
-      // Fecha clicando fora (ouvinte registrado uma vez só no documento,
-      // não a cada redesenho da grade) ou com Esc.
-      if (!monOuvindoOutrosFora) {
-        monOuvindoOutrosFora = true;
-        document.addEventListener("mousedown", function (ev) {
-          document.querySelectorAll("#grade-mon .mon-outros.aberto").forEach(function (c) {
-            if (c.contains(ev.target)) return;
-            c.classList.remove("aberto");
-            c.querySelector(".mon-outros-btn").setAttribute("aria-expanded", "false");
-          });
-        });
-      }
-      caixa.addEventListener("keydown", function (ev) {
-        if (ev.key === "Escape" && caixa.classList.contains("aberto")) {
-          ev.stopPropagation(); abrir(false); botao.focus();
-        }
-      });
       gradeDatas.appendChild(caixa);
     }
     el.querySelector("#mon-top30").onchange = function (e) {
@@ -17756,6 +18072,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     el.querySelector("#mon-entregue").onchange = function (e) {
       MON.entregue = e.target.checked;
       try { localStorage.setItem("monStatusEntregue", MON.entregue ? "1" : "0"); } catch (err) {}
+      // Ao ligar com só um dos dois marcado, marca o outro também (o item
+      // ENTREGUE representa os dois juntos).
+      var selStatus = MON.sel.SITUACAO, blocoStatus = (MON.dados.blocos || []).filter(function (b) { return b.chave === "SITUACAO"; })[0];
+      if (MON.entregue && selStatus && blocoStatus) {
+        var ents = monStatusEntregues(blocoStatus.opcoes);
+        if (ents.some(function (v) { return selStatus.has(v); })) ents.forEach(function (v) { selStatus.add(v); });
+      }
+      if (monRedesenharLista.SITUACAO) monRedesenharLista.SITUACAO();
       monAtualizarDisponibilidade();
     };
     return el;
@@ -17806,23 +18130,52 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   function monRenderizar() {
     var grade = document.getElementById("grade-mon");
     grade.innerHTML = "";
+    // DATAS E PRAZOS logo acima dos blocos (antes vinha no fim) — pedido do
+    // usuário em 21/11/2026.
+    if (MON.dados.datas && MON.dados.datas.length) grade.appendChild(monMontarBlocoDatas());
+    // OUTROS FILTROS: os blocos de MON_BLOCOS_OUTROS são montados dentro do
+    // painel suspenso dele, não na grade.
+    var blocosOutros = MON.dados.blocos.filter(function (b) { return MON_BLOCOS_OUTROS.indexOf(b.chave) !== -1; });
+    var caixaOutrosFiltros = blocosOutros.length ? monCaixaOutros("mon-outros-filtros", "OUTROS FILTROS", "◂",
+      blocosOutros.map(function (b) { return b.titulo; }), "mon-outros-grade-filtros") : null;
     MON.dados.blocos.forEach(function (bloco) {
       var el = monCriarBloco(bloco.titulo, bloco.chave);
       var lista = document.createElement("div");
       lista.className = "bloco-lista";
       function desenharLista() {
         lista.innerHTML = "";
+        var sel = MON.sel[bloco.chave];
+        // STATUS ENTREGUE ligado: no bloco STATUS, Obras Concluídas e Obras
+        // Inauguradas viram um item só, "ENTREGUE" (como no dash) — marcar
+        // ele marca os dois — pedido do usuário em 21/11/2026.
+        var entregues = bloco.chave === "SITUACAO" && MON.entregue ? monStatusEntregues(bloco.opcoes) : [];
+        var juntou = false;
         bloco.opcoes.forEach(function (op) {
-          lista.appendChild(monItem(op, op, MON.sel[bloco.chave].has(op), function (marcado) {
-            if (marcado) MON.sel[bloco.chave].add(op); else MON.sel[bloco.chave].delete(op);
+          if (entregues.indexOf(op) !== -1) {
+            if (juntou) return;
+            juntou = true;
+            var algum = entregues.some(function (v) { return sel.has(v); });
+            var item = monItem(MON_ROTULO_ENTREGUE, MON_ROTULO_ENTREGUE, algum, function (marcado) {
+              entregues.forEach(function (v) { if (marcado) sel.add(v); else sel.delete(v); });
+              monAtualizarDisponibilidade();
+            });
+            item.dataset.valores = entregues.join("|");
+            item.title = entregues.join(" + ");
+            lista.appendChild(item);
+            return;
+          }
+          lista.appendChild(monItem(op, op, sel.has(op), function (marcado) {
+            if (marcado) sel.add(op); else sel.delete(op);
             monAtualizarDisponibilidade();
           }));
         });
       }
+      monRedesenharLista[bloco.chave] = desenharLista;
       monBotoes(el,
         function () {
           lista.querySelectorAll("label.item").forEach(function (l) {
-            if (!l.classList.contains("indisponivel") && l.style.display !== "none") MON.sel[bloco.chave].add(l.dataset.valor);
+            if (l.classList.contains("indisponivel") || l.style.display === "none") return;
+            monValoresDoItem(l).forEach(function (v) { MON.sel[bloco.chave].add(v); });
           });
           desenharLista(); monAtualizarDisponibilidade();
         },
@@ -17849,7 +18202,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       // bloco Situação foi removido: a Entrega da Obra já se filtra pelo
       // cartão ENTREGA DA OBRA de DATAS E PRAZOS, com os atalhos de mandato —
       // pedido do usuário em 20/11/2026.)
-      grade.appendChild(el);
+      if (caixaOutrosFiltros && MON_BLOCOS_OUTROS.indexOf(bloco.chave) !== -1) {
+        caixaOutrosFiltros.querySelector(".mon-outros-grade-filtros").appendChild(el);
+      } else {
+        grade.appendChild(el);
+      }
     });
 
     // Ordenação e colunas do detalhamento (decisões de impressão)
@@ -17895,7 +18252,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     contador.style.paddingBottom = "10px";
     elImp.appendChild(contador);
     grade.appendChild(elImp);
-    if (MON.dados.datas && MON.dados.datas.length) grade.appendChild(monMontarBlocoDatas());
+    if (caixaOutrosFiltros) grade.appendChild(caixaOutrosFiltros);
     monAtualizarDisponibilidade();
   }
 
