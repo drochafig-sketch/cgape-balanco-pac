@@ -2257,7 +2257,7 @@ def _css_logo_pac():
 
 
 def _html_cabecalho_rodape_base(tema, pagina, total_paginas, conteudo_html, recorte="", classe_extra="", id_html="",
-                                chips=("gestao", "secretaria"), pac=True):
+                                chips=("gestao", "secretaria", "fase"), pac=True):
     # pac=True: páginas do PAC — cabeçalho claro com o LOGO do PAC no lugar
     # da palavra "PAC", pra diferenciar das páginas de Ações em
     # Monitoramento (pac=False, cabeçalho azul-marinho, título sem prefixo)
@@ -3192,7 +3192,7 @@ def _html_entregas_execucao(m, fichas_cartoes):
 
 def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_gestao="",
                           chave_gestao="todas", metricas_saida=None, secretaria=None,
-                          partes_monitoramento=None, panorama_saida=None):
+                          partes_monitoramento=None, panorama_saida=None, fase=None):
     """Slides de UMA gestão (ou de todas), já numerados. Slides que não
     dependem dos dados (institucionais, páginas do Canva) entram uma vez só
     em `comuns` e aqui viram só um marcador (.slide-ref). Devolve
@@ -3225,6 +3225,10 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     filtro_gestao = {} if chave_gestao == "todas" else {"g": chave_gestao}
     if secretaria:
         filtro_gestao = dict(filtro_gestao, se=secretaria)
+    # `fase`: variante do filtro de Fase (mesmo mecanismo do de Secretaria —
+    # df já vem só com essa fase) — pedido do usuário em 21/11/2026.
+    if fase:
+        filtro_gestao = dict(filtro_gestao, f=fase)
     # manter_ordem=True: o painel de seleção do HTML permite reordenar os
     # cartões (inclusive intercalando as páginas do Canva), então a ordem
     # final é a que vier em `secoes`, não a ordem fixa do catálogo do PPTX
@@ -3245,6 +3249,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         recorte = (recorte + " · " if recorte else "") + rotulo_gestao.title()
     if secretaria:
         recorte = (recorte + " · " if recorte else "") + f"Secretaria: {secretaria}"
+    if fase:
+        recorte = (recorte + " · " if recorte else "") + f"Fase: {fase}"
 
     # todo slide abaixo leva o mesmo recorte no rodapé; o número da página é
     # preenchido no fim, quando já se sabe quais slides entram
@@ -4145,7 +4151,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
        o toque com o dedo — pedido do usuário em 15/11/2026. */
     @media (hover:none) {
       .nav-seta { width:56px; }
-      #seletor-gestao button, #seletor-secretaria button { padding-top:11px; padding-bottom:11px; }
+      #seletor-gestao button, #seletor-secretaria button, #seletor-fase button { padding-top:11px; padding-bottom:11px; }
     }
 
     /* Botão flutuante que liga/desliga o painel de filtros (Gestão/
@@ -4522,7 +4528,7 @@ def _html_visao_geral_dash(df, filtro_base=None):
       </div>
       <div class="vgd-grade">
         <div class="vgd-card vgd-alterna">
-          <div class="vgd-cab"><h4>Previsão de Conclusão da Fase</h4>
+          <div class="vgd-cab"><h4>Previsão de Conclusão da Fase{(" - " + _html_esc(d["faseUnica"])) if d.get("faseUnica") else ""}</h4>
             {chave("Semestral", "Alterna entre a visão por trimestre e a semestral (até dezembro do ano atual, "
                                 "1º semestre do ano seguinte e depois disso, junto com as ações com data a definir)")}</div>
           <div class="vgd-vista-a">{barras(d["prazo"])}</div>
@@ -4762,6 +4768,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
         serie_sec_html = serie_sec_html.where(serie_sec_html != "", "NÃO INFORMADO")
         nomes_sec_html = sorted(serie_sec_html.unique(), key=pac.remover_acentos)
         blocos_sec, botoes_sec = [], []
+        secretarias_gestao = []    # [(nome, gestão)] — usado no cruzamento com Fase
         if len(nomes_sec_html) > 1:
             for nome_sec in nomes_sec_html:
                 sub_sec = df[serie_sec_html == nome_sec]
@@ -4775,6 +4782,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
                 gestao_sec = ("federal" if "GESTAO" in sub_sec.columns
                              and sub_sec["GESTAO"].astype(str).str.upper().str.contains("FEDERAL", na=False).any()
                              else "estadual" if "GESTAO" in sub_sec.columns else "todas")
+                secretarias_gestao.append((nome_sec, gestao_sec))
                 slides_sec, css = _montar_html_variante(
                     sub_sec, filtros, secoes, fichas_cartoes, comuns,
                     "", chave_gestao="todas", metricas_saida=None, secretaria=nome_sec,
@@ -4788,6 +4796,58 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
                                   f'''onclick="trocarSecretaria('{_html_esc(nome_sec)}')">'''
                                   f'{_html_esc(nome_sec)}</button>')
 
+        # ---- Filtro de Fase (pedido do usuário em 21/11/2026), SOMANDO com
+        # Gestão e Secretaria ("o filtro das fases está desmarcando os outros
+        # filtros", mesmo dia): uma apresentação pré-calculada por
+        # combinação fase × gestão (Todas/Estadual/Federal) e fase ×
+        # secretaria — combinações sem nenhuma ação não entram (o JS esconde
+        # a fase que não existe no recorte escolhido, ver
+        # atualizarVisibilidadeFases). Cada bloco leva data-fase,
+        # data-secretaria ("" = todas) e data-gestao.
+        blocos_fase, botoes_fase = [], []
+        if "FASE_TEXTO" in df.columns:
+            serie_fase_html = df["FASE_TEXTO"].fillna("NÃO INFORMADA").astype(str).str.strip()
+            serie_fase_html = serie_fase_html.where(serie_fase_html != "", "NÃO INFORMADA")
+            ordem_fases = [str(f).upper() for f in getattr(pac, "ORDEM_FASES", [])]
+            nomes_fase_html = sorted(serie_fase_html.unique(), key=lambda f: (
+                ordem_fases.index(f.upper()) if f.upper() in ordem_fases else len(ordem_fases),
+                pac.remover_acentos(f)))
+
+            def _slug(txt):
+                return re.sub(r"[^a-z0-9]+", "-", pac.remover_acentos(txt).lower()).strip("-")
+
+            if len(nomes_fase_html) > 1:
+                for nome_fase in nomes_fase_html:
+                    na_fase = serie_fase_html == nome_fase
+                    # fase × gestão (Todas/Estadual/Federal)
+                    for chave_v, rotulo_v, df_v in variantes:
+                        sub_fg = df_v[na_fase.reindex(df_v.index, fill_value=False)]
+                        if sub_fg.empty:
+                            continue
+                        slides_fase, css = _montar_html_variante(
+                            sub_fg, filtros, secoes, fichas_cartoes, comuns,
+                            rotulo_v if chave_v != "todas" else "", chave_gestao=chave_v,
+                            metricas_saida=None, fase=nome_fase, partes_monitoramento=partes_monitoramento)
+                        slides_fase = _sufixar_ids(slides_fase, f"fase-{_slug(nome_fase)}-{chave_v}")
+                        blocos_fase.append(f'<div class="variante-fase" data-fase="{_html_esc(nome_fase)}" '
+                                           f'data-secretaria="" data-gestao="{chave_v}">{slides_fase}</div>')
+                    # fase × secretaria
+                    for nome_sec, gestao_sec in secretarias_gestao:
+                        sub_fs = df[na_fase & (serie_sec_html == nome_sec)]
+                        if sub_fs.empty:
+                            continue
+                        slides_fase, css = _montar_html_variante(
+                            sub_fs, filtros, secoes, fichas_cartoes, comuns,
+                            "", chave_gestao="todas", metricas_saida=None, secretaria=nome_sec,
+                            fase=nome_fase, partes_monitoramento=partes_monitoramento)
+                        slides_fase = _sufixar_ids(slides_fase, f"fase-{_slug(nome_fase)}-secr-{_slug(nome_sec)}")
+                        blocos_fase.append(f'<div class="variante-fase" data-fase="{_html_esc(nome_fase)}" '
+                                           f'data-secretaria="{_html_esc(nome_sec)}" data-gestao="{gestao_sec}">'
+                                           f'{slides_fase}</div>')
+                    botoes_fase.append(f'<button type="button" data-fase="{_html_esc(nome_fase)}" '
+                                       f'''onclick="trocarFase('{_html_esc(nome_fase)}')">'''
+                                       f'{_html_esc(nome_fase)}</button>')
+
         cards_acoes_json = json.dumps(_dados_cards_acoes(metricas["todas"], fichas_cartoes),
                                       ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
         registro["gauge"] = True    # os cards da janela usam o mesmo velocímetro
@@ -4795,6 +4855,13 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
         _CTX_HTML.registro = None
     corpo = "".join(blocos)
     corpo_sec = "".join(blocos_sec)
+    corpo_fase = "".join(blocos_fase)
+    seletor_fase_html = (
+        '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Fase</div>'
+        f'<div id="seletor-fase" role="group" aria-label="Fase">'
+        f'<button type="button" data-fase="" class="ativo" onclick="trocarFase(\'\')">'
+        f'Todas as fases</button>{"".join(botoes_fase)}</div></div>'
+        if botoes_fase else "")
     seletor_html = (
         '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Gestão</div>'
         f'<div id="seletor-gestao" role="group" aria-label="Gestão">{"".join(botoes)}</div></div>'
@@ -4866,13 +4933,15 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
 <button type="button" id="btn-filtros" class="btn-filtros" title="Mostrar/ocultar filtros" aria-expanded="false">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="4 4 20 4 14 12 14 19 10 21 10 12 4 4"></polygon></svg>
 </button>
-<div id="painel-filtros-pac" role="group" aria-label="Gestão e secretaria">
+<div id="painel-filtros-pac" role="group" aria-label="Gestão, secretaria e fase">
 {seletor_secretaria_html}
 {seletor_html}
+{seletor_fase_html}
 </div>
 {defs_html}
 <div id="corpo-gestoes">{corpo}</div>
 <div id="corpo-secretarias">{corpo_sec}</div>
+<div id="corpo-fases">{corpo_fase}</div>
 <div id="slides-comuns">{slides_comuns}</div>
 {dica_monitoramento_html}
 {oc_monitoramento_html}
@@ -4990,7 +5059,39 @@ function gerarPdfCompleto() {{
   // secretaria está escolhida, a "variante" ativa passa a ser o bloco dela
   // em #corpo-secretarias, em vez da gestão ativa em #corpo-gestoes — ver
   // trocarSecretaria() abaixo.
+  // Estado dos três seletores (botão .ativo de cada um).
+  function faseAtiva() {{
+    var b = document.querySelector('#seletor-fase button.ativo');
+    return b && b.dataset.fase ? b.dataset.fase : '';
+  }}
+  function secretariaAtiva() {{
+    var b = document.querySelector('#seletor-secretaria button.ativo');
+    return b && b.dataset.secretaria ? b.dataset.secretaria : '';
+  }}
+  function gestaoAtiva() {{
+    var b = document.querySelector('#seletor-gestao button.ativo');
+    return b ? b.dataset.gestao : 'todas';
+  }}
+  // Bloco pré-calculado de uma fase SOMADA ao recorte de gestão/secretaria
+  // (ver montar_html_apresentacao) — null se a combinação não tem ação.
+  function varianteFase(fase, sec, gestao) {{
+    var lista = document.querySelectorAll('#corpo-fases .variante-fase');
+    for (var i = 0; i < lista.length; i++) {{
+      var v = lista[i];
+      if (v.dataset.fase !== fase || (v.dataset.secretaria || '') !== sec) continue;
+      if (!sec && v.dataset.gestao !== gestao) continue;
+      return v;
+    }}
+    return null;
+  }}
   function variante() {{
+    // Filtro de Fase (21/11/2026) tem precedência: com uma fase escolhida,
+    // a variante é o bloco dessa fase no recorte de gestão/secretaria ativo.
+    var fase = faseAtiva();
+    if (fase) {{
+      var vf = varianteFase(fase, secretariaAtiva(), gestaoAtiva());
+      if (vf) return vf;
+    }}
     var botaoSecAtivo = document.querySelector('#seletor-secretaria button.ativo');
     if (botaoSecAtivo && botaoSecAtivo.dataset.secretaria) {{
       return document.querySelector('.variante-secretaria[data-secretaria="' + botaoSecAtivo.dataset.secretaria + '"]');
@@ -5016,8 +5117,10 @@ function gerarPdfCompleto() {{
     var ehMonitoramento = !!(slideAtivo && slideAtivo.classList.contains('slide-monitoramento'));
     var seletorGestao = document.getElementById('seletor-gestao');
     var seletorSecretaria = document.getElementById('seletor-secretaria');
+    var seletorFase = document.getElementById('seletor-fase');
     if (seletorGestao) seletorGestao.style.display = ehMonitoramento ? 'none' : '';
     if (seletorSecretaria) seletorSecretaria.style.display = ehMonitoramento ? 'none' : '';
+    if (seletorFase) seletorFase.style.display = ehMonitoramento ? 'none' : '';
     // e no lugar entram as barras Eixo x Secretaria do próprio
     // Monitoramento (mesmo desenho — pedido do usuário em 16/11/2026)
     var seletorMon = document.querySelector('.sel-recorte');
@@ -5064,6 +5167,49 @@ function gerarPdfCompleto() {{
   // apresentação inteira pelo recorte de uma secretaria, ou volta pra gestão
   // ativa com '' (Todas as secretarias). #corpo-gestoes/#corpo-secretarias
   // são mutuamente exclusivos — só um dos dois aparece por vez.
+  // Filtro de Fase (pedido do usuário em 21/11/2026) SOMADO a Gestão e
+  // Secretaria ("o filtro das fases está desmarcando os outros filtros",
+  // mesmo dia): a fase escolhida continua valendo ao trocar gestão/
+  // secretaria e vice-versa. Mostra o bloco fase × recorte (#corpo-fases)
+  // quando há fase; senão, o de secretaria ou o de gestão, como antes.
+  function marcarFase(fase) {{
+    document.querySelectorAll('#seletor-fase button').forEach(function (b) {{
+      b.classList.toggle('ativo', (b.dataset.fase || '') === fase);
+    }});
+  }}
+  // Esconde as fases que não têm ação no recorte de gestão/secretaria
+  // escolhido; se a fase ativa sumiu, volta pra "Todas as fases".
+  function atualizarVisibilidadeFases() {{
+    var sec = secretariaAtiva(), gestao = gestaoAtiva();
+    document.querySelectorAll('#seletor-fase button').forEach(function (b) {{
+      if (b.dataset.fase) b.style.display = varianteFase(b.dataset.fase, sec, gestao) ? '' : 'none';
+    }});
+    var fase = faseAtiva();
+    if (fase && !varianteFase(fase, sec, gestao)) marcarFase('');
+  }}
+  // Qual dos três corpos aparece (gestões / secretarias / fases).
+  function aplicarCorpos() {{
+    var fase = faseAtiva(), sec = secretariaAtiva();
+    var vf = fase ? varianteFase(fase, sec, gestaoAtiva()) : null;
+    document.querySelectorAll('#corpo-fases .variante-fase').forEach(function (v) {{
+      v.classList.toggle('ativa', v === vf);
+    }});
+    var corpoGestoes = document.getElementById('corpo-gestoes');
+    var corpoSecretarias = document.getElementById('corpo-secretarias');
+    var corpoFases = document.getElementById('corpo-fases');
+    if (corpoFases) corpoFases.style.display = vf ? 'block' : 'none';
+    if (corpoSecretarias) corpoSecretarias.style.display = (!vf && sec) ? 'block' : 'none';
+    if (corpoGestoes) corpoGestoes.style.display = (!vf && !sec) ? 'block' : 'none';
+  }}
+  window.trocarFase = function (nomeFase) {{
+    marcarFase(nomeFase || '');
+    aplicarCorpos();
+    var anterior = slides[atual], indiceAnterior = atual;
+    montarSlides();
+    mostrar(posicaoEquivalente(anterior, indiceAnterior));
+    atualizarChipsFiltro();
+  }};
+
   window.trocarSecretaria = function (nomeSecretaria) {{
     var corpoGestoes = document.getElementById('corpo-gestoes');
     var corpoSecretarias = document.getElementById('corpo-secretarias');
@@ -5095,6 +5241,10 @@ function gerarPdfCompleto() {{
       if (corpoSecretarias) corpoSecretarias.style.display = 'none';
       if (corpoGestoes) corpoGestoes.style.display = 'block';
     }}
+    // a Fase escolhida continua valendo no recorte novo (se ele tiver ação
+    // nessa fase) — pedido do usuário em 21/11/2026
+    atualizarVisibilidadeFases();
+    aplicarCorpos();
     // continua no mesmo slide (não volta pra capa) — pedido do usuário em
     // 16/11/2026
     var anterior = slides[atual], indiceAnterior = atual;
@@ -5122,8 +5272,11 @@ function gerarPdfCompleto() {{
     var bSec = document.querySelector('#seletor-secretaria button.ativo');
     var gestao = bGestao && bGestao.dataset.gestao !== 'todas' ? bGestao.textContent.trim() : '';
     var sec = bSec && bSec.dataset.secretaria ? bSec.dataset.secretaria : '';
+    var bFase = document.querySelector('#seletor-fase button.ativo');
+    var fase = bFase && bFase.dataset.fase ? bFase.dataset.fase : '';
     preencher('.slide:not(.slide-monitoramento) .chip-gestao', gestao, 'Gestão');
     preencher('.slide:not(.slide-monitoramento) .chip-secretaria', sec, 'Secretaria');
+    preencher('.slide:not(.slide-monitoramento) .chip-fase', fase, 'Fase');
     var bEixoMon = document.querySelector('.sel-recorte .sel-eixo-btn.ativo');
     var bSecMon = document.querySelector('.sel-recorte .sel-sec-btn.ativo');
     var eixoMon = bEixoMon && +bEixoMon.dataset.e ? bEixoMon.textContent.trim() : '';
@@ -5353,13 +5506,19 @@ CSS_SELETOR_GESTAO = """
     .sel-recorte-grupo { display:flex; flex-direction:column; gap:2px; }
     .sel-recorte-titulo { color:#8FA6C9; font:700 11px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.8px;
       text-transform:uppercase; margin:0 0 4px 10px; }
-    #seletor-gestao, #seletor-secretaria { display:flex; flex-direction:column; gap:2px; }
-    #seletor-gestao button, #seletor-secretaria button { background:transparent; color:#C9D6EA; border:none;
+    #seletor-gestao, #seletor-secretaria, #seletor-fase { display:flex; flex-direction:column; gap:2px; }
+    #seletor-gestao button, #seletor-secretaria button, #seletor-fase button { background:transparent; color:#C9D6EA; border:none;
       border-radius:7px; padding:9px 12px; font:700 13px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px;
       cursor:pointer; text-align:left; }
-    #seletor-gestao button:hover, #seletor-secretaria button:hover { background:rgba(255,255,255,.12); color:#fff; }
+    #seletor-gestao button:hover, #seletor-secretaria button:hover, #seletor-fase button:hover { background:rgba(255,255,255,.12); color:#fff; }
     #seletor-gestao button.ativo { background:#4FA3E0; color:#0B1F3F; }
     #seletor-secretaria button.ativo { background:#E68A00; color:#fff; }
+    /* Filtro de Fase (pedido do usuário em 21/11/2026): verde, pra se
+       distinguir de Gestão (azul) e Secretaria (laranja). */
+    #seletor-fase button.ativo { background:#2E8B57; color:#fff; }
+    #corpo-fases, #corpo-fases .variante-fase:not(.ativa) { display:none; }
+    .chip-fase { background:transparent; color:#5CC08A; border-color:#5CC08A; }
+    .slide-pac .chip-fase { color:#1F7A47; border-color:#1F7A47; }
     /* Chips de gestão/secretaria ao lado do título (pedido do usuário em
        17/11/2026 — substituem o selo de gestão abaixo do subtítulo, no mesmo
        estilo dele): gestão cheia, secretaria só com contorno; somem nas

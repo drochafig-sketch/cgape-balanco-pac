@@ -7071,10 +7071,18 @@ def _dados_pre_visualizacao(df, so_visao_geral=False):
             }
         )
 
+    # Fase única do recorte (uma só selecionada, ou a única que sobrou): vai
+    # ao lado do título "Previsão de Conclusão da Fase" — ex.: "... DA FASE -
+    # EXECUÇÃO DO OBJETO" — no dash e no HTML — pedido do usuário em
+    # 21/11/2026.
+    fases_recorte = df["FASE_TEXTO"].dropna().astype(str).str.strip().unique() if "FASE_TEXTO" in df.columns else []
+    fase_unica = str(fases_recorte[0]) if len(fases_recorte) == 1 else None
+
     if so_visao_geral:
         return {"qtd": int(len(df)), "investimento": float(df["_INVESTIMENTO_AJUSTADO"].sum()),
                 "prazo": prazo, "prazoSemestre": prazo_semestre, "financeiro": financeiro,
-                "financeiroContratado": financeiro_contratado, "panorama": panorama, "termo": termo}
+                "financeiroContratado": financeiro_contratado, "panorama": panorama, "termo": termo,
+                "faseUnica": fase_unica}
 
     # --- Secretaria/Executor único no filtro atual ---
     # Quando o filtro deixa só uma combinação de SECRETARIA/EXECUTOR, esse
@@ -7181,6 +7189,7 @@ def _dados_pre_visualizacao(df, so_visao_geral=False):
         "mapa": _dados_mapa_municipios(df),
         "clausulas": _dados_clausulas_dash(df),
         "secretaria_unica": secretaria_unica,
+        "faseUnica": fase_unica,
         "panoramaCarteira": _panorama_carteira_dash(df),
     }
 
@@ -8208,11 +8217,16 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
                 )
                 return tabela_titulo
 
+            # Uma fase só no recorte: nome dela ao lado do título, igual ao
+            # dash e ao HTML — pedido do usuário em 21/11/2026.
+            fases_pdf = df["FASE_TEXTO"].dropna().astype(str).str.strip().unique() \
+                if "FASE_TEXTO" in df.columns else []
+            titulo_previsao_pdf = "PREVISÃO DE CONCLUSÃO DA FASE" + (
+                f" - {fases_pdf[0].upper()}" if len(fases_pdf) == 1 else "")
             tabela_painel_geral = Table(
                 [
                     [
-                        _titulo_grafico_painel(
-                            "PREVISÃO DE CONCLUSÃO DA FASE"),
+                        _titulo_grafico_painel(titulo_previsao_pdf),
                         (
                             _titulo_grafico_painel(
                                 "RESUMO FINANCEIRO - CONTRATADO POR FONTE",
@@ -10672,19 +10686,49 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
      páginas — escolhe o que a tabela de Detalhamento mostra). O acento em
      gold, a marca de seleção e a barra de rolagem em gold separam essa
      seção da grade de páginas logo acima. --- */
-  #paginas-colunas, #paginas-colunas-mon {
+  /* Rodapé com as duas barras de detalhamento (PAC e MONITORAMENTO) lado a
+     lado; o painel de cada uma (.paginas-det-corpo) abre PRA CIMA, por
+     cima da grade de páginas — pedido do usuário em 21/11/2026. O
+     DETALHAMENTO do MONITORAMENTO (ordenação + colunas) veio da grade de
+     filtros do MONITORAMENTO, também em 21/11/2026. */
+  .paginas-detalhamentos {
     flex-shrink: 0;
-    border-top: 1px solid var(--cor-card-elevado);
-    padding: 12px 22px 4px 22px;
+    position: relative;
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    gap: 10px;
+    border-top: 1px solid var(--cor-card-elevado);
+    padding: 10px 22px;
   }
-  /* DETALHAMENTO do MONITORAMENTO (ordenação + colunas da tabela do PDF) —
-     saiu da grade de filtros do MONITORAMENTO e veio pra cá, abaixo das
-     colunas do PAC, só no formato PDF — pedido do usuário em 21/11/2026. */
-  #paginas-colunas-mon { gap: 6px; }
-  #paginas-colunas-mon .paginas-colunas-lista { max-height: 110px; }
+  .paginas-det { flex: 1 1 0; min-width: 0; }
+  .paginas-det-toggle {
+    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: transparent; border: 1px dashed var(--cor-texto-terciario); border-radius: 8px;
+    padding: 8px 12px; cursor: pointer; font-family: var(--fonte); color: var(--cor-texto-primario);
+    text-align: left;
+  }
+  .paginas-det-toggle > .paginas-colunas-titulo { white-space: nowrap; flex-shrink: 0; }
+  .paginas-det-resumo { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+  .paginas-det-resumo .paginas-colunas-contador { white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; min-width: 0; }
+  .paginas-det-seta { display: inline-block; transition: transform .15s; color: var(--cor-texto-secundario); }
+  .paginas-det.aberto .paginas-det-seta { transform: rotate(180deg); }
+  .paginas-det-pac .paginas-det-toggle:hover, .paginas-det-pac.aberto .paginas-det-toggle {
+    border-style: solid; border-color: var(--cor-acento-gold); }
+  .paginas-det-mon .paginas-det-toggle:hover, .paginas-det-mon.aberto .paginas-det-toggle {
+    border-style: solid; border-color: var(--cor-acento-secundario); }
+  .paginas-det-toggle:focus-visible { outline: 2px solid var(--cor-acento-gold); outline-offset: 2px; }
+  .paginas-det-corpo {
+    display: none; position: absolute; left: 22px; right: 22px; bottom: calc(100% - 4px); z-index: 5;
+    flex-direction: column; gap: 8px; padding: 12px 14px;
+    background: var(--cor-card); border: 1px solid var(--cor-acento-gold); border-radius: var(--raio-lg);
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, .35);
+  }
+  .paginas-det-mon .paginas-det-corpo { border-color: var(--cor-acento-secundario); }
+  .paginas-det.aberto .paginas-det-corpo { display: flex; }
+  .paginas-det-corpo .paginas-colunas-lista { max-height: min(320px, 46vh); }
+  .paginas-det-fechar { background: none; border: none; color: var(--cor-texto-secundario);
+    font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  .paginas-det-fechar:hover { color: var(--cor-texto-primario); }
   .paginas-mon-ordem { display: flex; align-items: center; gap: 8px; font-size: 12px;
     color: var(--cor-texto-secundario); }
   .paginas-mon-ordem select { width: auto; min-width: 220px; margin: 0; }
@@ -13282,28 +13326,46 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       <span id="paginas-contador" class="paginas-contador"></span>
     </div>
     <div id="paginas-grade" class="paginas-grade"></div>
-    <div id="paginas-colunas">
-      <div class="paginas-colunas-topo">
-        <span class="paginas-colunas-titulo">PAC — Colunas do detalhamento</span>
-        <span id="paginas-colunas-contador" class="paginas-colunas-contador"></span>
+    <!-- Os dois detalhamentos (PAC e Monitoramento) viraram barras
+         compactas lado a lado; cada uma abre um painel que sobe POR CIMA
+         da grade de páginas, que fica com quase toda a altura da janela —
+         pedido do usuário em 21/11/2026. Ver ligarDetalhamentosRelatorio. -->
+    <div id="paginas-detalhamentos" class="paginas-detalhamentos">
+      <div class="paginas-det paginas-det-pac" id="paginas-colunas">
+        <button type="button" class="paginas-det-toggle" aria-expanded="false">
+          <span class="paginas-colunas-titulo">PAC — Colunas do detalhamento</span>
+          <span class="paginas-det-resumo"><span id="paginas-colunas-contador" class="paginas-colunas-contador"></span><span class="paginas-det-seta" aria-hidden="true">▴</span></span>
+        </button>
+        <div class="paginas-det-corpo" role="dialog" aria-label="PAC — Colunas do detalhamento">
+          <div class="paginas-colunas-topo">
+            <span class="paginas-colunas-titulo">PAC — Colunas do detalhamento</span>
+            <button type="button" class="paginas-det-fechar" title="Fechar" aria-label="Fechar">×</button>
+          </div>
+          <div class="paginas-colunas-botoes">
+            <button class="btn-mini" id="paginas-colunas-padrao">Padrão</button>
+            <button class="btn-mini" id="paginas-colunas-essencial">Só o essencial</button>
+          </div>
+          <div id="paginas-colunas-lista" class="paginas-colunas-lista"></div>
+        </div>
       </div>
-      <div class="paginas-colunas-botoes">
-        <button class="btn-mini" id="paginas-colunas-padrao">Padrão</button>
-        <button class="btn-mini" id="paginas-colunas-essencial">Só o essencial</button>
+      <!-- DETALHAMENTO das Ações em Monitoramento (ordenação + colunas da
+           tabela "Monitoramento: Detalhamento" do PDF) — veio do bloco
+           DETALHAMENTO da grade de filtros do MONITORAMENTO — pedido do
+           usuário em 21/11/2026. Ver monRenderizarDetalhamentoRelatorio. -->
+      <div class="paginas-det paginas-det-mon" id="paginas-colunas-mon">
+        <button type="button" class="paginas-det-toggle" aria-expanded="false">
+          <span class="paginas-colunas-titulo">Monitoramento — Detalhamento</span>
+          <span class="paginas-det-resumo"><span id="paginas-colunas-mon-contador" class="paginas-colunas-contador"></span><span class="paginas-det-seta" aria-hidden="true">▴</span></span>
+        </button>
+        <div class="paginas-det-corpo" role="dialog" aria-label="Monitoramento — Detalhamento">
+          <div class="paginas-colunas-topo">
+            <span class="paginas-colunas-titulo">Monitoramento — Detalhamento</span>
+            <button type="button" class="paginas-det-fechar" title="Fechar" aria-label="Fechar">×</button>
+          </div>
+          <label class="paginas-mon-ordem">Ordenação <select id="paginas-mon-ordem" class="mon-select"></select></label>
+          <div id="paginas-colunas-mon-lista" class="paginas-colunas-lista"></div>
+        </div>
       </div>
-      <div id="paginas-colunas-lista" class="paginas-colunas-lista"></div>
-    </div>
-    <!-- DETALHAMENTO das Ações em Monitoramento (ordenação + colunas da
-         tabela "Monitoramento: Detalhamento" do PDF) — veio do bloco
-         DETALHAMENTO da grade de filtros do MONITORAMENTO — pedido do
-         usuário em 21/11/2026. Ver monRenderizarDetalhamentoRelatorio. -->
-    <div id="paginas-colunas-mon">
-      <div class="paginas-colunas-topo">
-        <span class="paginas-colunas-titulo">Monitoramento — Detalhamento</span>
-        <span id="paginas-colunas-mon-contador" class="paginas-colunas-contador"></span>
-      </div>
-      <label class="paginas-mon-ordem">Ordenação <select id="paginas-mon-ordem" class="mon-select"></select></label>
-      <div id="paginas-colunas-mon-lista" class="paginas-colunas-lista"></div>
     </div>
     <div class="modal-rodape">
       <button class="btn" id="paginas-cancelar">Cancelar</button>
@@ -13442,7 +13504,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       <div class="preview-grid">
         <div class="preview-grafico-card">
           <div class="preview-grafico-card-cabecalho">
-            <h4>Previsão de Conclusão da Fase</h4>
+            <h4 id="titulo-previsao-fase">Previsão de Conclusão da Fase</h4>
             <label class="chave-financeiro" title="Alterna entre a visão por trimestre e a visão semestral: até dezembro do ano atual, 1º semestre do ano seguinte e depois disso (junto com as ações com data a definir).">
               <span class="chave-financeiro-texto">Semestral</span>
               <input type="checkbox" id="chave-prazo-semestre" role="switch">
@@ -14178,7 +14240,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 
     const contador = document.getElementById("paginas-colunas-contador");
     if (contador) {
-      contador.textContent = estadoColunas.size + "/" + LIMITE_COLUNAS;
+      contador.textContent = estadoColunas.size + "/" + LIMITE_COLUNAS + " colunas";
       contador.style.color = estadoColunas.size >= LIMITE_COLUNAS ? "#C77" : "";
     }
   }
@@ -15684,6 +15746,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 
   function montarPreVisualizacao(dados) {
     _ultimosDadosPreview = dados;   // redesenho ao trocar o tema
+    // Uma fase só no recorte: nome dela ao lado do título do gráfico —
+    // "PREVISÃO DE CONCLUSÃO DA FASE - EXECUÇÃO DO OBJETO" — pedido do
+    // usuário em 21/11/2026.
+    var tituloPrevisao = document.getElementById("titulo-previsao-fase");
+    if (tituloPrevisao) {
+      tituloPrevisao.textContent = "Previsão de Conclusão da Fase" + (dados.faseUnica ? " - " + dados.faseUnica : "");
+    }
     var nota = document.getElementById("preview-nota-secretaria");
     if (dados.secretaria_unica) {
       nota.style.display = "block";
@@ -16907,8 +16976,8 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         });
         document.getElementById("paginas-titulo").textContent = c.tituloJanela;
         document.getElementById("paginas-confirmar").textContent = c.rotuloBotao;
-        document.getElementById("paginas-colunas").style.display = c.semColunas ? "none" : "";
-        document.getElementById("paginas-colunas-mon").style.display = c.semColunas ? "none" : "";
+        document.getElementById("paginas-detalhamentos").style.display = c.semColunas ? "none" : "";
+        if (c.semColunas) fecharDetalhamentosRelatorio();
         atualizarResumoFiltros();
         grade.innerHTML = '<div class="mon-aviso">Carregando…</div>';
         await carregarFormato(formato);
@@ -16932,6 +17001,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       });
 
       function fechar() {
+        fecharDetalhamentosRelatorio();
         overlay.style.display = "none";
         document.getElementById("paginas-confirmar").onclick = null;
         document.getElementById("paginas-cancelar").onclick = null;
@@ -18354,6 +18424,43 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // que gerarSaida lê de novo (montarFiltrosAtuais) ao confirmar — pedido
   // do usuário em 21/11/2026. Se a base do MONITORAMENTO ainda não carregou
   // (ninguém abriu essa base nesta sessão), carrega e desenha quando chegar.
+  // Barras de detalhamento da janela de páginas (PAC e Monitoramento):
+  // cada uma abre seu painel por cima da grade de páginas; uma de cada vez;
+  // fecham no ×, clicando fora ou com Esc — pedido do usuário em
+  // 21/11/2026.
+  function fecharDetalhamentosRelatorio() {
+    document.querySelectorAll("#paginas-detalhamentos .paginas-det.aberto").forEach(function (d) {
+      d.classList.remove("aberto");
+      d.querySelector(".paginas-det-toggle").setAttribute("aria-expanded", "false");
+    });
+  }
+  (function ligarDetalhamentosRelatorio() {
+    var dets = document.querySelectorAll("#paginas-detalhamentos .paginas-det");
+    dets.forEach(function (d) {
+      var botao = d.querySelector(".paginas-det-toggle");
+      botao.addEventListener("click", function () {
+        var abrir = !d.classList.contains("aberto");
+        fecharDetalhamentosRelatorio();
+        if (abrir) { d.classList.add("aberto"); botao.setAttribute("aria-expanded", "true"); }
+      });
+      d.querySelector(".paginas-det-fechar").addEventListener("click", function () {
+        fecharDetalhamentosRelatorio(); botao.focus();
+      });
+    });
+    document.addEventListener("mousedown", function (ev) {
+      var aberto = document.querySelector("#paginas-detalhamentos .paginas-det.aberto");
+      if (aberto && !aberto.contains(ev.target)) fecharDetalhamentosRelatorio();
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Escape") return;
+      var aberto = document.querySelector("#paginas-detalhamentos .paginas-det.aberto");
+      if (!aberto) return;
+      ev.stopPropagation();
+      fecharDetalhamentosRelatorio();
+      aberto.querySelector(".paginas-det-toggle").focus();
+    }, true);
+  })();
+
   function monRenderizarDetalhamentoRelatorio() {
     var secao = document.getElementById("paginas-colunas-mon");
     var select = document.getElementById("paginas-mon-ordem");
@@ -18379,10 +18486,16 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       if (o.chave === MON.ordem) opt.selected = true;
       select.appendChild(opt);
     });
-    select.onchange = function () { MON.ordem = select.value; };
+    // Resumo na barra recolhida: "9/12 colunas · Município (A a Z)".
+    function atualizarResumo() {
+      var rotOrdem = select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : "";
+      contador.textContent = MON.colunas.size + "/" + MON.dados.limiteColunas + " colunas" +
+        (rotOrdem ? " · " + rotOrdem : "");
+    }
+    select.onchange = function () { MON.ordem = select.value; atualizarResumo(); };
     function desenharColunas() {
       lista.innerHTML = "";
-      contador.textContent = MON.colunas.size + "/" + MON.dados.limiteColunas;
+      atualizarResumo();
       MON.dados.colunas.forEach(function (c) {
         var item = monItem(c.chave, c.chave, MON.colunas.has(c.chave), function (marcado) {
           if (marcado) MON.colunas.add(c.chave); else MON.colunas.delete(c.chave);
