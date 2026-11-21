@@ -17709,6 +17709,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       Object.keys(MON.datas).forEach(function (c) { f["D_" + c] = MON.datas[c]; });
       if (MON.top30) f.TOP30 = true;
     }
+    // STATUS ENTREGUE: não filtra (relatorio_monitoramento.filtrar ignora a
+    // chave), só junta Concluídas + Inauguradas num status nos quadros do
+    // HTML (ver _filtros_mon_para_apresentacao) — pedido do usuário em
+    // 21/11/2026 ("o html não acompanhou a configuração").
+    if (MON.entregue) f.ENTREGUE = true;
     return f;
   }
 
@@ -19192,6 +19197,10 @@ def _filtros_mon_para_apresentacao(filtros):
         return None
     filtros_sem_top30 = dict(filtros_mon_grade)
     top30 = bool(filtros_sem_top30.pop("TOP30", None))
+    # STATUS ENTREGUE do painel: não corta ações, só junta Concluídas +
+    # Inauguradas em "ENTREGUE" nos quadros/gráficos (resumo_acoes, chave
+    # "entregue") — pedido do usuário em 21/11/2026.
+    entregue = bool(filtros_sem_top30.pop("ENTREGUE", None))
     mon = _modulo_monitoramento()
     codigos = mon.codigos_do_recorte(filtros_sem_top30)
     if codigos is None:
@@ -19200,6 +19209,8 @@ def _filtros_mon_para_apresentacao(filtros):
              "_descricao": mon.descrever_filtros(filtros_sem_top30, incluir_top30=False)}
     if top30:
         saida["top30"] = True
+    if entregue:
+        saida["entregue"] = True
     return saida
 
 
