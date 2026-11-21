@@ -10146,6 +10146,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
        (#2F7F92), pra não inventar cor nova nem reaproveitar o azul que o
        --cor-acento-teal já usa pra PAC — pedido do usuário em 20/11/2026. */
     --cor-acento-secundario: #2F7F92;
+    /* Fundo do botão com o mouse em cima no MONITORAMENTO (texto branco),
+       par do --cor-acento-teal-hover do PAC — pedido do usuário em
+       21/11/2026. */
+    --cor-acento-secundario-hover: #23677A;
     --raio-sm: 4px;
     --raio-md: 10px;
     --raio-lg: 14px;
@@ -10180,6 +10184,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     --cor-acento-teal-texto: #7DBBF3;
     --cor-acento-mint-texto: #7DBBF3;
     --cor-acento-secundario: #4FA7B8;
+    --cor-acento-secundario-hover: #2F8A9D;
     --sombra-card: 0 4px 16px rgba(0, 0, 0, 0.45);
   }
 
@@ -10469,6 +10474,35 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     letter-spacing: .5px; color: var(--cor-texto-secundario);
   }
   .mon-datas-cabecalho small { font-weight: 400; letter-spacing: 0; }
+  /* DATAS E PRAZOS recolhido numa faixa (só o botão + as chaves STATUS
+     ENTREGUE / 30 MAIORES); os prazos abrem numa janela POR CIMA dos blocos
+     de filtro — pedido do usuário em 21/11/2026. */
+  .mon-datas-bloco { position: relative; padding: 8px 14px; }
+  .mon-datas-bloco .mon-datas-cabecalho { margin-bottom: 0; }
+  .mon-datas-toggle { display: inline-flex; align-items: center; gap: 10px; background: transparent;
+    border: 1px dashed var(--cor-texto-terciario); border-radius: 8px; padding: 6px 12px;
+    color: var(--cor-texto-secundario); font-family: var(--fonte); font-size: 12px; font-weight: 700;
+    letter-spacing: .5px; cursor: pointer; }
+  .mon-datas-toggle small { font-weight: 400; font-size: 11px; color: var(--cor-texto-terciario); }
+  .mon-datas-toggle:hover, .mon-datas-bloco.aberto .mon-datas-toggle {
+    color: var(--cor-texto-primario); border-style: solid; border-color: var(--cor-acento-secundario); }
+  .mon-datas-bloco.ativo .mon-datas-toggle { color: var(--cor-texto-primario);
+    border: 1px solid var(--cor-acento-secundario); }
+  .mon-datas-bloco.ativo .mon-datas-toggle small { color: var(--cor-texto-secundario); }
+  .mon-datas-toggle:focus-visible { outline: 2px solid var(--cor-acento-secundario); outline-offset: 2px; }
+  .mon-datas-seta { display: inline-block; transition: transform .15s; }
+  .mon-datas-bloco.aberto .mon-datas-seta { transform: rotate(180deg); }
+  .mon-datas-dialogo { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 8px);
+    z-index: 40; background: var(--cor-card); border: 1px solid var(--cor-acento-secundario);
+    border-radius: var(--raio-lg); box-shadow: 0 12px 34px rgba(0, 0, 0, .4); padding: 10px 14px 12px; }
+  .mon-datas-bloco.aberto .mon-datas-dialogo { display: block; }
+  .mon-datas-dialogo-topo { display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px; font-size: 12px; font-weight: 700; letter-spacing: .5px;
+    color: var(--cor-texto-secundario); }
+  .mon-datas-dialogo-topo small { font-weight: 400; letter-spacing: 0; }
+  .mon-datas-fechar { background: none; border: none; color: var(--cor-texto-secundario);
+    font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  .mon-datas-fechar:hover { color: var(--cor-texto-primario); }
   .mon-chave { position: relative; display: inline-flex; align-items: center; gap: 8px;
     cursor: pointer; font-size: 12px; font-weight: 600; user-select: none; }
   .mon-chave small { font-weight: 400; color: var(--cor-texto-terciario); }
@@ -10520,6 +10554,16 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .mon-outros-filtros .mon-outros-btn { font-size: 13px; }
   .mon-outros-filtros .mon-outros-painel { top: auto; bottom: 0; right: calc(100% + 10px);
     width: min(980px, calc(100vw - 80px)); }
+  /* Resumo do recorte no lugar do antigo bloco DETALHAMENTO (que foi pra
+     janela de páginas do relatório) — pedido do usuário em 21/11/2026. */
+  .mon-recorte { background: var(--cor-card); border-radius: var(--raio-lg); padding: 14px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; text-align: center; min-height: 0; }
+  .mon-recorte-rotulo { font-size: 12px; font-weight: 700; letter-spacing: .5px;
+    color: var(--cor-texto-secundario); }
+  .mon-recorte-num { font-size: 34px; font-weight: 800; line-height: 1.1;
+    color: var(--cor-acento-secundario-texto, var(--cor-acento-secundario)); }
+  .mon-recorte-de { font-size: 12px; color: var(--cor-texto-terciario); }
   .mon-outros-grade-filtros { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .mon-outros-grade-filtros .bloco { height: min(340px, 52vh); border: 1px solid var(--cor-card-elevado); }
   .mon-outros.aberto .mon-outros-painel { display: block; }
@@ -10628,13 +10672,25 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
      páginas — escolhe o que a tabela de Detalhamento mostra). O acento em
      gold, a marca de seleção e a barra de rolagem em gold separam essa
      seção da grade de páginas logo acima. --- */
-  #paginas-colunas {
+  #paginas-colunas, #paginas-colunas-mon {
     flex-shrink: 0;
     border-top: 1px solid var(--cor-card-elevado);
     padding: 12px 22px 4px 22px;
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  /* DETALHAMENTO do MONITORAMENTO (ordenação + colunas da tabela do PDF) —
+     saiu da grade de filtros do MONITORAMENTO e veio pra cá, abaixo das
+     colunas do PAC, só no formato PDF — pedido do usuário em 21/11/2026. */
+  #paginas-colunas-mon { gap: 6px; }
+  #paginas-colunas-mon .paginas-colunas-lista { max-height: 110px; }
+  .paginas-mon-ordem { display: flex; align-items: center; gap: 8px; font-size: 12px;
+    color: var(--cor-texto-secundario); }
+  .paginas-mon-ordem select { width: auto; min-width: 220px; margin: 0; }
+  #paginas-colunas-mon label.item input[type="checkbox"]:checked {
+    background: var(--cor-acento-secundario);
+    border-color: var(--cor-acento-secundario);
   }
   .paginas-colunas-topo {
     display: flex;
@@ -10687,11 +10743,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
      continua ali e basta desmarcar uma para liberar outra. Mesmo
      tratamento na coluna obrigatória (sempre marcada, nunca editável). */
   #paginas-colunas label.item.col-trava,
-  #paginas-colunas label.item.col-trava:hover {
+  #paginas-colunas label.item.col-trava:hover,
+  #paginas-colunas-mon label.item.col-trava,
+  #paginas-colunas-mon label.item.col-trava:hover {
     cursor: not-allowed;
     background: transparent;
   }
-  #paginas-colunas label.item.col-trava input[type="checkbox"] {
+  #paginas-colunas label.item.col-trava input[type="checkbox"],
+  #paginas-colunas-mon label.item.col-trava input[type="checkbox"] {
     opacity: 0.3;
     cursor: not-allowed;
   }
@@ -11677,6 +11736,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     background: var(--cor-acento-teal);
     color: #fff;
   }
+  /* Painel de filtros com a base MONITORAMENTO: mesma reação, na cor de
+     destaque do MONITORAMENTO — pedido do usuário em 21/11/2026. */
+  body.secao-mon #botoes-topo .btn:hover { background: var(--cor-acento-secundario-hover); color: #fff; }
+  body.secao-mon #botoes-topo .botao-icone-topo:hover,
+  body.secao-mon #botoes-topo .botao-icone-topo[aria-expanded="true"] { background: var(--cor-acento-secundario); }
   .acesso-rapido-menu {
     display: none;
     position: absolute;
@@ -13111,6 +13175,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       </button>
       <button class="btn" id="btn-limpar-tudo">LIMPAR FILTROS</button>
       <button class="btn" id="btn-gerencial-filtros">GERENCIAL</button>
+      <!-- GERAR RELATÓRIO saiu do menu de Acesso Rápido e veio pra cá, à
+           esquerda do sol/lua (painel do PAC e do MONITORAMENTO) — pedido do
+           usuário em 21/11/2026. Mesmo id/data-botao-gerar de antes. -->
+      <button class="btn" id="btn-gerar" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">GERAR RELATÓRIO</button>
       <button type="button" class="botao-icone-topo botao-tema" title="Alternar tema claro/escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
       <div class="acesso-rapido-wrap" id="acesso-rapido-filtros-wrap">
         <button class="botao-icone-topo" id="acesso-rapido-filtros-btn" title="Acesso rápido" aria-haspopup="true" aria-expanded="false">
@@ -13122,15 +13190,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
           </svg>
         </button>
         <div class="acesso-rapido-menu" id="acesso-rapido-filtros-menu">
-          <button class="acesso-rapido-item" id="btn-gerar" data-botao-gerar title="Gerar relatório gerencial (PDF) ou Apresentação CGAPE (HTML/PPTX) com os filtros selecionados">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-            </svg>
-            <span class="acesso-rapido-texto">GERAR RELATÓRIO</span>
-          </button>
           <button class="acesso-rapido-item" id="acesso-rapido-filtros-publicar" style="display:none" title="Publicar planilha/código atualizados no site (GitHub + Render)">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 16V4"></path>
@@ -13225,7 +13284,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     <div id="paginas-grade" class="paginas-grade"></div>
     <div id="paginas-colunas">
       <div class="paginas-colunas-topo">
-        <span class="paginas-colunas-titulo">Colunas do detalhamento</span>
+        <span class="paginas-colunas-titulo">PAC — Colunas do detalhamento</span>
         <span id="paginas-colunas-contador" class="paginas-colunas-contador"></span>
       </div>
       <div class="paginas-colunas-botoes">
@@ -13233,6 +13292,18 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         <button class="btn-mini" id="paginas-colunas-essencial">Só o essencial</button>
       </div>
       <div id="paginas-colunas-lista" class="paginas-colunas-lista"></div>
+    </div>
+    <!-- DETALHAMENTO das Ações em Monitoramento (ordenação + colunas da
+         tabela "Monitoramento: Detalhamento" do PDF) — veio do bloco
+         DETALHAMENTO da grade de filtros do MONITORAMENTO — pedido do
+         usuário em 21/11/2026. Ver monRenderizarDetalhamentoRelatorio. -->
+    <div id="paginas-colunas-mon">
+      <div class="paginas-colunas-topo">
+        <span class="paginas-colunas-titulo">Monitoramento — Detalhamento</span>
+        <span id="paginas-colunas-mon-contador" class="paginas-colunas-contador"></span>
+      </div>
+      <label class="paginas-mon-ordem">Ordenação <select id="paginas-mon-ordem" class="mon-select"></select></label>
+      <div id="paginas-colunas-mon-lista" class="paginas-colunas-lista"></div>
     </div>
     <div class="modal-rodape">
       <button class="btn" id="paginas-cancelar">Cancelar</button>
@@ -16072,9 +16143,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // Sem o GERAR RELATÓRIO (que virou botão visível no topo do dash — pedido
   // do usuário em 21/11/2026), o menu de Acesso Rápido do dash só tem o
   // PUBLICAR: no site, onde ele não existe, o ícone de grade sairia vazio.
+  // Idem no painel de filtros, desde que o GERAR RELATÓRIO de lá também
+  // virou botão visível (21/11/2026).
   if (window.PAC_MODO_WEB) {
-    var wrapAcessoDash = document.getElementById("acesso-rapido-dash-wrap");
-    if (wrapAcessoDash) wrapAcessoDash.style.display = "none";
+    ["acesso-rapido-dash-wrap", "acesso-rapido-filtros-wrap"].forEach(function (id) {
+      var wrapAcesso = document.getElementById(id);
+      if (wrapAcesso) wrapAcesso.style.display = "none";
+    });
   }
   if (!window.PAC_MODO_WEB) {
     botoesPublicar.forEach(function (btnPublicar) {
@@ -16833,6 +16908,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         document.getElementById("paginas-titulo").textContent = c.tituloJanela;
         document.getElementById("paginas-confirmar").textContent = c.rotuloBotao;
         document.getElementById("paginas-colunas").style.display = c.semColunas ? "none" : "";
+        document.getElementById("paginas-colunas-mon").style.display = c.semColunas ? "none" : "";
         atualizarResumoFiltros();
         grade.innerHTML = '<div class="mon-aviso">Carregando…</div>';
         await carregarFormato(formato);
@@ -16872,6 +16948,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       // relatório porque gerarSaida remonta os filtros depois que esta
       // janela fecha.
       renderizarBlocoColunas();
+      monRenderizarDetalhamentoRelatorio();
       document.getElementById("paginas-colunas-padrao").onclick = colunasAplicarPadrao;
       document.getElementById("paginas-colunas-essencial").onclick = colunasAplicarEssencial;
 
@@ -17868,7 +17945,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     });
     var total = linhas.filter(function (l) { return monLinhaPassa(l, null); }).length;
     var contador = document.getElementById("mon-contador");
-    if (contador) contador.textContent = total + " de " + MON.dados.total + " ações no recorte";
+    if (contador) contador.textContent = "de " + MON.dados.total.toLocaleString("pt-BR") + " ações da base";
+    var contadorNum = document.getElementById("mon-contador-num");
+    if (contadorNum) contadorNum.textContent = total.toLocaleString("pt-BR");
     (MON.dados.datas || []).forEach(function (d) {
       var bloco = document.querySelector('#grade-mon .mon-data[data-chave="' + d.chave + '"]');
       if (bloco) monAtualizarDataBloco(bloco, d);
@@ -17890,6 +17969,16 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // painel suspenso estão com intervalo preenchido (eles não aparecem na
   // linha principal, então sem isso o filtro ficaria "escondido").
   function monAtualizarOutrosPrazos() {
+    // Faixa DATAS E PRAZOS (janela fechada): quantos prazos estão com
+    // intervalo preenchido, pra o filtro não ficar "escondido".
+    var blocoDatas = document.querySelector("#grade-mon .mon-datas-bloco");
+    if (blocoDatas) {
+      var nD = Object.keys(MON.datas).length;
+      blocoDatas.classList.toggle("ativo", nD > 0);
+      var qtdD = blocoDatas.querySelector(".mon-datas-qtd");
+      if (qtdD) qtdD.textContent = nD ? nD + (nD === 1 ? " filtro ativo" : " filtros ativos")
+        : (MON.dados.datas || []).length + " prazos";
+    }
     var caixa = document.querySelector("#grade-mon .mon-outros-prazos");
     if (caixa) {
       var n = MON_DATAS_OUTROS.filter(function (c) { return !!MON.datas[c]; }).length;
@@ -17942,6 +18031,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     return label.dataset.valores ? label.dataset.valores.split("|") : [label.dataset.valor];
   }
   var monOuvindoOutrosFora = false;
+  var monOuvindoDatasFora = false;
 
   function monAtualizarDataBloco(bloco, d) {
     var faixa = MON.datas[d.chave] || {};
@@ -18041,8 +18131,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   function monMontarBlocoDatas() {
     var el = document.createElement("div");
     el.className = "mon-datas-bloco";
-    el.innerHTML = '<div class="mon-datas-cabecalho"><span>DATAS E PRAZOS <small>(com um intervalo ' +
-      'preenchido, ações sem essa data ficam de fora)</small></span>' +
+    // Faixa compacta: o botão DATAS E PRAZOS abre os prazos numa janela por
+    // cima dos blocos de filtro (.mon-datas-dialogo); as chaves STATUS
+    // ENTREGUE e 30 MAIORES ficam sempre à mostra na faixa — pedido do
+    // usuário em 21/11/2026.
+    el.innerHTML = '<div class="mon-datas-cabecalho">' +
+      '<button type="button" class="mon-datas-toggle" aria-expanded="false" aria-haspopup="dialog">' +
+      '<span class="mon-datas-toggle-titulo">DATAS E PRAZOS</span>' +
+      '<small class="mon-datas-qtd"></small><span class="mon-datas-seta" aria-hidden="true">▾</span></button>' +
       '<span class="mon-datas-chaves">' +
       '<label class="mon-chave" id="mon-entregue-rotulo" title="Obras Concluídas e Obras Inauguradas ' +
       'somadas num só status no dashboard do MONITORAMENTO (não filtra ações)">' +
@@ -18052,8 +18148,36 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       '<label class="mon-chave" id="mon-top30-rotulo"><input type="checkbox" id="mon-top30">' +
       '<span class="mon-chave-trilho"><span></span></span>30 MAIORES MUNICÍPIOS ' +
       "<small>(população IBGE 2026)</small></label></span></div>" +
-      '<div class="mon-datas-grade"></div>';
+      '<div class="mon-datas-dialogo" role="dialog" aria-label="Datas e prazos">' +
+      '<div class="mon-datas-dialogo-topo"><span>DATAS E PRAZOS <small>(com um intervalo ' +
+      'preenchido, ações sem essa data ficam de fora)</small></span>' +
+      '<button type="button" class="mon-datas-fechar" title="Fechar" aria-label="Fechar">×</button></div>' +
+      '<div class="mon-datas-grade"></div></div>';
     var gradeDatas = el.querySelector(".mon-datas-grade");
+    var toggleDatas = el.querySelector(".mon-datas-toggle");
+    var abrirDatas = function (sim) {
+      el.classList.toggle("aberto", sim);
+      toggleDatas.setAttribute("aria-expanded", sim ? "true" : "false");
+    };
+    toggleDatas.onclick = function () { abrirDatas(!el.classList.contains("aberto")); };
+    el.querySelector(".mon-datas-fechar").onclick = function () { abrirDatas(false); toggleDatas.focus(); };
+    // Esc fecha a janela (o OUTROS PRAZOS aberto dentro dela trata o Esc
+    // antes e para a propagação); clique fora também fecha (ouvinte único
+    // no documento).
+    el.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && el.classList.contains("aberto")) {
+        ev.stopPropagation(); abrirDatas(false); toggleDatas.focus();
+      }
+    });
+    if (!monOuvindoDatasFora) {
+      monOuvindoDatasFora = true;
+      document.addEventListener("mousedown", function (ev) {
+        var aberto = document.querySelector("#grade-mon .mon-datas-bloco.aberto");
+        if (!aberto || aberto.contains(ev.target)) return;
+        aberto.classList.remove("aberto");
+        aberto.querySelector(".mon-datas-toggle").setAttribute("aria-expanded", "false");
+      });
+    }
     var outros = MON.dados.datas.filter(function (d) { return MON_DATAS_OUTROS.indexOf(d.chave) !== -1; });
     MON.dados.datas.forEach(function (d) {
       if (MON_DATAS_OUTROS.indexOf(d.chave) === -1) gradeDatas.appendChild(monMontarData(d));
@@ -18209,14 +18333,45 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       }
     });
 
-    // Ordenação e colunas do detalhamento (decisões de impressão)
-    var elImp = monCriarBloco("Detalhamento");
-    var sub = document.createElement("div");
-    sub.className = "mon-sub";
-    sub.textContent = "Ordenação";
-    elImp.appendChild(sub);
-    var select = document.createElement("select");
-    select.className = "mon-select";
+    // (Bloco DETALHAMENTO — ordenação e colunas da tabela do PDF — saiu
+    // daqui e foi pra janela "Selecione as páginas do relatório", formato
+    // PDF: ver monRenderizarDetalhamentoRelatorio — pedido do usuário em
+    // 21/11/2026. No lugar dele, um resumo de quantas ações estão no
+    // recorte, que antes era a última linha desse bloco.)
+    var elRecorte = document.createElement("div");
+    elRecorte.className = "mon-recorte";
+    elRecorte.innerHTML = '<span class="mon-recorte-rotulo">AÇÕES NO RECORTE</span>' +
+      '<span class="mon-recorte-num" id="mon-contador-num">—</span>' +
+      '<span class="mon-recorte-de" id="mon-contador"></span>';
+    grade.appendChild(elRecorte);
+    if (caixaOutrosFiltros) grade.appendChild(caixaOutrosFiltros);
+    monAtualizarDisponibilidade();
+  }
+
+  // DETALHAMENTO do MONITORAMENTO na janela de páginas do relatório (formato
+  // PDF): ordenação + colunas da tabela "Monitoramento: Detalhamento", com
+  // o mesmo limite de colunas de antes. Mexe direto em MON.ordem/MON.colunas,
+  // que gerarSaida lê de novo (montarFiltrosAtuais) ao confirmar — pedido
+  // do usuário em 21/11/2026. Se a base do MONITORAMENTO ainda não carregou
+  // (ninguém abriu essa base nesta sessão), carrega e desenha quando chegar.
+  function monRenderizarDetalhamentoRelatorio() {
+    var secao = document.getElementById("paginas-colunas-mon");
+    var select = document.getElementById("paginas-mon-ordem");
+    var lista = document.getElementById("paginas-colunas-mon-lista");
+    var contador = document.getElementById("paginas-colunas-mon-contador");
+    if (!secao || !select || !lista) return;
+    if (!MON.dados) {
+      select.innerHTML = "";
+      lista.innerHTML = '<div class="mon-sub">Carregando a base do MONITORAMENTO…</div>';
+      contador.textContent = "";
+      if (!MON.carregando) monCarregar();
+      setTimeout(function () {
+        if (MON.dados || MON.carregando) monRenderizarDetalhamentoRelatorio();
+        else lista.innerHTML = '<div class="mon-sub">Base do MONITORAMENTO indisponível.</div>';
+      }, 600);
+      return;
+    }
+    select.innerHTML = "";
     MON.dados.ordens.forEach(function (o) {
       var opt = document.createElement("option");
       opt.value = o.chave;
@@ -18225,35 +18380,20 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       select.appendChild(opt);
     });
     select.onchange = function () { MON.ordem = select.value; };
-    elImp.appendChild(select);
-    var subCol = document.createElement("div");
-    subCol.className = "mon-sub";
-    elImp.appendChild(subCol);
-    var listaCol = document.createElement("div");
-    listaCol.className = "bloco-lista";
     function desenharColunas() {
-      listaCol.innerHTML = "";
-      subCol.textContent = "Colunas (" + MON.colunas.size + "/" + MON.dados.limiteColunas + ")";
+      lista.innerHTML = "";
+      contador.textContent = MON.colunas.size + "/" + MON.dados.limiteColunas;
       MON.dados.colunas.forEach(function (c) {
         var item = monItem(c.chave, c.chave, MON.colunas.has(c.chave), function (marcado) {
           if (marcado) MON.colunas.add(c.chave); else MON.colunas.delete(c.chave);
           desenharColunas();
         });
         var cheio = !MON.colunas.has(c.chave) && MON.colunas.size >= MON.dados.limiteColunas;
-        if (cheio) { item.classList.add("indisponivel"); item.querySelector("input").disabled = true; }
-        listaCol.appendChild(item);
+        if (cheio) { item.classList.add("col-trava"); item.querySelector("input").disabled = true; }
+        lista.appendChild(item);
       });
     }
     desenharColunas();
-    elImp.appendChild(listaCol);
-    var contador = document.createElement("div");
-    contador.className = "mon-sub";
-    contador.id = "mon-contador";
-    contador.style.paddingBottom = "10px";
-    elImp.appendChild(contador);
-    grade.appendChild(elImp);
-    if (caixaOutrosFiltros) grade.appendChild(caixaOutrosFiltros);
-    monAtualizarDisponibilidade();
   }
 
   async function monCarregar() {

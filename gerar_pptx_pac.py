@@ -5186,6 +5186,35 @@ function gerarPdfCompleto() {{
   // 08/11/2026.
   document.addEventListener('fullscreenchange', function () {{
     document.body.classList.toggle('tela-cheia', !!document.fullscreenElement);
+    travarEscTelaCheia(!!document.fullscreenElement);
+  }});
+
+  // Esc em tela cheia — pedido do usuário em 21/11/2026: o navegador usa o
+  // Esc pra sair da tela cheia ANTES da página ver a tecla, então com a
+  // janela de cards/ficha aberta saía a tela cheia e a janela ficava. Em
+  // tela cheia o Esc fica travado pra página (Keyboard Lock API — Chrome e
+  // Edge), que decide: janela aberta → fecha só a janela (os ouvintes de
+  // cada janela já fazem isso); nada aberto → sai da tela cheia, como
+  // antes. Segurar o Esc por ~2 s sempre sai (regra do próprio navegador).
+  // Sem essa API (ex.: Firefox) o comportamento continua o do navegador.
+  function travarEscTelaCheia(sim) {{
+    var kb = navigator.keyboard;
+    if (!kb || !kb.lock) return;
+    try {{
+      if (sim) {{ var p = kb.lock(['Escape']); if (p && p.catch) p.catch(function () {{}}); }}
+      else kb.unlock();
+    }} catch (err) {{}}
+  }}
+  var JANELAS_ESC = '#oc-fundo.aberta, .cl-ficha-fundo.aberta, #ra-oc-fundo.aberta, #raOcFundo.aberta';
+  var escTinhaJanela = false;
+  // Fase de captura na window: roda antes dos ouvintes das janelas (que
+  // fecham a janela no mesmo Esc), então guarda se havia alguma aberta.
+  window.addEventListener('keydown', function (e) {{
+    if (e.key === 'Escape') escTinhaJanela = !!document.querySelector(JANELAS_ESC);
+  }}, true);
+  document.addEventListener('keydown', function (e) {{
+    if (e.key !== 'Escape' || escTinhaJanela || !document.fullscreenElement) return;
+    document.exitFullscreen();
   }});
 
   // Contador de página só aparece perto da borda inferior da tela; as

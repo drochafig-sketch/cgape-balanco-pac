@@ -3078,7 +3078,7 @@ HTML_JANELA = r"""
              GERAR RELATÓRIO, antes do menu de grade) — pedido do usuário em
              21/11/2026. Ligado a window.alternarTema (definida em "CGAPE -
              BALANÇO PAC.py") lá embaixo no script. -->
-        <button type="button" class="botao-tema ra-botao-tema" id="raTema" title="Tema escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
+        <button type="button" class="botao-tema ra-botao-tema" id="raTema" title="Tema escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
         <div class="ra-menu" id="raMenu">
           <button type="button" class="ra-menu-btn" id="raMenuBtn" aria-haspopup="true" aria-expanded="false" title="Mais opções: atualizar da CONDER, qualidade da Secretaria e gerar apresentação"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.2"/></svg></button>
           <div class="ra-menu-lista" id="raMenuLista" role="menu">
@@ -3198,6 +3198,28 @@ HTML_JANELA = r"""
   .ra-botoes .ra-menu-lista button:hover:not(:disabled) {
     background:var(--cor-fundo); color:var(--cor-acento-teal-texto); }
   #raGerar:disabled, #raXlsx:disabled, #raConder:disabled { opacity:.6; cursor:default; }
+  /* Botões do cabeçalho com a MESMA reação dos do dash do PAC (.btn e
+     .botao-icone-topo em "CGAPE - BALANÇO PAC.py"): planos, sem borda; com
+     o mouse em cima, fundo na cor de destaque e texto branco; ícones em
+     quadrado de 32px — só que na cor do MONITORAMENTO
+     (--cor-acento-secundario) — pedido do usuário em 21/11/2026. Vem depois
+     das regras ".ra-botoes button" acima, que valem pro resto. */
+  .ra-botoes > button, .ra-botoes .ra-menu-btn {
+    background:transparent; border:none; color:var(--cor-texto-primario);
+    border-radius:var(--raio-md); padding:8px 14px; height:32px; box-sizing:border-box;
+    font-size:12px; font-weight:500;
+    transition:background var(--transicao-rapida), color var(--transicao-rapida), transform var(--transicao-rapida); }
+  .ra-botoes > button:hover:not(:disabled) {
+    background:var(--cor-acento-secundario-hover); color:#fff; }
+  .ra-botoes > button:active:not(:disabled), .ra-botoes .ra-menu-btn:active { transform:scale(0.97); }
+  .ra-botoes > button:disabled { opacity:.6; cursor:default; }
+  .ra-botoes .ra-botao-tema, .ra-botoes .ra-menu-btn {
+    width:32px; padding:0; justify-content:center; border-radius:var(--raio-sm); }
+  .ra-botoes > .ra-botao-tema:hover:not(:disabled), .ra-botoes .ra-menu-btn:hover,
+  .ra-botoes .ra-menu.aberto .ra-menu-btn { background:var(--cor-acento-secundario); color:#fff; }
+  @media (min-width:769px) and (max-width:1500px) {
+    .ra-botoes > button:not(.ra-botao-tema) { padding-left:10px; padding-right:10px; }
+  }
   .ra-area { flex:1; min-height:0; position:relative; display:flex; flex-direction:column; }
   /* Topo 62px: espaço do botão flutuante do painel de filtros (#fab-filtros,
      44px, canto superior esquerdo, definido em "CGAPE - BALANÇO PAC.py")
