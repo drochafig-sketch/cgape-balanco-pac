@@ -376,7 +376,7 @@ def ler_base(caminho=None):
     # resumo_acoes.py, que também ignora o Executor em branco.
     hier = _modulo_hierarquia_secretaria()
     hier.garantir_de_para_e_avisar(df, "Executor", "Eixo")
-    out["SECRETARIA"] = hier.secretaria_de_serie(df["Executor"], df["Eixo"])
+    out["SECRETARIA"] = hier.secretaria_de_serie(df["Executor"], df["Eixo"], df.get("Objeto"))
 
     codigo = out["STATUS"].str[:2]
     out["CODIGO_STATUS"] = codigo

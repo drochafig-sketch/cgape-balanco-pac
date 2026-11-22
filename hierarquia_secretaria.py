@@ -150,13 +150,38 @@ def _sugestao_pac(executor):
     return ""
 
 
-def secretaria_de(executor, eixo):
-    """Secretaria derivada de um (Executor, Eixo) da base de Monitoramento.
-    Ordem de precedência: de-para exato (executor+eixo) -> de-para só-executor
-    -> secretaria única do executor no PAC -> o próprio executor já é uma
-    secretaria conhecida -> "NÃO IDENTIFICADA". Em cada etapa, se o executor
-    for composto ("CONV/PREF/SUDESB"), tenta o composto inteiro e depois cada
-    pedaço separado."""
+# Secretaria decidida pelo OBJETO da ação, antes de qualquer de-para por
+# executor/eixo: o par (Executor, Eixo) não basta quando o mesmo executor e
+# eixo servem a secretarias diferentes — ex.: CONDER + Segurança Pública é SSP
+# nas unidades de segurança, mas o CONVIVE é da SEADES (pedido do usuário em
+# 22/11/2026). Chave = objeto normalizado (normalizar_executor); vale se o
+# objeto CONTÉM a chave.
+SECRETARIA_POR_OBJETO = {
+    "CONVIVE": "SEADES",
+}
+
+
+def _secretaria_pelo_objeto(objeto):
+    obj_n = normalizar_executor(objeto)
+    if not obj_n:
+        return ""
+    for chave, sec in SECRETARIA_POR_OBJETO.items():
+        if chave in obj_n:
+            return sec
+    return ""
+
+
+def secretaria_de(executor, eixo, objeto=None):
+    """Secretaria derivada de um (Executor, Eixo[, Objeto]) da base de
+    Monitoramento. Ordem de precedência: regra por objeto
+    (SECRETARIA_POR_OBJETO) -> de-para exato (executor+eixo) -> de-para
+    só-executor -> secretaria única do executor no PAC -> o próprio executor
+    já é uma secretaria conhecida -> "NÃO IDENTIFICADA". Em cada etapa, se o
+    executor for composto ("CONV/PREF/SUDESB"), tenta o composto inteiro e
+    depois cada pedaço separado."""
+    pelo_objeto = _secretaria_pelo_objeto(objeto)
+    if pelo_objeto:
+        return pelo_objeto
     exato, exec_so = _carregar_de_para()
     mapa_unico = mapa_do_pac()
     conhecidas = _secretarias_conhecidas()
@@ -177,10 +202,12 @@ def secretaria_de(executor, eixo):
     return NAO_IDENTIFICADA
 
 
-def secretaria_de_serie(serie_executor, serie_eixo):
+def secretaria_de_serie(serie_executor, serie_eixo, serie_objeto=None):
     """Versão vetorizada de secretaria_de(), para uma coluna inteira."""
-    pares = list(zip(serie_executor.fillna(""), serie_eixo.fillna("")))
-    return pd.Series([secretaria_de(ex, ei) for ex, ei in pares], index=serie_executor.index)
+    objetos = (serie_objeto.fillna("") if serie_objeto is not None
+               else pd.Series("", index=serie_executor.index))
+    trios = list(zip(serie_executor.fillna(""), serie_eixo.fillna(""), objetos))
+    return pd.Series([secretaria_de(ex, ei, ob) for ex, ei, ob in trios], index=serie_executor.index)
 
 
 def garantir_de_para_e_avisar(df, col_executor, col_eixo):

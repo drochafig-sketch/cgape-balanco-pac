@@ -409,7 +409,7 @@ def _ra_base(caminho):
     if "Executor" in df.columns:
         hier = _modulo_hierarquia_secretaria()
         hier.garantir_de_para_e_avisar(df, "Executor", RA_COL_EIXO)
-        df["Secretaria"] = hier.secretaria_de_serie(df["Executor"], df[RA_COL_EIXO])
+        df["Secretaria"] = hier.secretaria_de_serie(df["Executor"], df[RA_COL_EIXO], df.get("Objeto"))
     for chave, coluna, _ in RA_FILTROS:
         if coluna in df.columns:
             df["_f_" + chave] = _ra_opcao_filtro(df[coluna])
