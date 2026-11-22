@@ -176,6 +176,10 @@ app.add_url_rule(
     view_func=_rota_json(pac._api_buscar_ficha_por_item),
     methods=["POST"],
 )
+# QR Codes dos links da Ficha Cadastral (pedido do usuário em 22/11/2026)
+app.add_url_rule(
+    "/api/qr_links", view_func=_rota_json(pac._api_qr_links), methods=["POST"]
+)
 app.add_url_rule(
     "/api/escolher_local_e_gerar",
     view_func=_rota_pdf(pac._api_gerar_pdf_bytes),

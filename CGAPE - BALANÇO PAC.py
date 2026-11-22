@@ -21,6 +21,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.units import mm
 from reportlab.lib import colors, pagesizes
 import os
+import base64
 import tempfile
 import sys
 import re
@@ -1898,6 +1899,273 @@ class QRCodeLink(Flowable):
         # inteira — senão o link ficaria deslocado da imagem do QR.
         self.canv.linkURL(self.url, (0, 0, self.tamanho,
                           self.tamanho), relative=1, thickness=0)
+
+
+@functools.lru_cache(maxsize=4096)
+def qr_compacto(url):
+    # QR Code do link em formato compacto pra Ficha Cadastral da tela e da
+    # Apresentação HTML (pedido do usuário em 22/11/2026: "transforme os
+    # links em QR Code") — "<lado>:<base64 dos módulos>", linha a linha, 1
+    # bit por módulo (1 = escuro), completado com zeros até fechar o byte.
+    # O desenho (SVG) é feito no navegador (FichaVisual.qrSvg, em
+    # JS_FICHA_VISUAL). Mesmo codificador do QR do PDF (QrCodeWidget, do
+    # reportlab), nível M. "" quando não é link. ~14ms por link, por isso o
+    # cache: o HTML repete as mesmas fichas em várias variantes.
+    url = str(url or "").strip()
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        return ""
+    from reportlab.graphics.barcode.qrencoder import QRCode, QRErrorCorrectLevel
+    codigo = QRCode(None, QRErrorCorrectLevel.M)
+    codigo.addData(url)
+    codigo.make()
+    lado = codigo.getModuleCount()
+    bits = bytearray((lado * lado + 7) // 8)
+    i = 0
+    for linha in range(lado):
+        for coluna in range(lado):
+            if codigo.isDark(linha, coluna):
+                bits[i >> 3] |= 0x80 >> (i & 7)
+            i += 1
+    return f"{lado}:" + base64.b64encode(bytes(bits)).decode("ascii")
+
+
+def _api_qr_links(urls):
+    # Ficha Cadastral da tela: QR Codes dos links, pedidos só quando a ficha
+    # abre (gerar pra todos os cards de uma vez custaria ~14ms por link).
+    try:
+        return {"ok": True, "qr": {u: qr_compacto(u) for u in (urls or [])[:10] if qr_compacto(u)}}
+    except Exception as erro:
+        return {"ok": False, "erro": str(erro)}
+
+
+# Desenho da Ficha Cadastral com a identidade visual dos cards das ações —
+# pedido do usuário em 22/11/2026 ("trazer para a ficha cadastral a mesma
+# identidade visual dos cards", no dash e no HTML): cabeçalho igual ao card
+# (objeto, município com o pino da localização, executor, velocímetro do
+# avanço físico, conclusão prevista e investimento), PRAZOS numa linha do
+# tempo (distância entre marcos proporcional à duração, com a duração escrita
+# em cada trecho e a marca de HOJE) e LINKS em QR Code. Um JS só, usado pela
+# ficha do painel (montar_html_painel, placeholder __JS_FICHA_VISUAL__) e pela
+# da Apresentação HTML (gerar_pptx_pac.py); cada lado tem o seu CSS (classes
+# fv-*), nas cores dele. Funções puras: devolvem HTML.
+JS_FICHA_VISUAL = r"""
+(function () {
+  if (window.FichaVisual) return;
+  var ARCO = "M 11.74 56.39 A 32.06 32.06 0 1 1 64.26 56.39";
+  var PINO = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>';
+  // marcos da linha do tempo, na ordem do processo (empate de data mantém esta ordem)
+  var MARCOS = [
+    ["aviso_licitacao", "Aviso de Licitação"], ["abertura_licitacao", "Abertura de Licitação"],
+    ["previsao_contratacao", "Previsão de Contratação"], ["emissao_os", "Emissão de O.S."],
+    ["conclusao_original", "Conclusão Original"], ["prazo_atual", "Previsão de Conclusão Atual"],
+    ["prazo_fase", "Prazo de Conclusão da Fase"]
+  ];
+  var DIA = 86400000;
+
+  function esc(t) {
+    return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function link(v) {
+    v = String(v || "").trim();
+    if (/^https?:\/\//i.test(v)) return v;
+    if (/^www\./i.test(v)) return "https://" + v;
+    return "";
+  }
+  function pct(txt) {
+    if (txt == null || String(txt).trim() === "") return null;
+    var s = String(txt).replace("%", "").trim();
+    if (s.indexOf(",") !== -1) s = s.replace(/\./g, "").replace(",", ".");
+    var n = parseFloat(s);
+    return isNaN(n) ? null : Math.max(0, Math.min(100, n));
+  }
+  function moeda(txt) {
+    var s = String(txt || "").replace(/[^0-9,.-]/g, "");
+    if (!s) return null;
+    var n = parseFloat(s.replace(/\./g, "").replace(",", "."));
+    return isNaN(n) ? null : n;
+  }
+  function moedaCurta(v) {
+    if (v == null) return "—";
+    function f(x) { return x.toFixed(1).replace(".", ","); }
+    if (v >= 1e9) return "R$ " + f(v / 1e9) + " BI";
+    if (v >= 1e6) return "R$ " + f(v / 1e6) + " MI";
+    if (v >= 1e3) return "R$ " + f(v / 1e3) + " MIL";
+    return v > 0 ? "R$ " + v.toFixed(0) : "R$ 0";
+  }
+  // "dd/mm/aa", "dd/mm/aaaa" ou "aaaa-mm-dd" -> Date (meio-dia, sem fuso)
+  function data(txt) {
+    var s = String(txt || "").trim(), m, d, me, a;
+    if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/))) { d = +m[1]; me = +m[2]; a = +m[3]; if (a < 100) a += 2000; }
+    else if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) { a = +m[1]; me = +m[2]; d = +m[3]; }
+    else return null;
+    var dt = new Date(a, me - 1, d, 12);
+    return (dt.getMonth() === me - 1 && dt.getDate() === d) ? dt : null;
+  }
+  function dataTxt(dt) {
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return p(dt.getDate()) + "/" + p(dt.getMonth() + 1) + "/" + dt.getFullYear();
+  }
+  function duracao(dias) {
+    dias = Math.round(Math.abs(dias));
+    if (dias === 0) return "mesmo dia";
+    if (dias < 45) return dias + (dias === 1 ? " dia" : " dias");
+    var meses = Math.round(dias / 30.4375);
+    if (meses < 12) return meses + (meses === 1 ? " mês" : " meses");
+    var anos = Math.floor(meses / 12), r = meses % 12;
+    return anos + (anos === 1 ? " ano" : " anos") + (r ? " e " + r + (r === 1 ? " mês" : " meses") : "");
+  }
+
+  function gauge(v, tamanho) {
+    tamanho = tamanho || 76;
+    if (v == null) return '<div class="fv-sem-gauge" style="width:' + tamanho + 'px;height:' + tamanho + 'px">Avanço<br>não<br>informado</div>';
+    return '<svg class="fv-gauge-svg" width="' + tamanho + '" height="' + tamanho + '" viewBox="0 0 76 76">'
+      + '<path class="fv-gauge-trilho" d="' + ARCO + '" fill="none" stroke-width="9.88" stroke-linecap="round" pathLength="100"></path>'
+      + (v > 0.5 ? '<path d="' + ARCO + '" fill="none" stroke="#2E7D32" stroke-width="9.88" stroke-linecap="round" pathLength="100" stroke-dasharray="' + v.toFixed(1) + ' 200"></path>' : '')
+      + '<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="currentColor">' + Math.round(v) + '%</text></svg>';
+  }
+
+  // QR "<lado>:<base64>" (qr_compacto, no Python) -> SVG, sempre escuro sobre
+  // branco (leitor de celular não lê QR invertido no tema escuro)
+  function qrSvg(codigo, tamanho) {
+    var m = String(codigo || "").match(/^(\d+):(.+)$/);
+    if (!m) return "";
+    var n = +m[1], bin = atob(m[2]), d = "";
+    function escuro(i) { return (bin.charCodeAt(i >> 3) >> (7 - (i & 7))) & 1; }
+    for (var y = 0; y < n; y++) {
+      for (var x = 0; x < n; x++) {
+        if (!escuro(y * n + x)) continue;
+        var ini = x;
+        while (x + 1 < n && escuro(y * n + x + 1)) x++;
+        d += "M" + ini + " " + y + "h" + (x - ini + 1) + "v1h-" + (x - ini + 1) + "z";
+      }
+    }
+    var t = n + 8;
+    return '<svg class="fv-qr-svg" width="' + tamanho + '" height="' + tamanho + '" viewBox="-4 -4 ' + t + ' ' + t
+      + '" shape-rendering="crispEdges"><rect x="-4" y="-4" width="' + t + '" height="' + t + '" fill="#fff"></rect>'
+      + '<path d="' + d + '" fill="#000"></path></svg>';
+  }
+
+  // Cabeçalho no desenho do card das ações
+  function cabecalho(f) {
+    var lk = link(f.link_localizacao);
+    var pino = lk ? '<a href="' + esc(lk) + '" target="_blank" rel="noopener" class="fv-icone-local" title="Ver localização">' + PINO + '</a>' : '';
+    var temFase = !!String(f.prazo_fase || "").trim();
+    var conclusao = temFase ? f.prazo_fase : f.prazo_atual;
+    var dc = data(conclusao);
+    var inv = moeda(f.investimento_total), contr = moeda(f.valor_contratado);
+    var quem = [f.secretaria, f.executor].filter(Boolean)
+      .filter(function (v, i, a) { return a.indexOf(v) === i; }).join(" · ");
+    function destaque(rot, val, cls) {
+      return '<div class="fv-destaque"><div class="fv-destaque-rotulo">' + rot + '</div><div class="fv-destaque-valor' + (cls ? " " + cls : "") + '">' + val + '</div></div>';
+    }
+    return '<div class="fv-hero">'
+      + '<div class="fv-topo"><div class="fv-identificacao">'
+      + (f.item ? '<div class="fv-item">Item ' + esc(f.item) + '</div>' : '')
+      + '<div class="fv-objeto">' + esc(f.objeto || "(sem objeto)") + '</div>'
+      + '<div class="fv-municipio-linha"><span class="fv-municipio">' + esc(f.municipio || "Município não informado") + '</span>' + pino + '</div>'
+      + (quem ? '<div class="fv-executor">' + esc(quem) + '</div>' : '')
+      + '</div><div class="fv-gauge" title="Avanço físico da obra">' + gauge(pct(f.avanco), 104)
+      + '<div class="fv-gauge-rotulo">Avanço físico</div></div></div>'
+      + (f.descricao ? '<div class="fv-descricao">' + esc(f.descricao) + '</div>' : '')
+      + '<div class="fv-rodape">'
+      + destaque("Conclusão prevista (" + (temFase ? "fase" : "atual") + ")", esc(dc ? dataTxt(dc) : (conclusao || "A definir")))
+      + destaque("Fase · Status", esc([f.fase, f.status].filter(Boolean).join(" · ") || "—"), "fv-destaque-menor")
+      + destaque("Valor contratado", esc(moedaCurta(contr)))
+      + destaque("Investimento", esc(moedaCurta(inv)), "fv-destaque-investimento")
+      + '</div></div>';
+  }
+
+  // Linha do tempo dos PRAZOS: trechos com largura proporcional à duração
+  // (mínimo fixo pra caber os rótulos), duração escrita em cada trecho,
+  // marcos da mesma data juntos, passado x futuro e a marca de HOJE.
+  function linhaDoTempo(f, alertas) {
+    alertas = alertas || [];
+    var hoje = new Date(); hoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 12);
+    var grupos = [], semData = [];
+    MARCOS.forEach(function (mc, ordem) {
+      var dt = data(f[mc[0]]);
+      var alerta = alertas.indexOf(mc[0]) !== -1;
+      if (!dt) { semData.push({ rot: mc[1], txt: String(f[mc[0]] || "").trim(), alerta: alerta }); return; }
+      var g = null;
+      for (var i = 0; i < grupos.length; i++) if (grupos[i].t === dt.getTime()) g = grupos[i];
+      if (!g) grupos.push(g = { t: dt.getTime(), dt: dt, rots: [], alerta: false, ordem: ordem });
+      g.rots.push(mc[1]); g.alerta = g.alerta || alerta;
+    });
+    grupos.sort(function (a, b) { return a.t - b.t || a.ordem - b.ordem; });
+    var html = '<div class="fv-tl">';
+    if (!grupos.length) {
+      html += '<div class="fv-tl-vazio">Nenhum prazo com data informada.</div>';
+    } else {
+      html += '<div class="fv-tl-faixa">';
+      grupos.forEach(function (g, i) {
+        var passado = g.t <= hoje.getTime();
+        html += '<div class="fv-tl-no ' + (passado ? "passado" : "futuro") + (g.alerta ? " alerta" : "") + '">'
+          + '<span class="fv-tl-ponto"></span><div class="fv-tl-rotulo"><b>' + dataTxt(g.dt) + '</b>'
+          + g.rots.map(function (r) { return '<span>' + esc(r) + '</span>'; }).join("") + '</div></div>';
+        var prox = grupos[i + 1];
+        if (!prox) return;
+        var dias = (prox.t - g.t) / DIA;
+        var p = Math.max(0, Math.min(100, (hoje.getTime() - g.t) / (prox.t - g.t) * 100));
+        var dentro = hoje.getTime() > g.t && hoje.getTime() < prox.t;
+        html += '<div class="fv-tl-seg" style="flex-grow:' + Math.max(1, Math.round(dias)) + '">'
+          + '<span class="fv-tl-dur">' + duracao(dias) + '</span>'
+          + '<div class="fv-tl-barra" style="--fv-p:' + p.toFixed(1) + '%"></div>'
+          + (dentro ? '<span class="fv-tl-hoje" style="left:' + p.toFixed(1) + '%"><i></i><em>Hoje</em></span>' : '')
+          + '</div>';
+      });
+      html += '</div>';
+      var primeiro = grupos[0], ultimo = grupos[grupos.length - 1], nota = "";
+      if (grupos.length > 1) nota = "Do primeiro ao último marco: " + duracao((ultimo.t - primeiro.t) / DIA) + ". ";
+      if (hoje.getTime() < primeiro.t) nota += "Hoje (" + dataTxt(hoje) + "): faltam " + duracao((primeiro.t - hoje.getTime()) / DIA) + " para o primeiro marco.";
+      else if (hoje.getTime() > ultimo.t) nota += "Hoje (" + dataTxt(hoje) + "): " + duracao((hoje.getTime() - ultimo.t) / DIA) + " depois do último marco.";
+      else nota += "Hoje: " + dataTxt(hoje) + ".";
+      html += '<div class="fv-tl-nota">' + esc(nota) + '</div>';
+    }
+    if (semData.length) {
+      html += '<div class="fv-tl-sem-data"><span class="fv-tl-sem-data-rot">Sem data:</span>'
+        + semData.map(function (s) {
+            return '<span class="fv-tl-chip' + (s.alerta ? " alerta" : "") + '">' + esc(s.rot)
+              + (s.txt ? ' <em>(' + esc(s.txt) + ')</em>' : '') + '</span>';
+          }).join("") + '</div>';
+    }
+    return html + '</div>';
+  }
+
+  // LINKS em QR Code; qr = {url: "<lado>:<base64>"} (pode chegar depois:
+  // preencherQr troca o "gerando…" pelo desenho)
+  function links(f, campos, qr, alertas) {
+    qr = qr || {}; alertas = alertas || [];
+    return '<div class="fv-links">' + campos.map(function (c) {
+      var bruto = String(f[c[0]] || "").trim(), lk = link(bruto);
+      var alerta = alertas.indexOf(c[0]) !== -1 ? " alerta" : "";
+      if (!bruto) return '<div class="fv-link sem-qr' + alerta + '"><div class="fv-link-rotulo">' + esc(c[1]) + '</div><div class="fv-link-vazio">Não informado</div></div>';
+      if (!lk) return '<div class="fv-link sem-qr' + alerta + '"><div class="fv-link-rotulo">' + esc(c[1]) + '</div><div class="fv-link-texto">' + esc(bruto) + '</div><div class="fv-link-dica">Não é um link — sem QR Code.</div></div>';
+      var svg = qr[lk] ? qrSvg(qr[lk], 132) : '<span class="fv-qr-gerando">gerando QR…</span>';
+      return '<div class="fv-link' + alerta + '"><a class="fv-qr" data-fv-qr="' + esc(lk) + '" href="' + esc(lk) + '" target="_blank" rel="noopener" title="Abrir o link">' + svg + '</a>'
+        + '<div class="fv-link-info"><div class="fv-link-rotulo">' + esc(c[1]) + '</div>'
+        + '<a class="fv-link-abrir" href="' + esc(lk) + '" target="_blank" rel="noopener">Abrir link ↗</a>'
+        + '<div class="fv-link-url">' + esc(lk) + '</div>'
+        + '<div class="fv-link-dica">Aponte a câmera do celular para o QR Code.</div></div></div>';
+    }).join("") + '</div>';
+  }
+  function preencherQr(raiz, qr) {
+    (raiz || document).querySelectorAll("[data-fv-qr]").forEach(function (a) {
+      var c = qr && qr[a.getAttribute("data-fv-qr")];
+      if (c) a.innerHTML = qrSvg(c, 132);
+      else if (a.querySelector(".fv-qr-gerando")) a.innerHTML = '<span class="fv-qr-gerando">QR indisponível</span>';
+    });
+  }
+  function urlsDeLinks(f, campos) {
+    return campos.map(function (c) { return link(f[c[0]]); }).filter(Boolean);
+  }
+
+  window.FichaVisual = {
+    cabecalho: cabecalho, linhaDoTempo: linhaDoTempo, links: links, preencherQr: preencherQr,
+    urlsDeLinks: urlsDeLinks, gauge: gauge, qrSvg: qrSvg, duracao: duracao, data: data, link: link
+  };
+})();
+"""
 
 
 def _nome_arquivo_ficha_pdf(dados):
@@ -11341,6 +11609,86 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     background: rgba(225, 87, 87, 0.08);
   }
 
+  /* --- Ficha no desenho dos cards (JS_FICHA_VISUAL) — pedido de 22/11/2026 --- */
+  #ficha-corpo .fv-hero { background: var(--cor-card); border: 1px solid var(--cor-card-elevado);
+    border-top: 4px solid var(--cor-acento-teal); border-radius: 10px; padding: 18px 22px;
+    display: flex; flex-direction: column; gap: 14px; margin-bottom: 22px; }
+  #ficha-corpo .fv-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
+  #ficha-corpo .fv-identificacao { min-width: 0; }
+  #ficha-corpo .fv-item { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    color: var(--cor-acento-teal-texto); text-transform: uppercase; margin-bottom: 4px; }
+  #ficha-corpo .fv-objeto { font-size: 24px; font-weight: 800; line-height: 1.2; color: var(--cor-texto-primario); }
+  #ficha-corpo .fv-municipio-linha { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  #ficha-corpo .fv-municipio { font-size: 15px; color: var(--cor-texto-secundario); }
+  #ficha-corpo .fv-icone-local { display: inline-flex; color: var(--cor-acento-teal-texto); }
+  #ficha-corpo .fv-executor { font-size: 13px; color: var(--cor-texto-terciario); margin-top: 3px; }
+  #ficha-corpo .fv-gauge { flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+    color: var(--cor-texto-primario); }
+  #ficha-corpo .fv-gauge-trilho { stroke: var(--cor-card-elevado); }
+  #ficha-corpo .fv-gauge-rotulo { font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--cor-texto-secundario); margin-top: -10px; }
+  #ficha-corpo .fv-sem-gauge { display: flex; align-items: center; justify-content: center; text-align: center;
+    font-size: 12px; font-weight: 700; color: var(--cor-texto-terciario); line-height: 1.3; }
+  #ficha-corpo .fv-descricao { font-size: 15px; line-height: 1.45; color: var(--cor-texto-primario); }
+  #ficha-corpo .fv-rodape { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 22px;
+    border-top: 1px solid var(--cor-card-elevado); padding-top: 12px; }
+  #ficha-corpo .fv-destaque-rotulo { font-size: 12px; font-weight: 700; color: var(--cor-texto-secundario);
+    text-transform: uppercase; }
+  #ficha-corpo .fv-destaque-valor { font-size: 16px; font-weight: 700; margin-top: 2px; color: var(--cor-texto-primario); }
+  #ficha-corpo .fv-destaque-menor { font-size: 14px; }
+  #ficha-corpo .fv-destaque-investimento { font-size: 22px; font-weight: 900; color: var(--cor-acento-teal-texto);
+    white-space: nowrap; }
+  /* linha do tempo dos prazos */
+  #ficha-corpo .fv-tl { overflow-x: auto; padding-bottom: 4px; }
+  #ficha-corpo .fv-tl-faixa { display: flex; align-items: flex-start; padding: 44px 70px 0; min-width: min-content; }
+  #ficha-corpo .fv-tl-no { width: 0; flex: none; display: flex; flex-direction: column; align-items: center; }
+  #ficha-corpo .fv-tl-ponto { width: 16px; height: 16px; border-radius: 50%; flex: none; box-sizing: border-box;
+    background: var(--cor-acento-teal); border: 3px solid var(--cor-acento-teal); }
+  #ficha-corpo .fv-tl-no.futuro .fv-tl-ponto { background: var(--cor-fundo); }
+  #ficha-corpo .fv-tl-no.alerta .fv-tl-ponto { border-color: #E15757; }
+  #ficha-corpo .fv-tl-no.alerta.passado .fv-tl-ponto { background: #E15757; }
+  #ficha-corpo .fv-tl-rotulo { width: 132px; flex: none; text-align: center; margin-top: 8px; display: flex;
+    flex-direction: column; gap: 2px; }
+  #ficha-corpo .fv-tl-rotulo b { font-size: 14px; color: var(--cor-texto-primario); }
+  #ficha-corpo .fv-tl-rotulo span { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+    color: var(--cor-texto-secundario); line-height: 1.25; }
+  #ficha-corpo .fv-tl-no.alerta .fv-tl-rotulo span { color: #E15757; }
+  #ficha-corpo .fv-tl-seg { flex: 1 1 140px; min-width: 140px; height: 16px; position: relative; display: flex;
+    align-items: center; }
+  #ficha-corpo .fv-tl-barra { height: 4px; width: 100%; border-radius: 2px;
+    background: linear-gradient(to right, var(--cor-acento-teal) var(--fv-p), var(--cor-card-elevado) var(--fv-p)); }
+  #ficha-corpo .fv-tl-dur { position: absolute; bottom: 100%; left: 0; right: 0; text-align: center; margin-bottom: 3px;
+    font-size: 12px; font-weight: 700; color: var(--cor-acento-teal-texto); white-space: nowrap; }
+  #ficha-corpo .fv-tl-hoje { position: absolute; top: -26px; bottom: -4px; width: 0; }
+  #ficha-corpo .fv-tl-hoje i { position: absolute; top: 0; bottom: 0; left: -1px; border-left: 2px dashed #E68A00; }
+  #ficha-corpo .fv-tl-hoje em { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 1px;
+    font-size: 10px; font-weight: 800; font-style: normal; color: #E68A00; text-transform: uppercase; }
+  #ficha-corpo .fv-tl-nota { font-size: 12.5px; color: var(--cor-texto-secundario); margin-top: 12px; }
+  #ficha-corpo .fv-tl-vazio { font-size: 13.5px; color: var(--cor-texto-terciario); font-style: italic; }
+  #ficha-corpo .fv-tl-sem-data { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+  #ficha-corpo .fv-tl-sem-data-rot { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--cor-texto-terciario); }
+  #ficha-corpo .fv-tl-chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--cor-card);
+    border: 1px solid var(--cor-card-elevado); color: var(--cor-texto-secundario); }
+  #ficha-corpo .fv-tl-chip em { font-style: normal; color: var(--cor-texto-terciario); }
+  #ficha-corpo .fv-tl-chip.alerta { border-color: #E15757; color: #E15757; }
+  /* links em QR Code */
+  #ficha-corpo .fv-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px 22px; }
+  #ficha-corpo .fv-link { display: flex; gap: 16px; align-items: flex-start; background: var(--cor-card);
+    border: 1px solid var(--cor-card-elevado); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+  #ficha-corpo .fv-link.alerta { border-color: #E15757; }
+  #ficha-corpo .fv-qr { flex: none; display: flex; align-items: center; justify-content: center; width: 132px; height: 132px;
+    border-radius: 6px; overflow: hidden; background: #fff; }
+  #ficha-corpo .fv-qr-gerando { font-size: 11px; color: #5B6576; }
+  #ficha-corpo .fv-link-info { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  #ficha-corpo .fv-link-rotulo { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--cor-texto-secundario); }
+  #ficha-corpo .fv-link-abrir { font-size: 14px; font-weight: 700; color: var(--cor-acento-teal-texto); text-decoration: none; }
+  #ficha-corpo .fv-link-abrir:hover { text-decoration: underline; }
+  #ficha-corpo .fv-link-url { font-size: 11.5px; color: var(--cor-texto-terciario); word-break: break-all; }
+  #ficha-corpo .fv-link-dica { font-size: 11px; color: var(--cor-texto-terciario); font-style: italic; }
+  #ficha-corpo .fv-link-texto { font-size: 13.5px; color: var(--cor-texto-primario); white-space: pre-wrap; }
+  #ficha-corpo .fv-link-vazio { font-size: 13.5px; color: var(--cor-texto-terciario); font-style: italic; }
+  #ficha-corpo .fv-link.sem-qr { display: flex; flex-direction: column; gap: 5px; }
+
   /* --- Lista de desambiguação (mais de uma ação encontrada) --- */
   /* --- Janela de seleção de páginas do relatório --- */
   #paginas-overlay {
@@ -13588,6 +13936,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   </div>
 </div>
 
+<script>__JS_FICHA_VISUAL__</script>
 <script type="application/json" id="dados-painel">__DADOS_PAINEL__</script>
 <script>
   // Os dados vêm de um bloco <script type="application/json"> (texto puro,
@@ -17231,15 +17580,36 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     return escaparHtmlFicha(valor);
   }
 
+  // Identidade visual dos cards na ficha (pedido do usuário em 22/11/2026,
+  // ver JS_FICHA_VISUAL): cabeçalho = card da ação (Identificação e Avanço
+  // da Obra saem das seções, já estão nele), PRAZOS em linha do tempo e
+  // LINKS em QR Code (pedidos ao Python só quando a ficha abre).
+  var _fichaQrPedido = 0;
   function renderizarFichaTela(dados) {
     var corpo = document.getElementById("ficha-corpo");
     corpo.innerHTML = "";
     var camposAlerta = dados._campos_alerta || [];
+    var FV = window.FichaVisual;
+    if (FV) corpo.insertAdjacentHTML("beforeend", FV.cabecalho(dados));
+    var camposLinks = [];
     definicaoSecoesFicha().forEach(function (secao) {
+      var chaves = secao.campos.map(function (c) { return c.chave; });
+      if (FV && chaves.indexOf("objeto") !== -1) return;
       var secaoEl = document.createElement("div");
       secaoEl.className = "ficha-secao";
+      if (FV && chaves.indexOf("aviso_licitacao") !== -1) {
+        secaoEl.innerHTML = '<div class="ficha-secao-titulo">' + secao.titulo + '</div>' + FV.linhaDoTempo(dados, camposAlerta);
+        corpo.appendChild(secaoEl);
+        return;
+      }
+      if (FV && chaves.indexOf("link_monitora") !== -1) {
+        camposLinks = secao.campos.map(function (c) { return [c.chave, c.rotulo]; });
+        secaoEl.innerHTML = '<div class="ficha-secao-titulo">' + secao.titulo + '</div>' + FV.links(dados, camposLinks, null, camposAlerta);
+        corpo.appendChild(secaoEl);
+        return;
+      }
       var gridClasse = "ficha-secao-grid" + (secao.largo ? " ficha-grid-largo" : "");
-      var camposHtml = secao.campos.map(function (c) {
+      var camposHtml = secao.campos.filter(function (c) { return !(FV && c.chave === "avanco"); }).map(function (c) {
         var classeAlerta = camposAlerta.indexOf(c.chave) !== -1 ? " ficha-campo-alerta" : "";
         return (
           '<div>' +
@@ -17253,6 +17623,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         '<div class="' + gridClasse + '">' + camposHtml + '</div>';
       corpo.appendChild(secaoEl);
     });
+    var urls = FV ? FV.urlsDeLinks(dados, camposLinks) : [];
+    if (urls.length) {
+      var minhaVez = ++_fichaQrPedido;
+      chamarAPI("qr_links", urls).then(function (r) {
+        if (minhaVez !== _fichaQrPedido) return;
+        FV.preencherQr(corpo, r && r.ok ? r.qr : {});
+      }).catch(function () { if (minhaVez === _fichaQrPedido) FV.preencherQr(corpo, {}); });
+    }
   }
 
   var _fichaDadosAtuais = null;
@@ -17266,10 +17644,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   function abrirFicha(dados, veioDaBusca) {
     _fichaDadosAtuais = dados;
     _fichaVeioDaBusca = !!veioDaBusca;
-    document.getElementById("ficha-topo-objeto").textContent = dados.objeto || "(sem objeto)";
-    document.getElementById("ficha-topo-item").textContent = dados.item ? ("Item " + dados.item) : "";
+    // o objeto (e o item) agora abrem o cabeçalho no desenho do card, logo
+    // abaixo; a barra de cima fica só com o nome da janela
+    document.getElementById("ficha-topo-objeto").textContent = window.FichaVisual ? "Ficha Cadastral" : (dados.objeto || "(sem objeto)");
+    document.getElementById("ficha-topo-item").textContent = window.FichaVisual ? "" : (dados.item ? ("Item " + dados.item) : "");
     renderizarFichaTela(dados);
     document.getElementById("ficha-overlay").style.display = "flex";
+    // nova ficha abre do topo (em elemento oculto o scrollTop não vale)
+    document.getElementById("ficha-corpo").scrollTop = 0;
   }
 
   function fecharFicha() {
@@ -18617,6 +18999,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
 </html>
 """
 
+    html_paginal = html_paginal.replace("__JS_FICHA_VISUAL__", JS_FICHA_VISUAL)
     html_paginal = html_paginal.replace("__DADOS_PAINEL__", dados_painel_json)
     # Janela "Resumo das ações prioritárias e PAC" (botão RESUMO AÇÕES do
     # dash) — ver resumo_acoes.py.
@@ -19563,6 +19946,9 @@ def abrir_interface_filtros(df_base):
 
         def buscar_ficha_por_item(self, item):
             return _api_buscar_ficha_por_item(item)
+
+        def qr_links(self, urls):
+            return _api_qr_links(urls)
 
         def exportar_ficha_pdf(self, item):
             # Botão "Gerar PDF" (ícone) da Ficha Cadastral — gera direto um
