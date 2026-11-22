@@ -2046,8 +2046,9 @@ JS_FICHA_VISUAL = r"""
       + '<path d="' + d + '" fill="#000"></path></svg>';
   }
 
-  // Cabeçalho no desenho do card das ações
-  function cabecalho(f) {
+  // Cabeçalho no desenho do card das ações. destaques (opcional, ficha do
+  // Monitoramento): [[rótulo, texto, classe]] no lugar dos 4 do PAC.
+  function cabecalho(f, destaquesExtra) {
     var lk = link(f.link_localizacao);
     var pino = lk ? '<a href="' + esc(lk) + '" target="_blank" rel="noopener" class="fv-icone-local" title="Ver localização">' + PINO + '</a>' : '';
     var temFase = !!String(f.prazo_fase || "").trim();
@@ -2061,7 +2062,7 @@ JS_FICHA_VISUAL = r"""
     }
     return '<div class="fv-hero">'
       + '<div class="fv-topo"><div class="fv-identificacao">'
-      + (f.item ? '<div class="fv-item">Item ' + esc(f.item) + '</div>' : '')
+      + (f.item ? '<div class="fv-item">' + esc(f._rotulo_item || "Item") + ' ' + esc(f.item) + '</div>' : '')
       + '<div class="fv-objeto">' + esc(f.objeto || "(sem objeto)") + '</div>'
       + '<div class="fv-municipio-linha"><span class="fv-municipio">' + esc(f.municipio || "Município não informado") + '</span>' + pino + '</div>'
       + (quem ? '<div class="fv-executor">' + esc(quem) + '</div>' : '')
@@ -2069,21 +2070,48 @@ JS_FICHA_VISUAL = r"""
       + '<div class="fv-gauge-rotulo">Avanço físico</div></div></div>'
       + (f.descricao ? '<div class="fv-descricao">' + esc(f.descricao) + '</div>' : '')
       + '<div class="fv-rodape">'
-      + destaque("Conclusão prevista (" + (temFase ? "fase" : "atual") + ")", esc(dc ? dataTxt(dc) : (conclusao || "A definir")))
-      + destaque("Fase · Status", esc([f.fase, f.status].filter(Boolean).join(" · ") || "—"), "fv-destaque-menor")
-      + destaque("Valor contratado", esc(moedaCurta(contr)))
-      + destaque("Investimento", esc(moedaCurta(inv)), "fv-destaque-investimento")
+      + (destaquesExtra ? destaquesExtra.map(function (d) {
+            return destaque(esc(d[0]), esc(String(d[1] == null ? "" : d[1]).trim() || "—"), d[2]);
+          }).join("")
+        : destaque("Conclusão prevista (" + (temFase ? "fase" : "atual") + ")", esc(dc ? dataTxt(dc) : (conclusao || "A definir")))
+          + destaque("Fase · Status", esc([f.fase, f.status].filter(Boolean).join(" · ") || "—"), "fv-destaque-menor")
+          + destaque("Valor contratado", esc(moedaCurta(contr)))
+          + destaque("Investimento", esc(moedaCurta(inv)), "fv-destaque-investimento"))
       + '</div></div>';
+  }
+
+  function secao(titulo, corpo) {
+    return '<div class="fv-secao"><div class="fv-secao-titulo">' + esc(titulo) + '</div>' + corpo + '</div>';
+  }
+  // Ficha montada só pelo esquema (Ações em Monitoramento — pedido do
+  // usuário em 22/11/2026; ver resumo_acoes.RA_FICHA_ESQUEMA): cabeçalho
+  // do card, linha do tempo logo abaixo e as seções de campos.
+  function generica(f, esq) {
+    esq = esq || {};
+    var g = {};
+    Object.keys(f || {}).forEach(function (k) { g[k] = f[k]; });
+    g._rotulo_item = esq.rotulo_item || g._rotulo_item;
+    var html = cabecalho(g, (esq.destaques || []).map(function (d) { return [d[0], g[d[1]], d[2]]; }));
+    if (esq.marcos) html += secao(esq.titulo_marcos || "Prazos", linhaDoTempo(g, [], esq.marcos));
+    (esq.secoes || []).forEach(function (s) {
+      if (s.opcional && !s.campos.some(function (c) { return String(g[c[0]] == null ? "" : g[c[0]]).trim(); })) return;
+      html += secao(s.titulo, '<div class="fv-grid">' + s.campos.map(function (c) {
+        var v = String(g[c[0]] == null ? "" : g[c[0]]).trim();
+        return '<div><div class="fv-rotulo">' + esc(c[1]) + '</div><div class="fv-valor' + (v ? "" : " vazio") + '">'
+          + (v ? esc(v) : "—") + '</div></div>';
+      }).join("") + '</div>');
+    });
+    return html;
   }
 
   // Linha do tempo dos PRAZOS: trechos com largura proporcional à duração
   // (mínimo fixo pra caber os rótulos), duração escrita em cada trecho,
   // marcos da mesma data juntos, passado x futuro e a marca de HOJE.
-  function linhaDoTempo(f, alertas) {
+  function linhaDoTempo(f, alertas, marcos) {
     alertas = alertas || [];
     var hoje = new Date(); hoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 12);
     var grupos = [], semData = [];
-    MARCOS.forEach(function (mc, ordem) {
+    (marcos || MARCOS).forEach(function (mc, ordem) {
       var dt = data(f[mc[0]]);
       var alerta = alertas.indexOf(mc[0]) !== -1;
       if (!dt) { semData.push({ rot: mc[1], txt: String(f[mc[0]] || "").trim(), alerta: alerta }); return; }
@@ -2162,10 +2190,103 @@ JS_FICHA_VISUAL = r"""
 
   window.FichaVisual = {
     cabecalho: cabecalho, linhaDoTempo: linhaDoTempo, links: links, preencherQr: preencherQr,
+    generica: generica, secao: secao,
     urlsDeLinks: urlsDeLinks, gauge: gauge, qrSvg: qrSvg, duracao: duracao, data: data, link: link
   };
 })();
 """
+
+
+# CSS claro (Apresentação HTML e HTML do Monitoramento) do desenho de
+# JS_FICHA_VISUAL — um só, com o seletor da janela de cada página no lugar de
+# ESCOPO (pedido do usuário em 22/11/2026). A ficha do painel tem o seu, com
+# os tokens de tema claro/escuro (#ficha-corpo .fv-*).
+_CSS_FICHA_VISUAL_CLARA = """
+    ESCOPO .fv-hero { background:#fff; border:1px solid #D8DCE3; border-top:4px solid #0B5CAD;
+      border-radius:10px; padding:18px 22px; display:flex; flex-direction:column; gap:14px; margin-top:14px; }
+    ESCOPO .fv-topo { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; }
+    ESCOPO .fv-identificacao { min-width:0; }
+    ESCOPO .fv-item { font-size:11px; font-weight:800; letter-spacing:.04em; color:#0B5CAD;
+      text-transform:uppercase; margin-bottom:4px; }
+    ESCOPO .fv-objeto { font-size:24px; font-weight:900; line-height:1.2; color:#0B1F3F; }
+    ESCOPO .fv-municipio-linha { display:flex; align-items:center; gap:6px; margin-top:4px; }
+    ESCOPO .fv-municipio { font-size:15px; color:#5B6576; }
+    ESCOPO .fv-icone-local { display:inline-flex; color:#0B5CAD; }
+    ESCOPO .fv-icone-local:hover { color:#0B1F3F; }
+    ESCOPO .fv-executor { font-size:13px; color:#8C8C8C; margin-top:3px; }
+    ESCOPO .fv-gauge { flex-shrink:0; display:flex; flex-direction:column; align-items:center; color:#0B1F3F; }
+    ESCOPO .fv-gauge-trilho { stroke:#E9ECF2; }
+    ESCOPO .fv-gauge-rotulo { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+      color:#5B6576; margin-top:-10px; }
+    ESCOPO .fv-sem-gauge { display:flex; align-items:center; justify-content:center; text-align:center;
+      font-size:11px; font-weight:700; color:#8C8C8C; line-height:1.3; }
+    ESCOPO .fv-descricao { font-size:15px; line-height:1.45; color:#0B1F3F; }
+    ESCOPO .fv-rodape { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px 22px;
+      border-top:1px solid #F0F2F6; padding-top:12px; }
+    ESCOPO .fv-destaque-rotulo { font-size:11px; font-weight:700; color:#5B6576; text-transform:uppercase; }
+    ESCOPO .fv-destaque-valor { font-size:16px; font-weight:700; color:#0B1F3F; margin-top:2px; }
+    ESCOPO .fv-destaque-menor { font-size:14px; }
+    ESCOPO .fv-destaque-investimento { font-size:22px; font-weight:900; color:#0B5CAD; white-space:nowrap; }
+    ESCOPO .fv-tl { overflow-x:auto; padding-bottom:4px; }
+    ESCOPO .fv-tl-faixa { display:flex; align-items:flex-start; padding:44px 70px 0; min-width:min-content; }
+    ESCOPO .fv-tl-no { width:0; flex:none; display:flex; flex-direction:column; align-items:center; }
+    ESCOPO .fv-tl-ponto { width:16px; height:16px; border-radius:50%; flex:none; background:#0B5CAD;
+      border:3px solid #0B5CAD; }
+    ESCOPO .fv-tl-no.futuro .fv-tl-ponto { background:#fff; }
+    ESCOPO .fv-tl-no.alerta .fv-tl-ponto { border-color:#D64545; }
+    ESCOPO .fv-tl-no.alerta.passado .fv-tl-ponto { background:#D64545; }
+    ESCOPO .fv-tl-rotulo { width:132px; flex:none; text-align:center; margin-top:8px; display:flex;
+      flex-direction:column; gap:2px; }
+    ESCOPO .fv-tl-rotulo b { font-size:14px; color:#0B1F3F; }
+    ESCOPO .fv-tl-rotulo span { font-size:10.5px; font-weight:700; text-transform:uppercase; color:#5B6576;
+      line-height:1.25; }
+    ESCOPO .fv-tl-no.alerta .fv-tl-rotulo span { color:#D64545; }
+    ESCOPO .fv-tl-seg { flex:1 1 140px; min-width:140px; height:16px; position:relative; display:flex;
+      align-items:center; }
+    ESCOPO .fv-tl-barra { height:4px; width:100%; border-radius:2px;
+      background:linear-gradient(to right, #0B5CAD var(--fv-p), #D8DCE3 var(--fv-p)); }
+    ESCOPO .fv-tl-dur { position:absolute; bottom:100%; left:0; right:0; text-align:center; margin-bottom:3px;
+      font-size:12px; font-weight:800; color:#0B5CAD; white-space:nowrap; }
+    ESCOPO .fv-tl-hoje { position:absolute; top:-26px; bottom:-4px; width:0; }
+    ESCOPO .fv-tl-hoje i { position:absolute; top:0; bottom:0; left:-1px; border-left:2px dashed #E68A00; }
+    ESCOPO .fv-tl-hoje em { position:absolute; bottom:100%; left:50%; transform:translateX(-50%); margin-bottom:1px;
+      font-size:10px; font-weight:800; font-style:normal; color:#E68A00; text-transform:uppercase; }
+    ESCOPO .fv-tl-nota { font-size:12.5px; color:#5B6576; margin-top:12px; }
+    ESCOPO .fv-tl-vazio { font-size:14px; color:#A0A7B2; font-style:italic; }
+    ESCOPO .fv-tl-sem-data { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
+    ESCOPO .fv-tl-sem-data-rot { font-size:11px; font-weight:700; text-transform:uppercase; color:#8C8C8C; }
+    ESCOPO .fv-tl-chip { font-size:12px; padding:3px 9px; border-radius:999px; background:#F7F8FA;
+      border:1px solid #D8DCE3; color:#5B6576; }
+    ESCOPO .fv-tl-chip em { font-style:normal; color:#8C8C8C; }
+    ESCOPO .fv-tl-chip.alerta { border-color:#D64545; color:#D64545; }
+    ESCOPO .fv-links { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:14px 22px; }
+    ESCOPO .fv-link { display:flex; gap:16px; align-items:flex-start; background:#F7F8FA; border:1px solid #D8DCE3;
+      border-radius:10px; padding:12px 14px; min-width:0; }
+    ESCOPO .fv-link.alerta { border-color:#D64545; }
+    ESCOPO .fv-link.sem-qr { flex-direction:column; gap:5px; }
+    ESCOPO .fv-qr { flex:none; display:flex; align-items:center; justify-content:center; width:132px; height:132px;
+      border-radius:6px; overflow:hidden; background:#fff; }
+    ESCOPO .fv-qr-gerando { font-size:11px; color:#5B6576; }
+    ESCOPO .fv-link-info { min-width:0; display:flex; flex-direction:column; gap:5px; }
+    ESCOPO .fv-link-rotulo { font-size:11px; font-weight:700; text-transform:uppercase; color:#5B6576; }
+    ESCOPO .fv-link-abrir { font-size:14px; font-weight:700; color:#0B5CAD; text-decoration:none; }
+    ESCOPO .fv-link-abrir:hover { text-decoration:underline; }
+    ESCOPO .fv-link-url { font-size:11.5px; color:#8C8C8C; word-break:break-all; }
+    ESCOPO .fv-link-dica { font-size:11px; color:#8C8C8C; font-style:italic; }
+    ESCOPO .fv-link-texto { font-size:14px; color:#1A1A1A; white-space:pre-wrap; }
+    ESCOPO .fv-link-vazio { font-size:14px; color:#A0A7B2; font-style:italic; }
+    ESCOPO .fv-secao { margin-top:16px; }
+    ESCOPO .fv-secao-titulo { font-size:13px; font-weight:800; color:#1565A3; letter-spacing:.04em; text-transform:uppercase;
+      border-bottom:1px solid #E3E7ED; padding-bottom:4px; margin-bottom:8px; }
+    ESCOPO .fv-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px 18px; }
+    ESCOPO .fv-rotulo { font-size:11px; font-weight:700; color:#7A8494; text-transform:uppercase; }
+    ESCOPO .fv-valor { font-size:14px; color:#1A1A1A; white-space:pre-line; overflow-wrap:anywhere; }
+    ESCOPO .fv-valor.vazio { color:#A0A7B2; }
+"""
+
+
+def css_ficha_visual_clara(escopo):
+    return _CSS_FICHA_VISUAL_CLARA.replace("ESCOPO", escopo)
 
 
 def _nome_arquivo_ficha_pdf(dados):
@@ -11688,6 +11809,17 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   #ficha-corpo .fv-link-texto { font-size: 13.5px; color: var(--cor-texto-primario); white-space: pre-wrap; }
   #ficha-corpo .fv-link-vazio { font-size: 13.5px; color: var(--cor-texto-terciario); font-style: italic; }
   #ficha-corpo .fv-link.sem-qr { display: flex; flex-direction: column; gap: 5px; }
+  /* seções da ficha montada pelo esquema (Ações em Monitoramento) — mesmo
+     desenho das .ficha-secao do PAC */
+  #ficha-corpo .fv-secao { margin-bottom: 20px; }
+  #ficha-corpo .fv-secao-titulo { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--cor-acento-teal-texto); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--cor-card-elevado); }
+  #ficha-corpo .fv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 22px; }
+  #ficha-corpo .fv-rotulo { font-size: 10.5px; color: var(--cor-texto-terciario); text-transform: uppercase;
+    letter-spacing: 0.03em; margin-bottom: 3px; }
+  #ficha-corpo .fv-valor { font-size: 13.5px; color: var(--cor-texto-primario); line-height: 1.5; white-space: pre-wrap;
+    word-break: break-word; }
+  #ficha-corpo .fv-valor.vazio { color: var(--cor-texto-terciario); font-style: italic; }
 
   /* --- Lista de desambiguação (mais de uma ação encontrada) --- */
   /* --- Janela de seleção de páginas do relatório --- */
@@ -17592,7 +17724,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var FV = window.FichaVisual;
     if (FV) corpo.insertAdjacentHTML("beforeend", FV.cabecalho(dados));
     var camposLinks = [];
-    definicaoSecoesFicha().forEach(function (secao) {
+    // PRAZOS (linha do tempo) logo abaixo do cabeçalho com o velocímetro do
+    // avanço — pedido do usuário em 22/11/2026
+    var secoesFicha = definicaoSecoesFicha();
+    if (FV) {
+      var ehPrazos = function (s) { return s.campos.some(function (c) { return c.chave === "aviso_licitacao"; }); };
+      secoesFicha = secoesFicha.filter(ehPrazos).concat(secoesFicha.filter(function (s) { return !ehPrazos(s); }));
+    }
+    secoesFicha.forEach(function (secao) {
       var chaves = secao.campos.map(function (c) { return c.chave; });
       if (FV && chaves.indexOf("objeto") !== -1) return;
       var secaoEl = document.createElement("div");
@@ -17649,10 +17788,42 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     document.getElementById("ficha-topo-objeto").textContent = window.FichaVisual ? "Ficha Cadastral" : (dados.objeto || "(sem objeto)");
     document.getElementById("ficha-topo-item").textContent = window.FichaVisual ? "" : (dados.item ? ("Item " + dados.item) : "");
     renderizarFichaTela(dados);
-    document.getElementById("ficha-overlay").style.display = "flex";
+    var ov = document.getElementById("ficha-overlay");
+    ov.style.zIndex = "";
+    document.getElementById("ficha-btn-gerar-pdf").style.display = "";
+    ov.style.display = "flex";
     // nova ficha abre do topo (em elemento oculto o scrollTop não vale)
     document.getElementById("ficha-corpo").scrollTop = 0;
   }
+
+  // Ficha Cadastral das AÇÕES EM MONITORAMENTO (pedido do usuário em
+  // 22/11/2026): mesma janela e mesmo desenho (FichaVisual.generica, com o
+  // esquema de resumo_acoes.RA_FICHA_ESQUEMA), aberta pelos cards do dash
+  // do Monitoramento (resumo_acoes.py, raOcFundo) — por cima deles, e sem o
+  // botão de PDF (que é da ficha do PAC).
+  window.abrirFichaMon = function (r) {
+    if (!window.FichaVisual || !r || !r.ficha) return;
+    _fichaDadosAtuais = null;
+    _fichaVeioDaBusca = false;
+    document.getElementById("ficha-topo-objeto").textContent = "Ficha Cadastral · Ações em Monitoramento";
+    document.getElementById("ficha-topo-item").textContent = "";
+    var corpo = document.getElementById("ficha-corpo");
+    corpo.innerHTML = window.FichaVisual.generica(r.ficha, r.esquema);
+    var ov = document.getElementById("ficha-overlay");
+    ov.style.zIndex = "400";
+    document.getElementById("ficha-btn-gerar-pdf").style.display = "none";
+    ov.style.display = "flex";
+    corpo.scrollTop = 0;
+  };
+
+  // Esc fecha só a ficha (e não a janela de cards ou o dash por baixo dela)
+  window.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    if (document.getElementById("ficha-overlay").style.display !== "flex") return;
+    ev.stopImmediatePropagation();
+    ev.preventDefault();
+    fecharFicha();
+  }, true);
 
   function fecharFicha() {
     document.getElementById("ficha-overlay").style.display = "none";
@@ -19413,6 +19584,12 @@ def _api_resumo_acoes_cards(filtros=None, alvo=None):
     return _modulo_resumo_acoes().api_cards(filtros, alvo)
 
 
+def _api_resumo_acoes_ficha(indice):
+    # Ficha Cadastral de uma ação em monitoramento, ao clicar no card
+    # (pedido do usuário em 22/11/2026)
+    return _modulo_resumo_acoes().api_ficha(indice)
+
+
 def _api_resumo_acoes_mapa():
     # desenho do mapa da Bahia para o gráfico de distribuição do
     # investimento da tela Ações em Monitoramento (19/11/2026)
@@ -19789,6 +19966,9 @@ def abrir_interface_filtros(df_base):
 
         def resumo_acoes_cards(self, filtros=None, alvo=None):
             return _api_resumo_acoes_cards(filtros, alvo)
+
+        def resumo_acoes_ficha(self, indice):
+            return _api_resumo_acoes_ficha(indice)
 
         def resumo_acoes_html(self, filtros=None):
             return _api_resumo_acoes_html(filtros)

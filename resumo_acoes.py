@@ -1209,8 +1209,11 @@ def _dados_cards_acoes(parte):
     com a dimensão do recorte em .ra-quadros data-fx, ver _montar_recortes):
     usados pelo clique nas células dos quadros Status × Eixo/Objeto —
     pedido do usuário em 17/11/2026 (secretaria a partir de 18/11/2026)."""
+    # "fi": linha da ação na base (_ra_base) — abre a Ficha Cadastral ao
+    # clicar no card (pedido do usuário em 22/11/2026, ver api_ficha /
+    # _fichas_mon_tabela)
     campos = ["mu", "st", "ob", "nome", "mun", "ex", "ds", "av", "pz", "val", "orc",
-              "fs", "ei", "fx"]
+              "fs", "ei", "fx", "fi"]
     if parte.empty:
         return {"campos": campos, "acoes": []}
     objeto = (parte["_f_objeto"] if "_f_objeto" in parte.columns
@@ -1250,8 +1253,147 @@ def _dados_cards_acoes(parte):
             _ra_rs(float(parte.loc[i, "_valor"])) + ("*" if bool(parte.loc[i, "_orc"]) else ""),
             bool(parte.loc[i, "_orc"]),
             str(parte.loc[i, "_f_status"]), str(parte.loc[i, "_eixo"]), str(f_sec.loc[i]),
+            int(i),
         ])
     return {"campos": campos, "acoes": acoes}
+
+
+# ---- Ficha Cadastral das ações em monitoramento ----------------------------
+# Pedido do usuário em 22/11/2026 ("adicione o recurso de ficha cadastral
+# para as ações em monitoramento"): mesmo desenho da ficha do PAC
+# (JS_FICHA_VISUAL em "CGAPE - BALANÇO PAC.py", FichaVisual.generica) —
+# cabeçalho do card com o velocímetro do avanço, os marcos da planilha numa
+# linha do tempo logo abaixo e os demais campos em seções. Esquema: chaves
+# dos valores de _ficha_mon_valores.
+RA_FICHA_ESQUEMA = {
+    "rotulo_item": "Código",
+    "destaques": [["Conclusão prevista (entrega)", "entrega", ""],
+                  ["Status", "status", "fv-destaque-menor"],
+                  ["Valor do orçamento", "orcamento_curto", ""],
+                  ["Investimento", "valor_card", "fv-destaque-investimento"]],
+    "marcos": [["estudos", "Conclusão dos Estudos"], ["projeto", "Conclusão do Projeto"],
+               ["aviso", "Aviso de Licitação"], ["licitacao", "Licitação / Contratação"],
+               ["os", "Ordem de Serviço"], ["entrega", "Entrega da Obra"],
+               ["equipamentos", "Instalação de Equipamentos"], ["funcionalidade", "Funcionalidade"]],
+    "secoes": [
+        {"titulo": "Execução", "campos": [
+            ["item", "Código"], ["eixo", "Eixo"], ["objeto_tipo", "Objeto"], ["escopo", "Escopo"],
+            ["territorio", "Território de Identidade"], ["municipio", "Município"],
+            ["secretaria", "Secretaria"], ["executor", "Executor"],
+            ["responsavel", "Responsável Informação"],
+            ["programa", "Programa de Transferência de Recursos"]]},
+        {"titulo": "Contratação", "campos": [
+            ["contratada", "Empresa Contratada"], ["contrato", "Número do Contrato"],
+            ["prazo_contratual", "Prazo Contratual"]]},
+        {"titulo": "Financeiro", "campos": [
+            ["orcamento", "Valor do Orçamento"], ["investimento", "Valor de Investimento"]]},
+        {"titulo": "Situação", "campos": [
+            ["status", "Status"], ["avanco_ideal", "Avanço Ideal"],
+            ["faixa_atraso", "Faixa de Atraso (De Avanço)"], ["dias_atraso", "Dias em Atraso (De Marco)"],
+            ["atualizacao", "Última Atualização"]]},
+        {"titulo": "Usina Fotovoltaica", "opcional": True, "campos": [
+            ["fotovoltaica", "Fotovoltaica"], ["fv_diag", "Diagnóstico Energético"],
+            ["fv_proj", "Projeto Executivo aprovado e Adequação SEs"],
+            ["fv_parecer", "Parecer Concessionária (mini/micro geração)"],
+            ["fv_pedidos", "Emissão pedidos compra materiais"], ["fv_receb", "Recebimento materiais"],
+            ["fv_obras", "Execução obras"], ["fv_comiss", "Comissionamento"],
+            ["fv_usina", "Usina fotovoltaica incorporada"], ["fv_trein", "Treinamentos e Manuais"]]},
+    ],
+}
+# chave do valor -> coluna da planilha (texto como está)
+_RA_FICHA_TEXTO = {
+    "item": "Código", "eixo": "Eixo", "objeto_tipo": "Objeto", "escopo": "Escopo",
+    "territorio": "Território Identidade", "municipio": "Município", "secretaria": "Secretaria",
+    "executor": "Executor", "responsavel": "Responsável Informação",
+    "programa": "Programa de Transferência de Recursos", "contratada": "Contratada",
+    "contrato": "Número do Contrato", "prazo_contratual": "Prazo Contratual",
+    "avanco_ideal": "Avanço Ideal", "faixa_atraso": "Faixa de Atraso (De Avanço)",
+    "dias_atraso": "Dias em Atraso (De Marco)", "fotovoltaica": "Fotovoltaica",
+}
+# etapas da usina fotovoltaica (percentuais)
+_RA_FICHA_PCT = {
+    "fv_diag": "Diagnóstico Energético", "fv_proj": "Projeto Executivo aprovado e Adequação SEs",
+    "fv_parecer": "Parecer Concessionária conexão mini ou micro geração",
+    "fv_pedidos": "Emissão pedidos compra materiais", "fv_receb": "Recebimento materiais",
+    "fv_obras": "Execução obras", "fv_comiss": "Comissionamento",
+    "fv_usina": "Usina fotovoltaica incorporada", "fv_trein": "Treinamentos e Manuais",
+}
+# campos fixos da tabela compacta do HTML (ordem das colunas)
+_RA_FICHA_CAMPOS = (["objeto", "descricao", "avanco", "status", "valor_card", "orcamento",
+                     "orcamento_curto", "investimento", "atualizacao"]
+                    + list(_RA_FICHA_TEXTO) + list(_RA_FICHA_PCT)
+                    + [c for c, _r in RA_FICHA_ESQUEMA["marcos"]])
+
+
+def _ra_moeda_cheia(v):
+    return ("R$ " + f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")) if v else ""
+
+
+def _ra_pct_txt(v):
+    n = pd.to_numeric(v, errors="coerce")
+    if pd.isna(n):
+        return ""
+    return f"{float(n):.1f}".replace(".", ",").replace(",0", "") + "%"
+
+
+def _ficha_mon_valores(base, i):
+    """Valores (texto pronto) da ficha da ação na linha i de _ra_base."""
+    r = base.loc[i]
+
+    def txt(col):
+        v = r.get(col) if col in r.index else None
+        if v is None or (not isinstance(v, str) and pd.isna(v)):
+            return ""
+        if isinstance(v, (pd.Timestamp, datetime)):
+            return f"{v:%d/%m/%Y}"
+        return " ".join(str(v).split())
+
+    def data(chave):
+        v = r.get("_d_" + chave)
+        return f"{v:%d/%m/%Y}" if v is not None and pd.notna(v) else txt(dict((c, col) for c, col, _ in RA_DATAS).get(chave, ""))
+
+    nome = txt("Ação") or txt("Objeto")
+    descricao = txt("Detalhamento Escopo") or txt("Escopo")
+    inv, orc = float(r.get("_inv") or 0), float(r.get("_orcv") or 0)
+    f = {
+        "objeto": nome, "descricao": descricao, "avanco": _ra_pct_txt(r.get("Avanço")),
+        "status": _ra_sem_num(txt(RA_COL_STATUS)),
+        "valor_card": _ra_rs(float(r.get("_valor") or 0)) + ("*" if bool(r.get("_orc")) else ""),
+        "orcamento": _ra_moeda_cheia(orc), "orcamento_curto": _ra_rs(orc) if orc else "",
+        "investimento": _ra_moeda_cheia(inv), "atualizacao": data("atualizacao"),
+    }
+    for chave, col in _RA_FICHA_TEXTO.items():
+        f[chave] = txt(col)
+    for chave, col in _RA_FICHA_PCT.items():
+        f[chave] = _ra_pct_txt(r.get(col)) if col in r.index else ""
+    for chave, _rot in RA_FICHA_ESQUEMA["marcos"]:
+        f[chave] = data(chave)
+    return f
+
+
+def _fichas_mon_tabela(parte):
+    """Fichas de todas as ações de `parte` em tabela compacta pro HTML
+    (nomes dos campos uma vez, cada ação uma lista) — "linhas" por "fi"."""
+    linhas = {}
+    for i in parte.index:
+        f = _ficha_mon_valores(parte, i)
+        linhas[str(int(i))] = [f.get(k, "") for k in _RA_FICHA_CAMPOS]
+    return {"campos": _RA_FICHA_CAMPOS, "linhas": linhas, "esquema": RA_FICHA_ESQUEMA}
+
+
+def api_ficha(indice):
+    """Ficha Cadastral de uma ação (linha `indice` de _ra_base) pro dash."""
+    try:
+        caminho = caminho_planilha()
+        if not caminho:
+            return {"ok": False, "mensagem": _sem_planilha()}
+        base = _ra_base(caminho)
+        i = int(indice)
+        if i not in base.index:
+            return {"ok": False, "mensagem": "Ação não encontrada."}
+        return {"ok": True, "ficha": _ficha_mon_valores(base, i), "esquema": RA_FICHA_ESQUEMA}
+    except Exception as exc:
+        return {"ok": False, "mensagem": f"Erro ao abrir a ficha: {exc}"}
 
 
 def _acoes_do_municipio(parte):
@@ -2370,7 +2512,8 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
       +'<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="#0B1F3F">'+Math.round(v)+'%</text></svg>';
   }}
   function card(a){{
-    return '<div class="ra-oc-card"><div class="ra-oc-card-topo"><div class="ra-oc-card-id">'
+    // data-fi: abre a Ficha Cadastral (RA_JS_FICHA) — pedido de 22/11/2026
+    return '<div class="ra-oc-card" data-fi="'+(a[C.fi]==null?'':a[C.fi])+'" role="button" tabindex="0" title="Clique para ver a ficha cadastral da ação"><div class="ra-oc-card-topo"><div class="ra-oc-card-id">'
       +'<div class="ra-oc-card-objeto">'+esc(a[C.nome])+'</div>'
       +'<div class="ra-oc-card-mun">'+esc(a[C.mun]||'Município não informado')+'</div>'
       +(a[C.ex]?'<div class="ra-oc-card-ex">'+esc(a[C.ex])+'</div>':'')
@@ -2460,6 +2603,11 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
         '<div id="ra-oc-sub" class="ra-oc-sub"></div></div>'
         '<button type="button" class="ra-oc-fechar" onclick="raOcFechar()" title="Fechar (Esc)">&times;</button></div>'
         '<div id="ra-oc-corpo" class="ra-oc-corpo"></div></div></div>'
+        # Ficha Cadastral da ação, por cima da janela de cards (RA_JS_FICHA)
+        '<div id="ra-ficha-fundo"><div class="ra-ficha-janela" role="dialog" aria-modal="true">'
+        '<div class="ra-ficha-topo"><div class="ra-ficha-titulo">Ficha Cadastral · Ações em Monitoramento</div>'
+        '<button type="button" class="ra-ficha-fechar" title="Fechar (Esc)">&times;</button></div>'
+        '<div class="ra-ficha-corpo"></div></div></div>'
     )
 
     return {
@@ -2473,13 +2621,83 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
         "secao_cartoes": secao_cartoes,
         "quadro_status_eixo_html": quadro_status_eixo_html,
         "quadro_status_objeto_html": quadro_status_objeto_html,
-        "css_bruto": css_bruto,
-        "js_bruto": js_bruto,
+        # + janela da Ficha Cadastral (pedido do usuário em 22/11/2026): CSS
+        # e JS próprios dela e o desenho comum (pac.JS_FICHA_VISUAL)
+        "css_bruto": css_bruto + RA_CSS_FICHA + (
+            pac.css_ficha_visual_clara("#ra-ficha-fundo") if hasattr(pac, "css_ficha_visual_clara") else ""),
+        "js_bruto": js_bruto + RA_JS_FICHA + "\n" + getattr(pac, "JS_FICHA_VISUAL", ""),
         "oc_html": oc_html,
         "recorte_txt": recorte_txt,
         "agora": agora,
         "titulo": titulo,
     }
+
+
+# Janela da Ficha Cadastral das ações em monitoramento no HTML (página
+# autônoma e página MON_ACOES da Apresentação CGAPE) — pedido do usuário em
+# 22/11/2026. Fica fora de .mon-ra (como #ra-oc-fundo), por cima da janela
+# de cards; cores fixas (as variáveis --navy etc. ficam presas em .mon-ra).
+RA_CSS_FICHA = """
+#ra-oc-fundo .ra-oc-card{cursor:pointer;transition:box-shadow .15s,border-color .15s}
+#ra-oc-fundo .ra-oc-card:hover,#ra-oc-fundo .ra-oc-card:focus{border-color:#0B1F3F;box-shadow:0 4px 14px rgba(11,31,63,.15);outline:none}
+#ra-ficha-fundo{display:none;position:fixed;inset:0;z-index:1250;background:rgba(11,31,63,.55);align-items:center;justify-content:center;padding:24px;font-family:'Roboto','Segoe UI',Arial,sans-serif}
+#ra-ficha-fundo.aberta{display:flex}
+#ra-ficha-fundo .ra-ficha-janela{background:#fff;border-radius:12px;width:min(1100px,100%);max-height:100%;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden}
+#ra-ficha-fundo .ra-ficha-topo{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 22px;border-bottom:3px solid #E0AB45;background:#F7F8FA}
+#ra-ficha-fundo .ra-ficha-titulo{font-size:20px;font-weight:900;color:#0B1F3F}
+#ra-ficha-fundo .ra-ficha-fechar{font-size:28px;line-height:1;border:none;background:none;cursor:pointer;color:#5B6576}
+#ra-ficha-fundo .ra-ficha-fechar:hover{color:#0B1F3F}
+#ra-ficha-fundo .ra-ficha-corpo{padding:0 22px 22px;overflow-y:auto}
+#ra-ficha-fundo .ra-ficha-vazio{padding:30px 4px;color:#5B6576;font-size:14px}
+@media print{#ra-ficha-fundo{display:none!important}}
+"""
+
+# Clique num card da janela de cards (#ra-oc-fundo) abre a ficha: os dados
+# de TODAS as ações do recorte vêm compactados (.ra-fichas-dados, gzip +
+# base64, ver _fichas_mon_tabela) e são lidos uma vez só, no 1º clique.
+RA_JS_FICHA = r"""
+(function(){
+  var fundo=document.getElementById("ra-ficha-fundo");
+  if(!fundo)return;
+  document.body.appendChild(fundo);
+  var corpo=fundo.querySelector(".ra-ficha-corpo"),F=null;
+  function dados(){
+    if(F)return Promise.resolve(F);
+    var el=document.querySelector(".ra-fichas-dados");
+    if(!el||!window.DecompressionStream)return Promise.resolve(null);
+    var b=atob(el.textContent.trim()),u=new Uint8Array(b.length);
+    for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);
+    return new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream("gzip"))).json()
+      .then(function(d){F=d;return d;});
+  }
+  function fechar(){fundo.classList.remove("aberta");}
+  function abrir(fi){
+    corpo.innerHTML='<div class="ra-ficha-vazio">Carregando a ficha…</div>';
+    fundo.classList.add("aberta");
+    dados().then(function(d){
+      var linha=d&&d.linhas[String(fi)];
+      if(!linha||!window.FichaVisual){corpo.innerHTML='<div class="ra-ficha-vazio">Ficha indisponível.</div>';return;}
+      var f={};d.campos.forEach(function(k,i){f[k]=linha[i];});
+      corpo.innerHTML=window.FichaVisual.generica(f,d.esquema);
+      corpo.scrollTop=0;
+    });
+  }
+  document.addEventListener("click",function(ev){
+    var c=ev.target.closest&&ev.target.closest("#ra-oc-fundo .ra-oc-card[data-fi]");
+    if(c&&c.dataset.fi!=="")abrir(c.dataset.fi);
+  });
+  document.addEventListener("keydown",function(ev){
+    var c=ev.target.closest&&ev.target.closest("#ra-oc-fundo .ra-oc-card[data-fi]");
+    if(c&&c.dataset.fi!==""&&(ev.key==="Enter"||ev.key===" ")){ev.preventDefault();abrir(c.dataset.fi);}
+  });
+  fundo.addEventListener("click",function(ev){if(ev.target===fundo||ev.target.closest(".ra-ficha-fechar"))fechar();});
+  // Esc fecha só a ficha (a janela de cards por baixo continua aberta)
+  window.addEventListener("keydown",function(ev){
+    if(ev.key!=="Escape"||!fundo.classList.contains("aberta"))return;
+    ev.stopImmediatePropagation();ev.preventDefault();fechar();
+  },true);
+})();
+"""
 
 
 CSS_SELETOR_RECORTE = """
@@ -2732,6 +2950,13 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
     guardados.append('<script type="application/octet-stream" class="ra-qd-dados">'
                      + base64.b64encode(gzip.compress(json_qd.encode("utf-8"), 9)).decode("ascii")
                      + "</script>")
+    # fichas cadastrais de todas as ações do recorte (RA_JS_FICHA) — pedido
+    # do usuário em 22/11/2026
+    json_fichas = json.dumps(_fichas_mon_tabela(base_qd.iloc[dados["ids"]]),
+                             ensure_ascii=False, separators=(",", ":"))
+    guardados.append('<script type="application/octet-stream" class="ra-fichas-dados">'
+                     + base64.b64encode(gzip.compress(json_fichas.encode("utf-8"), 9)).decode("ascii")
+                     + "</script>")
     html = (f'<div class="ra-sel-raiz">'
             f'<div class="ra-recorte" data-oc="{data_oc}">{inicial}</div>'
             f'{"".join(guardados)}</div>')
@@ -2803,7 +3028,7 @@ def montar_partes_html_monitoramento(caminho_base, dados, filtros=None):
     # próprio: a apresentação já tem o seu, que imprime a página inteira.
     css_renomeado = (p["css_bruto"] + CSS_SELETOR_RECORTE).replace("#dica", "#mon-dica")
     css_isolado = _escopar_css(css_renomeado, ".mon-ra",
-                               nao_escopar=("#mon-dica", "#ra-oc-fundo", ".sel-recorte",
+                               nao_escopar=("#mon-dica", "#ra-oc-fundo", "#ra-ficha-fundo", ".sel-recorte",
                                             ".sel-barra", ".sel-barra-eixo", ".sel-barra-sec",
                                             ".btn-filtros", "body.filtros-abertos"))
     js_isolado = (
@@ -3355,6 +3580,10 @@ HTML_JANELA = r"""
     grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; align-content:start; }
   .ra-oc-card { background:var(--cor-card); border-radius:10px; padding:14px 16px; box-shadow:var(--sombra-card);
     display:flex; flex-direction:column; gap:10px; border-left:4px solid var(--ra-cor-inv); }
+  /* clicável: abre a Ficha Cadastral (pedido de 22/11/2026) */
+  .ra-oc-card[data-fi] { cursor:pointer; transition:box-shadow .15s, transform .15s; }
+  .ra-oc-card[data-fi]:hover, .ra-oc-card[data-fi]:focus { box-shadow:0 4px 14px rgba(0,0,0,.28);
+    transform:translateY(-1px); outline:none; }
   .ra-oc-topo-card { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
   .ra-oc-id { min-width:0; }
   .ra-oc-objeto { font-size:14.5px; font-weight:800; line-height:1.25; }
@@ -3966,7 +4195,10 @@ HTML_JANELA = r"""
       '<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="currentColor">' + Math.round(v) + '%</text></svg>';
   }
   function raCardAcao(a, C) {
-    return '<div class="ra-oc-card"><div class="ra-oc-topo-card"><div class="ra-oc-id">' +
+    // data-fi: abre a Ficha Cadastral (window.abrirFichaMon, no painel) —
+    // pedido do usuário em 22/11/2026
+    return '<div class="ra-oc-card" data-fi="' + (a[C.fi] == null ? "" : a[C.fi]) + '" role="button" tabindex="0" title="Clique para ver a ficha cadastral da ação">' +
+      '<div class="ra-oc-topo-card"><div class="ra-oc-id">' +
       '<div class="ra-oc-objeto">' + esc(a[C.nome]) + '</div>' +
       '<div class="ra-oc-mun">' + esc(a[C.mun] || "Município não informado") + '</div>' +
       (a[C.ex] ? '<div class="ra-oc-ex">' + esc(a[C.ex]) + '</div>' : '') +
@@ -3989,10 +4221,25 @@ HTML_JANELA = r"""
       '<div class="ra-oc-corpo"></div></div>';
     document.getElementById("ra-overlay").appendChild(f);
     f.addEventListener("click", function (ev) {
-      if (ev.target === f || ev.target.closest(".ra-oc-fechar")) f.classList.remove("aberta");
+      if (ev.target === f || ev.target.closest(".ra-oc-fechar")) { f.classList.remove("aberta"); return; }
+      var c = ev.target.closest(".ra-oc-card[data-fi]");
+      if (c && c.dataset.fi !== "") raAbrirFicha(c.dataset.fi);
+    });
+    f.addEventListener("keydown", function (ev) {
+      var c = ev.target.closest && ev.target.closest(".ra-oc-card[data-fi]");
+      if (c && c.dataset.fi !== "" && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); raAbrirFicha(c.dataset.fi); }
     });
     // Esc: tratado no atalho geral do overlay (fecha esta janela primeiro)
     return f;
+  }
+  // Ficha Cadastral da ação (pedido do usuário em 22/11/2026): dados do
+  // Python (resumo_acoes_ficha -> api_ficha), desenho e janela do painel
+  // (window.abrirFichaMon, JS_FICHA_VISUAL)
+  function raAbrirFicha(fi) {
+    api("resumo_acoes_ficha", +fi).then(function (r) {
+      if (r && r.ok && window.abrirFichaMon) window.abrirFichaMon(r);
+      else alert((r && r.mensagem) || "Não foi possível abrir a ficha da ação.");
+    }).catch(function (e) { alert("Não foi possível abrir a ficha da ação: " + e); });
   }
   function raAbrirCards(alvo, nomeMunicipio) {
     var f = raOcJanela();

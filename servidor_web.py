@@ -153,7 +153,8 @@ app.add_url_rule(
 for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
                  "resumo_acoes_xlsx", "resumo_acoes_html", "resumo_acoes_atualizar_conder",
                  "resumo_acoes_qualidade_secretaria", "resumo_acoes_abrir_de_para",
-                 "resumo_acoes_mapa", "resumo_acoes_cards", "resumo_acoes_codigos_do_recorte"):
+                 "resumo_acoes_mapa", "resumo_acoes_cards", "resumo_acoes_codigos_do_recorte",
+                 "resumo_acoes_ficha"):
     app.add_url_rule("/api/" + _nome_ra, endpoint="api_" + _nome_ra,
                      view_func=_rota_json(getattr(pac, "_api_" + _nome_ra)),
                      methods=["POST"])

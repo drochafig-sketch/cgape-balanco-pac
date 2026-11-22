@@ -4047,80 +4047,6 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     .cl-ficha-valor { font-size:14px; color:#1A1A1A; white-space:pre-line; overflow-wrap:anywhere; }
     .cl-ficha-valor.vazio { color:#A0A7B2; }
     @media print { .cl-filtro, .cl-ficha-fundo { display:none !important; } }
-    /* Ficha no desenho dos cards (pac.JS_FICHA_VISUAL) — pedido de 22/11/2026 */
-    .cl-ficha-janela .fv-hero { background:#fff; border:1px solid #D8DCE3; border-top:4px solid #0B5CAD;
-      border-radius:10px; padding:18px 22px; display:flex; flex-direction:column; gap:14px; margin-top:14px; }
-    .cl-ficha-janela .fv-topo { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; }
-    .cl-ficha-janela .fv-identificacao { min-width:0; }
-    .cl-ficha-janela .fv-item { font-size:11px; font-weight:800; letter-spacing:.04em; color:#0B5CAD;
-      text-transform:uppercase; margin-bottom:4px; }
-    .cl-ficha-janela .fv-objeto { font-size:24px; font-weight:900; line-height:1.2; color:#0B1F3F; }
-    .cl-ficha-janela .fv-municipio-linha { display:flex; align-items:center; gap:6px; margin-top:4px; }
-    .cl-ficha-janela .fv-municipio { font-size:15px; color:#5B6576; }
-    .cl-ficha-janela .fv-icone-local { display:inline-flex; color:#0B5CAD; }
-    .cl-ficha-janela .fv-icone-local:hover { color:#0B1F3F; }
-    .cl-ficha-janela .fv-executor { font-size:13px; color:#8C8C8C; margin-top:3px; }
-    .cl-ficha-janela .fv-gauge { flex-shrink:0; display:flex; flex-direction:column; align-items:center; color:#0B1F3F; }
-    .cl-ficha-janela .fv-gauge-trilho { stroke:#E9ECF2; }
-    .cl-ficha-janela .fv-gauge-rotulo { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
-      color:#5B6576; margin-top:-10px; }
-    .cl-ficha-janela .fv-sem-gauge { display:flex; align-items:center; justify-content:center; text-align:center;
-      font-size:11px; font-weight:700; color:#8C8C8C; line-height:1.3; }
-    .cl-ficha-janela .fv-descricao { font-size:15px; line-height:1.45; color:#0B1F3F; }
-    .cl-ficha-janela .fv-rodape { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px 22px;
-      border-top:1px solid #F0F2F6; padding-top:12px; }
-    .cl-ficha-janela .fv-destaque-rotulo { font-size:11px; font-weight:700; color:#5B6576; text-transform:uppercase; }
-    .cl-ficha-janela .fv-destaque-valor { font-size:16px; font-weight:700; color:#0B1F3F; margin-top:2px; }
-    .cl-ficha-janela .fv-destaque-menor { font-size:14px; }
-    .cl-ficha-janela .fv-destaque-investimento { font-size:22px; font-weight:900; color:#0B5CAD; white-space:nowrap; }
-    .cl-ficha-janela .fv-tl { overflow-x:auto; padding-bottom:4px; }
-    .cl-ficha-janela .fv-tl-faixa { display:flex; align-items:flex-start; padding:44px 70px 0; min-width:min-content; }
-    .cl-ficha-janela .fv-tl-no { width:0; flex:none; display:flex; flex-direction:column; align-items:center; }
-    .cl-ficha-janela .fv-tl-ponto { width:16px; height:16px; border-radius:50%; flex:none; background:#0B5CAD;
-      border:3px solid #0B5CAD; }
-    .cl-ficha-janela .fv-tl-no.futuro .fv-tl-ponto { background:#fff; }
-    .cl-ficha-janela .fv-tl-no.alerta .fv-tl-ponto { border-color:#D64545; }
-    .cl-ficha-janela .fv-tl-no.alerta.passado .fv-tl-ponto { background:#D64545; }
-    .cl-ficha-janela .fv-tl-rotulo { width:132px; flex:none; text-align:center; margin-top:8px; display:flex;
-      flex-direction:column; gap:2px; }
-    .cl-ficha-janela .fv-tl-rotulo b { font-size:14px; color:#0B1F3F; }
-    .cl-ficha-janela .fv-tl-rotulo span { font-size:10.5px; font-weight:700; text-transform:uppercase; color:#5B6576;
-      line-height:1.25; }
-    .cl-ficha-janela .fv-tl-no.alerta .fv-tl-rotulo span { color:#D64545; }
-    .cl-ficha-janela .fv-tl-seg { flex:1 1 140px; min-width:140px; height:16px; position:relative; display:flex;
-      align-items:center; }
-    .cl-ficha-janela .fv-tl-barra { height:4px; width:100%; border-radius:2px;
-      background:linear-gradient(to right, #0B5CAD var(--fv-p), #D8DCE3 var(--fv-p)); }
-    .cl-ficha-janela .fv-tl-dur { position:absolute; bottom:100%; left:0; right:0; text-align:center; margin-bottom:3px;
-      font-size:12px; font-weight:800; color:#0B5CAD; white-space:nowrap; }
-    .cl-ficha-janela .fv-tl-hoje { position:absolute; top:-26px; bottom:-4px; width:0; }
-    .cl-ficha-janela .fv-tl-hoje i { position:absolute; top:0; bottom:0; left:-1px; border-left:2px dashed #E68A00; }
-    .cl-ficha-janela .fv-tl-hoje em { position:absolute; bottom:100%; left:50%; transform:translateX(-50%); margin-bottom:1px;
-      font-size:10px; font-weight:800; font-style:normal; color:#E68A00; text-transform:uppercase; }
-    .cl-ficha-janela .fv-tl-nota { font-size:12.5px; color:#5B6576; margin-top:12px; }
-    .cl-ficha-janela .fv-tl-vazio { font-size:14px; color:#A0A7B2; font-style:italic; }
-    .cl-ficha-janela .fv-tl-sem-data { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
-    .cl-ficha-janela .fv-tl-sem-data-rot { font-size:11px; font-weight:700; text-transform:uppercase; color:#8C8C8C; }
-    .cl-ficha-janela .fv-tl-chip { font-size:12px; padding:3px 9px; border-radius:999px; background:#F7F8FA;
-      border:1px solid #D8DCE3; color:#5B6576; }
-    .cl-ficha-janela .fv-tl-chip em { font-style:normal; color:#8C8C8C; }
-    .cl-ficha-janela .fv-tl-chip.alerta { border-color:#D64545; color:#D64545; }
-    .cl-ficha-janela .fv-links { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:14px 22px; }
-    .cl-ficha-janela .fv-link { display:flex; gap:16px; align-items:flex-start; background:#F7F8FA; border:1px solid #D8DCE3;
-      border-radius:10px; padding:12px 14px; min-width:0; }
-    .cl-ficha-janela .fv-link.alerta { border-color:#D64545; }
-    .cl-ficha-janela .fv-link.sem-qr { flex-direction:column; gap:5px; }
-    .cl-ficha-janela .fv-qr { flex:none; display:flex; align-items:center; justify-content:center; width:132px; height:132px;
-      border-radius:6px; overflow:hidden; background:#fff; }
-    .cl-ficha-janela .fv-qr-gerando { font-size:11px; color:#5B6576; }
-    .cl-ficha-janela .fv-link-info { min-width:0; display:flex; flex-direction:column; gap:5px; }
-    .cl-ficha-janela .fv-link-rotulo { font-size:11px; font-weight:700; text-transform:uppercase; color:#5B6576; }
-    .cl-ficha-janela .fv-link-abrir { font-size:14px; font-weight:700; color:#0B5CAD; text-decoration:none; }
-    .cl-ficha-janela .fv-link-abrir:hover { text-decoration:underline; }
-    .cl-ficha-janela .fv-link-url { font-size:11.5px; color:#8C8C8C; word-break:break-all; }
-    .cl-ficha-janela .fv-link-dica { font-size:11px; color:#8C8C8C; font-style:italic; }
-    .cl-ficha-janela .fv-link-texto { font-size:14px; color:#1A1A1A; white-space:pre-wrap; }
-    .cl-ficha-janela .fv-link-vazio { font-size:14px; color:#A0A7B2; font-style:italic; }
 
     /* Composição por Fase: página contínua (altura livre, sem recortar
        conteúdo) e detalhamento por objeto escondido atrás de um botão. */
@@ -4405,6 +4331,9 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
       .btn-gerar-pdf { display:none !important; }
     }
     '''
+    # Ficha no desenho dos cards (pac.JS_FICHA_VISUAL) — pedido de 22/11/2026
+    if hasattr(pac, "css_ficha_visual_clara"):
+        css += pac.css_ficha_visual_clara(".cl-ficha-janela")
 
     # só os slides escolhidos, numerados na ordem
     por_chave = {"ORGANOGRAMA": [_html_cabecalho_rodape("ORGANOGRAMA DA CGAPE", _html_organograma(),
@@ -5444,7 +5373,7 @@ function gerarPdfCompleto() {{
       else kb.unlock();
     }} catch (err) {{}}
   }}
-  var JANELAS_ESC = '#oc-fundo.aberta, .cl-ficha-fundo.aberta, #ra-oc-fundo.aberta, #raOcFundo.aberta';
+  var JANELAS_ESC = '#oc-fundo.aberta, .cl-ficha-fundo.aberta, #ra-oc-fundo.aberta, #raOcFundo.aberta, #ra-ficha-fundo.aberta';
   var escTinhaJanela = false;
   // Fase de captura na window: roda antes dos ouvintes das janelas (que
   // fecham a janela no mesmo Esc), então guarda se havia alguma aberta.
@@ -5835,7 +5764,14 @@ JS_CLAUSULAS = r"""
     document.getElementById('cl-ficha-sub').textContent = FV ? '' :
       [f.item ? 'Item ' + f.item : '', f.municipio, f.executor].filter(Boolean).join(' · ');
     var html = FV ? FV.cabecalho(f) : '';
-    DADOS_CL.secoes.forEach(function (s) {
+    // PRAZOS (linha do tempo) logo abaixo do cabeçalho com o velocímetro do
+    // avanço — pedido do usuário em 22/11/2026
+    var secoesFicha = DADOS_CL.secoes;
+    if (FV) {
+      var ehPrazos = function (s) { return s.campos.some(function (c) { return c[0] === 'aviso_licitacao'; }); };
+      secoesFicha = secoesFicha.filter(ehPrazos).concat(secoesFicha.filter(function (s) { return !ehPrazos(s); }));
+    }
+    secoesFicha.forEach(function (s) {
       var chaves = s.campos.map(function (c) { return c[0]; });
       if (FV && chaves.indexOf('objeto') !== -1) return;
       if (FV && chaves.indexOf('aviso_licitacao') !== -1) {
