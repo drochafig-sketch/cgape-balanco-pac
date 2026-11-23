@@ -136,8 +136,12 @@ def _titulo_canva(numero, nome_arquivo):
 
 
 def _paginas_canva_disponiveis():
-    """[(id, nome do arquivo)]: primeiro as páginas numeradas, em ordem de
-    número; depois as imagens com nome, em ordem alfabética."""
+    """[(id, nome do arquivo)] na ordem do NÚMERO no início do nome do
+    arquivo ("1.png", "2 AVALIAÇÃO.png", ..., "10 CONVIVE.png" — 10 depois
+    de 9, não depois de 1), pedido do usuário em 23/11/2026; antes, as
+    imagens com nome iam em ordem alfabética ("10..." antes de "2...").
+    Mesmo número: só número primeiro, depois pelo nome; sem número no
+    começo: no fim, em ordem alfabética."""
     if not os.path.isdir(PASTA_SLIDES_CANVA):
         return []
     paginas, vistos = [], set()
@@ -150,7 +154,15 @@ def _paginas_canva_disponiveis():
             continue
         vistos.add(id_pagina)
         paginas.append((id_pagina, nome))
-    paginas.sort(key=lambda p: (0, p[0], "") if isinstance(p[0], int) else (1, 0, p[0]))
+    def ordem(p):
+        id_pagina, nome = p
+        if isinstance(id_pagina, int):
+            return (0, id_pagina, 0, "")
+        numero = re.match(r"\s*(\d+)", nome)
+        if numero:
+            return (0, int(numero.group(1)), 1, id_pagina)
+        return (1, 0, 0, id_pagina)
+    paginas.sort(key=ordem)
     return paginas
 
 
@@ -2512,7 +2524,43 @@ def _html_fluxo_trabalho():
         {" <span class='fx-ponto'>·</span> ".join(_html_esc(f) for f in FLUXO_OUTRAS_FONTES)}</div>'''
 
 
+def _html_capa(total_paginas):
+    """Capa da apresentação em HTML (pedido do usuário em 23/11/2026) —
+    mesmo desenho da antiga imagem "APRESENTAÇÃO - CGAPE/1.png", que ela
+    substitui: faixa azul-marinho com CGAPE + coordenação à esquerda e
+    GOVERNO DO ESTADO DA BAHIA / CASA CIVIL à direita, traço laranja e o
+    título grande, número da página no canto."""
+    return f'''<section class="slide slide-capa">
+      <div class="capa-faixa">
+        <div><div class="capa-sigla">CGAPE</div>
+          <div class="capa-coord">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div></div>
+        <div class="capa-governo"><div>GOVERNO DO ESTADO DA BAHIA</div><div>CASA CIVIL</div></div>
+      </div>
+      <div class="capa-corpo">
+        <div class="capa-traco"></div>
+        <h1 class="capa-titulo">AÇÕES EM MONITORAMENTO</h1>
+      </div>
+      <div class="capa-pagina">§PAG§/{total_paginas}</div>
+    </section>'''
+
+
 CSS_SLIDES_INSTITUCIONAIS = '''
+    /* Capa em HTML (_html_capa) — 23/11/2026, no lugar da imagem 1.png */
+    .slide-capa { position:relative; background:#fff; overflow:hidden; }
+    .capa-faixa { position:absolute; left:0; right:0; top:0; height:12.7%; background:#0B1F3F; display:flex;
+      justify-content:space-between; align-items:center; padding:0 42px; box-sizing:border-box; }
+    .capa-sigla { font-size:31px; font-weight:400; color:#fff; line-height:1.05; letter-spacing:.5px; }
+    .capa-coord { font-size:13.5px; font-weight:700; color:#C9D6EA; margin-top:4px; letter-spacing:.2px; }
+    .capa-governo { text-align:right; font-size:15px; font-weight:700; color:#4FA3E0; line-height:1.3; letter-spacing:.3px; }
+    .capa-corpo { position:absolute; left:9.1%; right:6%; top:43.2%; }
+    .capa-traco { width:139px; height:9px; border-radius:5px; background:#E68A00; }
+    .capa-titulo { margin:30px 0 0; font-size:74px; line-height:1; font-weight:800; color:#0B1F3F; letter-spacing:.5px;
+      white-space:nowrap; }
+    .capa-pagina { position:absolute; right:42px; bottom:18px; font-size:14px; font-weight:700; color:#5B6576; }
+    @media print { .slide-capa, .capa-faixa { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }'''
+
+
+_CSS_SLIDES_INSTITUCIONAIS_RESTO = '''
     /* Organograma e Fluxo de trabalho da CGAPE — pedido do usuário em
        11/11/2026. Mesma paleta do Balanço PAC: COAHS = laranja, COAPI =
        azul, COAPI II = teal. Fonte mínima de 11px (rótulos em caixa alta). */
@@ -2582,6 +2630,7 @@ CSS_SLIDES_INSTITUCIONAIS = '''
       margin-right:10px; }
     .fx-ponto { margin:0 8px; }
 '''
+CSS_SLIDES_INSTITUCIONAIS += _CSS_SLIDES_INSTITUCIONAIS_RESTO
 
 
 # --- versão PPTX dos dois slides (formas nativas, mesma disposição) ---------
@@ -3805,13 +3854,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
        ESTADO / CASA CIVIL" — em tela estreita os chips quebram pra linha de
        baixo em vez de passar por cima dele (pedido do usuário em 17/11/2026) */
     .cabecalho .titulo-linha { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; padding-right:var(--reserva-governo, 300px); }
-    /* até ~1700px o slide ocupa a tela toda e o botão flutuante "Gerar PDF"
-       (fixo no canto) caía em cima do "GOVERNO DO ESTADO / CASA CIVIL":
-       o bloco recua pra esquerda do botão (só na tela, não na impressão) */
-    @media screen and (max-width:1700px) {
-      body:not(.tela-cheia) .cabecalho .governo { right:160px; }
-      body:not(.tela-cheia) .cabecalho .titulo-linha { --reserva-governo:420px; }
-    }
+    /* (o recuo do "GOVERNO DO ESTADO / CASA CIVIL" pro botão "Gerar PDF"
+       saiu em 23/11/2026: o botão virou ícone ao lado do dos filtros) */
     .cabecalho .subtitulo { font-size:14px; font-weight:700; color:#C9D6EA; margin-top:4px; }
     .cabecalho .base-atualizada { font-size:12px; line-height:1.3; color:#C9D6EA; margin-top:3px; }
     .cabecalho .governo { position:absolute; top:14px; right:40px; text-align:right; font-weight:700;
@@ -4113,10 +4157,14 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     /* Botão flutuante "Gerar PDF" — expande todos os detalhamentos ocultos
        antes de chamar a impressão do navegador — pedido do usuário em
        08/11/2026. */
-    .btn-gerar-pdf { position:fixed; top:18px; right:24px; z-index:1000; padding:13px 24px; font-size:15px;
-      font-weight:700; color:#fff; background:#0B5CAD; border:none; border-radius:8px; cursor:pointer;
-      box-shadow:0 4px 16px rgba(0,0,0,.3); font-family:inherit; }
-    .btn-gerar-pdf:hover { background:#0A4E92; }
+    /* 23/11/2026 (pedido do usuário): virou ícone redondo, ao lado do botão
+       dos filtros (mesmo tamanho/altura do .btn-filtros) */
+    .btn-gerar-pdf { position:fixed; left:68px; top:var(--topo-filtros,16px); z-index:1001; width:44px; height:44px;
+      border-radius:50%; border:none; background:rgba(11,31,63,.85); color:#C9D6EA; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; padding:0; box-shadow:0 4px 16px rgba(0,0,0,.3);
+      transition:background .2s, color .2s; }
+    .btn-gerar-pdf svg { width:20px; height:20px; }
+    .btn-gerar-pdf:hover { background:#0B5CAD; color:#fff; }
     body.tela-cheia .btn-gerar-pdf { display:none; }
 
     /* Contador de página + dica de tela cheia — só aparecem perto da borda
@@ -4336,7 +4384,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         css += pac.css_ficha_visual_clara(".cl-ficha-janela")
 
     # só os slides escolhidos, numerados na ordem
-    por_chave = {"ORGANOGRAMA": [_html_cabecalho_rodape("ORGANOGRAMA DA CGAPE", _html_organograma(),
+    por_chave = {"CAPA": [_html_capa(m["total_slides"])],
+                 "ORGANOGRAMA": [_html_cabecalho_rodape("ORGANOGRAMA DA CGAPE", _html_organograma(),
                                                          classe_extra="slide-institucional")],
                  "FLUXO_TRABALHO": [_html_cabecalho_rodape("FLUXO DE TRABALHO", _html_fluxo_trabalho(),
                                                            classe_extra="slide-institucional")],
@@ -4412,7 +4461,7 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
 CHAVES_MONITORAMENTO = {"MON_ACOES"}
 
 # Slides que não dependem do recorte nem da gestão (ver _montar_html_variante)
-CHAVES_HTML_SEM_DADOS = {"ORGANOGRAMA", "FLUXO_TRABALHO"} | CHAVES_MONITORAMENTO
+CHAVES_HTML_SEM_DADOS = {"CAPA", "ORGANOGRAMA", "FLUXO_TRABALHO"} | CHAVES_MONITORAMENTO
 
 # Seletor de gestão do HTML (pedido do usuário em 13/11/2026): a Gestão
 # Federal separada das demais ações, com a visão consolidada mantida.
@@ -4859,21 +4908,29 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
     corpo = "".join(blocos)
     corpo_sec = "".join(blocos_sec)
     corpo_fase = "".join(blocos_fase)
+    # Grupos do painel de filtros recolhíveis (<details>), com a opção
+    # escolhida ao lado do título (span.sel-atual, preenchido no JS) —
+    # pedido do usuário em 23/11/2026. Só Gestão começa aberto.
+    def _grupo_filtro(titulo, corpo, aberto=False):
+        return (f'<details class="sel-recorte-grupo"{" open" if aberto else ""}>'
+                f'<summary class="sel-recorte-titulo">{titulo}<span class="sel-atual"></span></summary>'
+                f'{corpo}</details>')
     seletor_fase_html = (
-        '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Fase</div>'
-        f'<div id="seletor-fase" role="group" aria-label="Fase">'
-        f'<button type="button" data-fase="" class="ativo" onclick="trocarFase(\'\')">'
-        f'Todas as fases</button>{"".join(botoes_fase)}</div></div>'
+        _grupo_filtro("Fase",
+                      f'<div id="seletor-fase" role="group" aria-label="Fase">'
+                      f'<button type="button" data-fase="" class="ativo" onclick="trocarFase(\'\')">'
+                      f'Todas as fases</button>{"".join(botoes_fase)}</div>')
         if botoes_fase else "")
     seletor_html = (
-        '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Gestão</div>'
-        f'<div id="seletor-gestao" role="group" aria-label="Gestão">{"".join(botoes)}</div></div>'
+        _grupo_filtro("Gestão",
+                      f'<div id="seletor-gestao" role="group" aria-label="Gestão">{"".join(botoes)}</div>',
+                      aberto=True)
         if len(botoes) > 1 else "")
     seletor_secretaria_html = (
-        '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Secretaria</div>'
-        f'<div id="seletor-secretaria" role="group" aria-label="Secretaria">'
-        f'<button type="button" data-secretaria="" class="ativo" onclick="trocarSecretaria(\'\')">'
-        f'Todas as secretarias</button>{"".join(botoes_sec)}</div></div>'
+        _grupo_filtro("Secretaria",
+                      f'<div id="seletor-secretaria" role="group" aria-label="Secretaria">'
+                      f'<button type="button" data-secretaria="" class="ativo" onclick="trocarSecretaria(\'\')">'
+                      f'Todas as secretarias</button>{"".join(botoes_sec)}</div>')
         if botoes_sec else "")
     slides_comuns = "".join(h for lista in comuns.values() for h in lista)
     defs_html = _html_defs_compartilhadas(registro)
@@ -4938,7 +4995,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
 <style>{css}{CSS_SLIDES_INSTITUCIONAIS}{CSS_SELETOR_GESTAO}{CSS_CARDS_OBJETO}{CSS_VISAO_GERAL_DASH}{css_monitoramento}{_css_logo_pac()}</style>
 </head>
 <body>
-<button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()">Gerar PDF</button>
+<button type="button" class="btn-gerar-pdf" onclick="gerarPdfCompleto()" title="Gerar PDF" aria-label="Gerar PDF">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="11"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+</button>
 <div id="nav-carrossel">
   <span id="contador-slide"></span>
   <span>F: tela cheia</span>
@@ -4949,9 +5008,9 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="4 4 20 4 14 12 14 19 10 21 10 12 4 4"></polygon></svg>
 </button>
 <div id="painel-filtros-pac" role="group" aria-label="Gestão, secretaria e fase">
-{seletor_secretaria_html}
 {seletor_html}
 {seletor_fase_html}
+{seletor_secretaria_html}
 </div>
 {defs_html}
 <div id="corpo-gestoes">{corpo}</div>
@@ -5133,9 +5192,10 @@ function gerarPdfCompleto() {{
     var seletorGestao = document.getElementById('seletor-gestao');
     var seletorSecretaria = document.getElementById('seletor-secretaria');
     var seletorFase = document.getElementById('seletor-fase');
-    if (seletorGestao) seletorGestao.style.display = ehMonitoramento ? 'none' : '';
-    if (seletorSecretaria) seletorSecretaria.style.display = ehMonitoramento ? 'none' : '';
-    if (seletorFase) seletorFase.style.display = ehMonitoramento ? 'none' : '';
+    // esconde o GRUPO inteiro (título recolhível + botões — 23/11/2026)
+    [seletorGestao, seletorSecretaria, seletorFase].forEach(function (s) {{
+      if (s) (s.closest('details') || s).style.display = ehMonitoramento ? 'none' : '';
+    }});
     // e no lugar entram as barras Eixo x Secretaria do próprio
     // Monitoramento (mesmo desenho — pedido do usuário em 16/11/2026)
     var seletorMon = document.querySelector('.sel-recorte');
@@ -5492,6 +5552,7 @@ function gerarPdfCompleto() {{
 </script>
 <script>{getattr(pac, "JS_FICHA_VISUAL", "")}</script>
 <script>{JS_CLAUSULAS}</script>
+<script>{JS_PAINEL_FILTROS}</script>
 <script>{JS_CARDS_OBJETO.replace("__ICONE__", json.dumps(_SVG_ICONE_LOCALIZACAO))}</script>
 <script>{JS_VISAO_GERAL_DASH}</script>
 {js_monitoramento}
@@ -5522,6 +5583,20 @@ CSS_SELETOR_GESTAO = """
     .sel-recorte-grupo { display:flex; flex-direction:column; gap:2px; }
     .sel-recorte-titulo { color:#8FA6C9; font:700 11px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.8px;
       text-transform:uppercase; margin:0 0 4px 10px; }
+    /* grupos recolhíveis (<details>) — pedido do usuário em 23/11/2026 */
+    #painel-filtros-pac { gap:6px; }
+    #painel-filtros-pac details.sel-recorte-grupo { display:block; border-bottom:1px solid rgba(255,255,255,.08);
+      padding-bottom:6px; }
+    #painel-filtros-pac summary.sel-recorte-titulo { list-style:none; cursor:pointer; user-select:none; display:flex;
+      align-items:center; gap:8px; margin:0; padding:8px 10px; border-radius:7px; font-size:12px; }
+    #painel-filtros-pac summary.sel-recorte-titulo::-webkit-details-marker { display:none; }
+    #painel-filtros-pac summary.sel-recorte-titulo::before { content:"▸"; font-size:11px; transition:transform .2s; }
+    #painel-filtros-pac details[open] > summary.sel-recorte-titulo::before { transform:rotate(90deg); }
+    #painel-filtros-pac summary.sel-recorte-titulo:hover { background:rgba(255,255,255,.08); color:#fff; }
+    #painel-filtros-pac .sel-atual { margin-left:auto; max-width:120px; overflow:hidden; text-overflow:ellipsis;
+      white-space:nowrap; text-transform:none; letter-spacing:0; font-weight:600; color:#fff; }
+    #painel-filtros-pac details[open] > summary .sel-atual { display:none; }
+    #painel-filtros-pac details > div { margin-top:4px; }
     #seletor-gestao, #seletor-secretaria, #seletor-fase { display:flex; flex-direction:column; gap:2px; }
     #seletor-gestao button, #seletor-secretaria button, #seletor-fase button { background:transparent; color:#C9D6EA; border:none;
       border-radius:7px; padding:9px 12px; font:700 13px 'Roboto','Segoe UI',Arial,sans-serif; letter-spacing:.3px;
@@ -5644,6 +5719,28 @@ JS_CARDS_OBJETO = r"""
 # Objeto (ver fichas_cartoes/_html_entregas_execucao), por isso o seletor de
 # clique é genérico ([data-ficha]), não só .cl-card. String comum (não
 # f-string) para o JS não precisar de {{ }}.
+# Painel de filtros do PAC com grupos recolhíveis (pedido do usuário em
+# 23/11/2026): a opção escolhida em cada grupo aparece ao lado do título
+# (span.sel-atual) — visível com o grupo recolhido. Atualiza ao carregar e a
+# cada clique dentro do painel (depois dos onclick que trocam o .ativo).
+JS_PAINEL_FILTROS = r"""
+(function () {
+  var painel = document.getElementById('painel-filtros-pac');
+  if (!painel) return;
+  function atualizar() {
+    painel.querySelectorAll('details.sel-recorte-grupo').forEach(function (g) {
+      var alvo = g.querySelector('.sel-atual'), ativo = g.querySelector('button.ativo');
+      if (alvo) alvo.textContent = ativo ? ativo.textContent.trim() : '';
+    });
+  }
+  painel.addEventListener('click', function (ev) {
+    if (ev.target.closest('button')) setTimeout(atualizar, 0);
+  });
+  atualizar();
+})();
+"""
+
+
 JS_CLAUSULAS = r"""
 (function () {
   var dadosEl = document.getElementById('cl-fichas-dados');
@@ -5842,8 +5939,11 @@ def gerar_html_bytes(df, filtros=None, secoes=None, filtros_mon=None):
 # (mesma do relatório gerencial; "layout" escolhe o desenho da miniatura).
 # ---------------------------------------------------------------------------
 SLIDES_APRESENTACAO = [
+    # Capa em HTML (só no HTML, abre a apresentação) — substituiu a imagem
+    # 1.png do Canva a pedido do usuário em 23/11/2026 (ver _html_capa).
+    {"chave": "CAPA", "titulo": "Capa", "layout": "texto"},
     # Bloco "Quem somos / Como trabalhamos" logo depois da capa (pedido do
-    # usuário em 11/11/2026) — no HTML a capa é a página 1 do Canva.
+    # usuário em 11/11/2026).
     {"chave": "ORGANOGRAMA", "titulo": "Organograma da CGAPE", "layout": "cards_tabela"},
     {"chave": "FLUXO_TRABALHO", "titulo": "Fluxo de Trabalho", "layout": "texto"},
     # Visão Geral do dash, só no HTML (ver SLIDES_SO_NO_HTML e
@@ -5895,7 +5995,7 @@ SLIDES_OCULTOS_NO_HTML = {"VISAO_GERAL", "COMP_FASE", "TABELA_RESUMO", "QUADRO_F
 # E o contrário: seções que só existem no HTML (cards de cláusula suspensiva,
 # pedido do usuário em 10/11/2026; e o Monitoramento, pedido do usuário em
 # 15/11/2026) — não entram no PPTX nem no seu catálogo.
-SLIDES_SO_NO_HTML = {"CLAUSULAS", "VISAO_DASH"} | CHAVES_MONITORAMENTO
+SLIDES_SO_NO_HTML = {"CAPA", "CLAUSULAS", "VISAO_DASH"} | CHAVES_MONITORAMENTO
 
 
 def _paginas_por_chave(m):
@@ -5999,12 +6099,10 @@ def listar_slides(df, formato=None):
         # 08/11/2026.
         canva = [{"chave": _chave_canva(numero), "titulo": _titulo_canva(numero, nome),
                   "layout": "texto"} for numero, nome in _paginas_canva_disponiveis()]
-        # A capa (página 1 do Canva) abre a apresentação, antes do bloco
-        # Organograma/Fluxo; as páginas 2 e 3 do Canva (organograma e fluxo
-        # antigos, em imagem) chegam desmarcadas — os slides novos as
-        # substituem. Pedido do usuário em 11/11/2026.
-        capa = [c for c in canva if c["chave"] == _chave_canva(1)]
-        catalogo = capa + catalogo + [c for c in canva if c not in capa]
+        # A capa agora é o slide CAPA (HTML, primeiro do catálogo) — a antiga
+        # página 1 do Canva foi apagada em 23/11/2026; se voltar a existir
+        # uma imagem "1", ela entra junto das demais, na ordem do número.
+        catalogo = catalogo + canva
     return [dict(s, paginas=paginas.get(s["chave"], 1),
                  marcada=s["chave"] not in {_chave_canva(n) for n in PAGINAS_CANVA_SUBSTITUIDAS})
             for s in catalogo]
