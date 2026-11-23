@@ -2080,8 +2080,10 @@ JS_FICHA_VISUAL = r"""
       + '</div></div>';
   }
 
-  function secao(titulo, corpo) {
-    return '<div class="fv-secao"><div class="fv-secao-titulo">' + esc(titulo) + '</div>' + corpo + '</div>';
+  // extra (HTML opcional): texto em destaque à direita do título (ex.:
+  // resumoTempo na seção PRAZOS)
+  function secao(titulo, corpo, extra) {
+    return '<div class="fv-secao"><div class="fv-secao-titulo">' + esc(titulo) + (extra || '') + '</div>' + corpo + '</div>';
   }
   // Ficha montada só pelo esquema (Ações em Monitoramento — pedido do
   // usuário em 22/11/2026; ver resumo_acoes.RA_FICHA_ESQUEMA): cabeçalho
@@ -2092,7 +2094,7 @@ JS_FICHA_VISUAL = r"""
     Object.keys(f || {}).forEach(function (k) { g[k] = f[k]; });
     g._rotulo_item = esq.rotulo_item || g._rotulo_item;
     var html = cabecalho(g, (esq.destaques || []).map(function (d) { return [d[0], g[d[1]], d[2]]; }));
-    if (esq.marcos) html += secao(esq.titulo_marcos || "Prazos", linhaDoTempo(g, [], esq.marcos));
+    if (esq.marcos) html += secao(esq.titulo_marcos || "Prazos", linhaDoTempo(g, [], esq.marcos), resumoTempo(g, esq.marcos));
     (esq.secoes || []).forEach(function (s) {
       if (s.opcional && !s.campos.some(function (c) { return String(g[c[0]] == null ? "" : g[c[0]]).trim(); })) return;
       html += secao(s.titulo, '<div class="fv-grid">' + s.campos.map(function (c) {
@@ -2136,19 +2138,20 @@ JS_FICHA_VISUAL = r"""
         var dias = (prox.t - g.t) / DIA;
         var p = Math.max(0, Math.min(100, (hoje.getTime() - g.t) / (prox.t - g.t) * 100));
         var dentro = hoje.getTime() > g.t && hoje.getTime() < prox.t;
+        // logo abaixo de "HOJE": quanto falta para o próximo marco (pedido
+        // do usuário em 23/11/2026)
+        var falta = dentro ? duracao((prox.t - hoje.getTime()) / DIA) : "";
         html += '<div class="fv-tl-seg" style="flex-grow:' + Math.max(1, Math.round(dias)) + '">'
           + '<span class="fv-tl-dur">' + duracao(dias) + '</span>'
           + '<div class="fv-tl-barra" style="--fv-p:' + p.toFixed(1) + '%"></div>'
-          + (dentro ? '<span class="fv-tl-hoje" style="left:' + p.toFixed(1) + '%"><i></i><em>Hoje</em></span>' : '')
+          + (dentro ? '<span class="fv-tl-hoje" style="left:' + p.toFixed(1) + '%" title="Hoje (' + dataTxt(hoje)
+              + '): faltam ' + esc(falta) + ' para o próximo marco"><i></i><em>Hoje<small>faltam ' + esc(falta)
+              + '</small><small>p/ o próximo marco</small></em></span>' : '')
           + '</div>';
       });
       html += '</div>';
-      var primeiro = grupos[0], ultimo = grupos[grupos.length - 1], nota = "";
-      if (grupos.length > 1) nota = "Do primeiro ao último marco: " + duracao((ultimo.t - primeiro.t) / DIA) + ". ";
-      if (hoje.getTime() < primeiro.t) nota += "Hoje (" + dataTxt(hoje) + "): faltam " + duracao((primeiro.t - hoje.getTime()) / DIA) + " para o primeiro marco.";
-      else if (hoje.getTime() > ultimo.t) nota += "Hoje (" + dataTxt(hoje) + "): " + duracao((hoje.getTime() - ultimo.t) / DIA) + " depois do último marco.";
-      else nota += "Hoje: " + dataTxt(hoje) + ".";
-      html += '<div class="fv-tl-nota">' + esc(nota) + '</div>';
+      // "Do primeiro ao último marco" saiu daqui: vai ao lado do título da
+      // seção, com destaque (resumoTempo) — pedido de 23/11/2026
     }
     if (semData.length) {
       html += '<div class="fv-tl-sem-data"><span class="fv-tl-sem-data-rot">Sem data:</span>'
@@ -2158,6 +2161,22 @@ JS_FICHA_VISUAL = r"""
           }).join("") + '</div>';
     }
     return html + '</div>';
+  }
+
+  // Texto que vai ao lado do título "PRAZOS" (pedido do usuário em
+  // 23/11/2026): "Do primeiro ao último marco: X", e, se hoje estiver fora
+  // da linha do tempo, quanto falta para o primeiro / quanto passou do
+  // último. Devolve HTML pronto (span) ou "".
+  function resumoTempo(f, marcos) {
+    var hoje = new Date(); hoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 12);
+    var ts = [];
+    (marcos || MARCOS).forEach(function (mc) { var dt = data(f[mc[0]]); if (dt) ts.push(dt.getTime()); });
+    if (!ts.length) return "";
+    var ini = Math.min.apply(null, ts), fim = Math.max.apply(null, ts), partes = [];
+    if (fim > ini) partes.push('Do primeiro ao último marco: <b>' + esc(duracao((fim - ini) / DIA)) + '</b>');
+    if (hoje.getTime() < ini) partes.push('Hoje: faltam <b>' + esc(duracao((ini - hoje.getTime()) / DIA)) + '</b> para o primeiro marco');
+    else if (hoje.getTime() > fim) partes.push('Hoje: <b>' + esc(duracao((hoje.getTime() - fim) / DIA)) + '</b> depois do último marco');
+    return partes.length ? '<span class="fv-titulo-extra">' + partes.join(' · ') + '</span>' : "";
   }
 
   // LINKS em QR Code; qr = {url: "<lado>:<base64>"} (pode chegar depois:
@@ -2189,7 +2208,7 @@ JS_FICHA_VISUAL = r"""
   }
 
   window.FichaVisual = {
-    cabecalho: cabecalho, linhaDoTempo: linhaDoTempo, links: links, preencherQr: preencherQr,
+    cabecalho: cabecalho, linhaDoTempo: linhaDoTempo, resumoTempo: resumoTempo, links: links, preencherQr: preencherQr,
     generica: generica, secao: secao,
     urlsDeLinks: urlsDeLinks, gauge: gauge, qrSvg: qrSvg, duracao: duracao, data: data, link: link
   };
@@ -2228,7 +2247,7 @@ _CSS_FICHA_VISUAL_CLARA = """
     ESCOPO .fv-destaque-menor { font-size:14px; }
     ESCOPO .fv-destaque-investimento { font-size:22px; font-weight:900; color:#0B5CAD; white-space:nowrap; }
     ESCOPO .fv-tl { overflow-x:auto; padding-bottom:4px; }
-    ESCOPO .fv-tl-faixa { display:flex; align-items:flex-start; padding:44px 70px 0; min-width:min-content; }
+    ESCOPO .fv-tl-faixa { display:flex; align-items:flex-start; padding:72px 70px 0; min-width:min-content; }
     ESCOPO .fv-tl-no { width:0; flex:none; display:flex; flex-direction:column; align-items:center; }
     ESCOPO .fv-tl-ponto { width:16px; height:16px; border-radius:50%; flex:none; background:#0B5CAD;
       border:3px solid #0B5CAD; }
@@ -2252,6 +2271,14 @@ _CSS_FICHA_VISUAL_CLARA = """
     ESCOPO .fv-tl-hoje em { position:absolute; bottom:100%; left:50%; transform:translateX(-50%); margin-bottom:1px;
       font-size:10px; font-weight:800; font-style:normal; color:#E68A00; text-transform:uppercase; }
     ESCOPO .fv-tl-nota { font-size:12.5px; color:#5B6576; margin-top:12px; }
+    /* 23/11/2026: tempo até o próximo marco embaixo de "HOJE" e o total da
+       linha do tempo ao lado do título da seção */
+    ESCOPO .fv-tl-hoje em { text-align:center; white-space:nowrap; line-height:1.2; }
+    ESCOPO .fv-tl-hoje em small { display:block; font-size:10.5px; font-weight:700; text-transform:none; }
+    ESCOPO .fv-tl-hoje em small + small { font-size:9.5px; font-weight:600; }
+    ESCOPO .fv-titulo-extra { margin-left:14px; font-size:13px; font-weight:600; letter-spacing:0;
+      text-transform:none; color:#5B6576; }
+    ESCOPO .fv-titulo-extra b { font-size:15px; font-weight:900; color:#0B1F3F; }
     ESCOPO .fv-tl-vazio { font-size:14px; color:#A0A7B2; font-style:italic; }
     ESCOPO .fv-tl-sem-data { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
     ESCOPO .fv-tl-sem-data-rot { font-size:11px; font-weight:700; text-transform:uppercase; color:#8C8C8C; }
@@ -11761,7 +11788,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     white-space: nowrap; }
   /* linha do tempo dos prazos */
   #ficha-corpo .fv-tl { overflow-x: auto; padding-bottom: 4px; }
-  #ficha-corpo .fv-tl-faixa { display: flex; align-items: flex-start; padding: 44px 70px 0; min-width: min-content; }
+  #ficha-corpo .fv-tl-faixa { display: flex; align-items: flex-start; padding: 72px 70px 0; min-width: min-content; }
   #ficha-corpo .fv-tl-no { width: 0; flex: none; display: flex; flex-direction: column; align-items: center; }
   #ficha-corpo .fv-tl-ponto { width: 16px; height: 16px; border-radius: 50%; flex: none; box-sizing: border-box;
     background: var(--cor-acento-teal); border: 3px solid var(--cor-acento-teal); }
@@ -11785,6 +11812,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   #ficha-corpo .fv-tl-hoje em { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 1px;
     font-size: 10px; font-weight: 800; font-style: normal; color: #E68A00; text-transform: uppercase; }
   #ficha-corpo .fv-tl-nota { font-size: 12.5px; color: var(--cor-texto-secundario); margin-top: 12px; }
+  /* 23/11/2026: tempo até o próximo marco embaixo de "HOJE" e o total da
+     linha do tempo ao lado do título da seção */
+  #ficha-corpo .fv-tl-hoje em { text-align: center; white-space: nowrap; line-height: 1.2; }
+  #ficha-corpo .fv-tl-hoje em small { display: block; font-size: 10.5px; font-weight: 700; text-transform: none; }
+  #ficha-corpo .fv-tl-hoje em small + small { font-size: 9.5px; font-weight: 600; }
+  #ficha-corpo .fv-titulo-extra { margin-left: 14px; font-size: 13px; font-weight: 600; letter-spacing: 0;
+    text-transform: none; color: var(--cor-texto-secundario); }
+  #ficha-corpo .fv-titulo-extra b { font-size: 15px; font-weight: 900; color: var(--cor-texto-primario); }
   #ficha-corpo .fv-tl-vazio { font-size: 13.5px; color: var(--cor-texto-terciario); font-style: italic; }
   #ficha-corpo .fv-tl-sem-data { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
   #ficha-corpo .fv-tl-sem-data-rot { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--cor-texto-terciario); }
@@ -17737,7 +17772,8 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       var secaoEl = document.createElement("div");
       secaoEl.className = "ficha-secao";
       if (FV && chaves.indexOf("aviso_licitacao") !== -1) {
-        secaoEl.innerHTML = '<div class="ficha-secao-titulo">' + secao.titulo + '</div>' + FV.linhaDoTempo(dados, camposAlerta);
+        secaoEl.innerHTML = '<div class="ficha-secao-titulo">' + secao.titulo + (FV.resumoTempo ? FV.resumoTempo(dados) : '') + '</div>'
+          + FV.linhaDoTempo(dados, camposAlerta);
         corpo.appendChild(secaoEl);
         return;
       }

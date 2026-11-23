@@ -5775,7 +5775,8 @@ JS_CLAUSULAS = r"""
       var chaves = s.campos.map(function (c) { return c[0]; });
       if (FV && chaves.indexOf('objeto') !== -1) return;
       if (FV && chaves.indexOf('aviso_licitacao') !== -1) {
-        html += '<div class="cl-ficha-secao"><div class="cl-ficha-secao-titulo">' + esc(s.titulo) + '</div>'
+        html += '<div class="cl-ficha-secao"><div class="cl-ficha-secao-titulo">' + esc(s.titulo)
+          + (FV.resumoTempo ? FV.resumoTempo(f) : '') + '</div>'
           + FV.linhaDoTempo(f, alertas) + '</div>';
         return;
       }
