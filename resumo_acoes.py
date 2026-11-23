@@ -1180,14 +1180,19 @@ def _investimento_por_municipio(caminho_base, dados):
         # "acoes" — o índice de necessidade precisa do número bruto, não do
         # texto "R$ X Mi" que _acoes_do_municipio devolve.
         maturidade = parte["_f_status"].map(_maturidade_status)
+        nome = parte["Município"].astype(str).str.strip().mode().iloc[0]
         saida[k] = {"valor": float(parte["_valor"].sum()), "qtd": int(len(parte)),
                     "orc": bool(parte["_orc"].any()),
-                    "nome": parte["Município"].astype(str).str.strip().mode().iloc[0],
+                    "nome": nome,
                     "eixos": eixos_com_valor[:4],
                     "n_eixos": len(eixos_com_valor),
                     "valor_inicial": float(parte.loc[maturidade == "inicial", "_valor"].sum()),
                     "valor_avancado": float(parte.loc[maturidade == "avancado", "_valor"].sum()),
-                    "acoes": _acoes_do_municipio(parte)}
+                    # detalhamento só dos 30 maiores (único uso: detalhe_rank
+                    # do ranking dos 30) — era ~80% do tempo de cada recorte
+                    # do HTML; otimizado em 23/11/2026 pro filtro de Objeto
+                    "acoes": (_acoes_do_municipio(parte)
+                              if _chave_municipio(nome) in RA_TOP30_CHAVES else [])}
     return saida, [], _dados_cards_acoes_top30(df)
 
 
@@ -1815,7 +1820,14 @@ def _montar_blocos_monitoramento(caminho_base, dados):
     isola as mesmas peças) — pedido do usuário em 15/11/2026, pra
     incorporar o Monitoramento na apresentação do PAC sem duplicar a
     lógica de geração nem criar um terceiro gerador."""
-    por_mun, _, dados_cards_acoes = _investimento_por_municipio(caminho_base, dados)
+    # Municípios (mapa, ranking/cartões e cards dos 30 maiores) só entram na
+    # página com a chave "30 MAIORES MUNICÍPIOS" ligada (ver _montar_recortes):
+    # sem ela, não calcula — era o grosso do tempo de cada recorte, e o filtro
+    # de Objeto multiplica os recortes (otimização de 23/11/2026).
+    if dados.get("top30"):
+        por_mun, _, dados_cards_acoes = _investimento_por_municipio(caminho_base, dados)
+    else:
+        por_mun, dados_cards_acoes = {}, _dados_cards_acoes(pd.DataFrame())
 
     # Lista = os 30 maiores municípios por POPULAÇÃO (RA_TOP30, já em ordem
     # de população), não mais os 15 maiores investimentos — pedido do usuário
@@ -2035,6 +2047,13 @@ def _montar_blocos_monitoramento(caminho_base, dados):
     # daquele Status × Eixo/Objeto (linha TOTAL = todos os status; coluna
     # Total = todos os eixos) — pedido do usuário em 17/11/2026. Os data-*
     # casam com os campos "fs"/"ei"/"ob" de _dados_cards_acoes.
+    # Fonte dos quadros cresce quando há poucas colunas (pedido do usuário em
+    # 23/11/2026): fator --qe no style da tabela, 1 com 11+ colunas de dados
+    # até 1,6 com 2 (ex.: um só eixo/objeto + Total).
+    def escala(n):
+        k = min(1.6, max(1.0, 1 + (11 - n) * 0.07))
+        return f' style="--qe:{k:.2f}"'
+
     def cel(c, cls="", st="", ei="", ob=""):
         if not c:
             cl = f' class="{cls}"' if cls else ""
@@ -2052,7 +2071,7 @@ def _montar_blocos_monitoramento(caminho_base, dados):
                 + "".join(cel(c, cls, st, e) for c, e in zip(l["celulas"], dados["eixos"]))
                 + cel(l["total"], "tot", st))
 
-    quadro = ('<table class="quadro"><thead><tr><th>Status</th>'
+    quadro = (f'<table class="quadro"{escala(len(dados["eixos"]) + 1)}><thead><tr><th>Status</th>'
               + "".join(f"<th>{_esc(e)}</th>" for e in dados["eixos"])
               + '<th class="tot">Total</th></tr></thead><tbody>'
               + "".join(f"<tr>{linha(l)}</tr>" for l in dados["linhas"])
@@ -2075,7 +2094,7 @@ def _montar_blocos_monitoramento(caminho_base, dados):
                     + cel(l["total"], "tot ig", st))
 
         quadro_obj = (
-            '<table class="quadro quadro-obj"><thead><tr><th rowspan="2">Status</th>'
+            f'<table class="quadro quadro-obj"{escala(len(colunas_eo) + 1)}><thead><tr><th rowspan="2">Status</th>'
             + "".join(f'<th class="grupo ig" colspan="{len(g["objetos"])}">{_esc(g["eixo"])}</th>'
                       for g in q["grupos"])
             + '<th class="tot ig" rowspan="2">Total</th></tr><tr>'
@@ -2231,13 +2250,13 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .rk-det td{{padding:5px 6px;border-bottom:1px solid #E8ECF2;vertical-align:top}}
 .rk-det td small{{display:block;color:var(--cinza);font-size:12.5px}}
 .rk-det .r{{text-align:right;white-space:nowrap}}
-.quadro{{width:100%;border-collapse:collapse;font-size:12px}}
-.quadro th,.quadro td{{border:1px solid var(--linha);padding:8px 4px;text-align:center}}
+.quadro{{width:100%;border-collapse:collapse;font-size:calc(12px*var(--qe,1))}}
+.quadro th,.quadro td{{border:1px solid var(--linha);padding:calc(8px*var(--qe,1)) 4px;text-align:center}}
 .quadro th{{color:var(--navy);font-weight:600}}
 .quadro th:first-child,.quadro td:first-child{{text-align:left;padding-left:8px;min-width:150px;color:var(--navy)}}
 .quadro th.tot{{background:var(--navy);color:#fff;font-weight:700}}
-.quadro td b{{display:block;color:var(--azul);font-size:13px;white-space:nowrap}}
-.quadro td small{{color:var(--cinza);font-size:11px;white-space:nowrap}}
+.quadro td b{{display:block;color:var(--azul);font-size:calc(13px*var(--qe,1));white-space:nowrap}}
+.quadro td small{{color:var(--cinza);font-size:calc(11px*var(--qe,1));white-space:nowrap}}
 .quadro td.tot b{{color:var(--navy)}}
 .quadro tfoot td{{background:var(--claro);font-weight:700}}
 .quadro tfoot td b{{color:var(--navy)}}
@@ -2246,7 +2265,7 @@ h3{{font-size:13px;margin:0 0 8px;color:var(--navy);letter-spacing:.4px}}
 .tr{{color:#AAB2BF}}
 h2 small{{font-weight:400;font-size:12px;color:var(--cinza);letter-spacing:0;margin-left:8px}}
 .quadro-obj th.grupo{{background:var(--claro);color:var(--navy);font-weight:700}}
-.quadro-obj th.obj{{font-size:11.5px;min-width:96px;color:var(--cinza)}}
+.quadro-obj th.obj{{font-size:calc(11.5px*var(--qe,1));min-width:96px;color:var(--cinza)}}
 .quadro-obj .ig{{border-left:2px solid var(--azul)}}
 .quadro-obj td:first-child,.quadro-obj th:first-child{{position:sticky;left:0;background:#fff;z-index:1}}
 .quadro-obj tfoot td:first-child{{background:var(--claro)}}
@@ -2557,15 +2576,16 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
   }}
   function semNumero(s){{return String(s||"").replace(/^\\d+\\s*-\\s*/,"");}}
   function abrirCelula(td){{
-    var q=td.closest(".ra-quadros")||td,fe=q.dataset.fe||"",fx=q.dataset.fx||"";
+    // fo: objeto escolhido no seletor (23/11/2026)
+    var q=td.closest(".ra-quadros")||td,fe=q.dataset.fe||"",fx=q.dataset.fx||"",fo=q.dataset.fo||"";
     var st=td.dataset.st||"",ei=td.dataset.ei||"",ob=td.dataset.ob||"";
     dadosQuadros(td).then(function(d){{
       D=d;C={{}};(D.campos||[]).forEach(function(k,i){{C[k]=i;}});
       var lista=D.acoes.filter(function(a){{
         return (!st||a[C.fs]===st)&&(!ei||a[C.ei]===ei)&&(!ob||a[C.ob]===ob)
-          &&(!fe||a[C.ei]===fe)&&(!fx||a[C.fx]===fx);
+          &&(!fe||a[C.ei]===fe)&&(!fx||a[C.fx]===fx)&&(!fo||a[C.ob]===fo);
       }});
-      document.getElementById("ra-oc-titulo").textContent=ob||ei||fe||"Todas as ações";
+      document.getElementById("ra-oc-titulo").textContent=ob||fo||ei||fe||"Todas as ações";
       document.getElementById("ra-oc-sub").textContent=[ob?(ei||fe):"",st?semNumero(st):"Todos os status",fx,
         lista.length+(lista.length===1?" ação":" ações")].filter(Boolean).join(" · ");
       document.getElementById("ra-oc-corpo").innerHTML=lista.map(card).join("")
@@ -2715,6 +2735,16 @@ body.filtros-abertos .sel-recorte{transform:translateX(0);pointer-events:auto}
 .sel-barra button.oculto{display:none}
 .sel-barra-eixo button.ativo{background:#4FA3E0;color:#0B1F3F}
 .sel-barra-sec button.ativo{background:#E68A00;color:#fff}
+/* Objeto (23/11/2026): grupo recolhível, objeto escolhido ao lado do título */
+.sel-barra-obj button.ativo{background:#2E8B57;color:#fff}
+.sel-obj-grupo{display:block}
+.sel-obj-titulo{list-style:none;cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;color:#8FA6C9;font:700 11px 'Roboto','Segoe UI',Arial,sans-serif;letter-spacing:.8px;text-transform:uppercase;padding:6px 10px;border-radius:7px}
+.sel-obj-titulo::-webkit-details-marker{display:none}
+.sel-obj-titulo::before{content:"▸";font-size:11px;transition:transform .2s}
+.sel-obj-grupo[open]>.sel-obj-titulo::before{transform:rotate(90deg)}
+.sel-obj-titulo:hover{background:rgba(255,255,255,.08);color:#fff}
+.sel-obj-atual{margin-left:auto;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:none;letter-spacing:0;font-weight:600;color:#fff}
+.sel-obj-grupo[open] .sel-obj-atual{display:none}
 @media print{.sel-recorte{display:none!important}}
 /* Botão que liga/desliga o painel (só existe na página autônoma — embutida
    na Apresentação CGAPE, o botão é o dela, .btn-filtros também, e já
@@ -2747,10 +2777,14 @@ JS_SELETOR_RECORTE = """
   if(!raiz||!barra)return;
   var lista=raiz.querySelector(".ra-v-lista");
   if(!lista)return;
-  var V=JSON.parse(lista.textContent),cache={},atual="0|0",e=0,x=0;
+  // chaves "eixo|secretaria|objeto" (objeto desde 23/11/2026)
+  var V=JSON.parse(lista.textContent),cache={},atual="0|0|0",e=0,x=0,o=0;
   var cont=raiz.querySelector(".ra-recorte");
   var bEixo=Array.prototype.slice.call(barra.querySelectorAll(".sel-eixo-btn"));
   var bSec=Array.prototype.slice.call(barra.querySelectorAll(".sel-sec-btn"));
+  var bObj=Array.prototype.slice.call(barra.querySelectorAll(".sel-obj-btn"));
+  var objAtual=barra.querySelector(".sel-obj-atual");
+  function tem(a,b,c){return V.indexOf(a+"|"+b+"|"+c)>=0;}
   // Botão .btn-filtros logo abaixo da faixa do cabeçalho (pedido do usuário
   // em 18/11/2026): a altura do cabeçalho varia (título, subtítulo, "base
   // atualizada em"), então é medida em JS em vez de um valor fixo no CSS.
@@ -2795,17 +2829,26 @@ JS_SELETOR_RECORTE = """
   }
   function controles(){
     bEixo.forEach(function(b){b.classList.toggle("ativo",+b.dataset.e===e);});
-    // secretaria sem ação no eixo escolhido some da barra (igual ao PAC)
+    // secretaria/objeto sem ação no que já foi escolhido some da barra
+    // (igual ao PAC)
     bSec.forEach(function(b){
       var i=+b.dataset.x;
       b.classList.toggle("ativo",i===x);
-      b.classList.toggle("oculto",i!==0&&V.indexOf(e+"|"+i)<0);
+      b.classList.toggle("oculto",i!==0&&!tem(e,i,o));
+    });
+    bObj.forEach(function(b){
+      var i=+b.dataset.o;
+      b.classList.toggle("ativo",i===o);
+      b.classList.toggle("oculto",i!==0&&!tem(e,x,i));
+      if(i===o&&objAtual)objAtual.textContent=i===0?"Todos":b.textContent;
     });
   }
-  function mostrar(ne,nx){
-    if(V.indexOf(ne+"|"+nx)<0)nx=0;
-    var k=ne+"|"+nx;
-    e=ne;x=nx;controles();
+  function mostrar(ne,nx,no){
+    // combinação inexistente: solta primeiro o objeto, depois a secretaria
+    if(!tem(ne,nx,no))no=0;
+    if(!tem(ne,nx,no))nx=0;
+    var k=ne+"|"+nx+"|"+no;
+    e=ne;x=nx;o=no;controles();
     if(k===atual)return;
     if(!window.DecompressionStream){alert("Este navegador não consegue abrir os recortes. Use o Edge ou o Chrome atualizados.");return;}
     document.body.style.cursor="progress";
@@ -2818,8 +2861,9 @@ JS_SELETOR_RECORTE = """
       document.body.style.cursor="";
     }).catch(function(err){document.body.style.cursor="";alert("Não consegui abrir o recorte: "+err);});
   }
-  bEixo.forEach(function(b){b.addEventListener("click",function(){mostrar(+b.dataset.e,x);});});
-  bSec.forEach(function(b){b.addEventListener("click",function(){mostrar(e,+b.dataset.x);});});
+  bEixo.forEach(function(b){b.addEventListener("click",function(){mostrar(+b.dataset.e,x,o);});});
+  bSec.forEach(function(b){b.addEventListener("click",function(){mostrar(e,+b.dataset.x,o);});});
+  bObj.forEach(function(b){b.addEventListener("click",function(){mostrar(e,x,+b.dataset.o);});});
   controles();
 })();
 """
@@ -2833,35 +2877,47 @@ def _variantes_recorte(caminho_base, dados, filtros):
     (eixos, secretarias, combinações) com eixos = ["TODOS OS EIXOS", ...],
     secretarias = ["TODAS AS SECRETARIAS", ...] e combinações = [(i_eixo,
     i_secretaria, filtros)] só das que têm ação; o índice 0 é sempre "todos"."""
+    # 23/11/2026: terceira dimensão OBJETO (pedido do usuário). Só entram as
+    # combinações que existem nos dados (cada ação gera as 8 combinações de
+    # "todos"/valor nas 3 dimensões) — devolve (eixos, secretarias, objetos,
+    # [(i_eixo, i_secretaria, i_objeto, filtros)]).
     eixos = ["TODOS OS EIXOS"]
     secretarias = ["TODOS"]
+    objetos = ["TODOS"]
     if filtros is None:
-        return eixos, secretarias, [(0, 0, None)]
+        return eixos, secretarias, objetos, [(0, 0, 0, None)]
     base = _ra_base(caminho_base)
     linhas = base.iloc[dados["ids"]]
     if "_f_secretaria" not in linhas.columns:
         linhas = linhas.assign(_f_secretaria="")
+    if "_f_objeto" not in linhas.columns:
+        linhas = linhas.assign(_f_objeto="")
     eixos += [e for e, c in zip(dados["eixos"], dados["total"]["celulas"]) if c]
     secretarias += sorted(set(linhas["_f_secretaria"]) - {""}, key=_ra_ordem)
-    pares = set(zip(linhas["_eixo"], linhas["_f_secretaria"]))
-    eixos_com = {e for e, _ in pares}
-    secs_com = {x for _, x in pares}
+    objetos += sorted(set(linhas["_f_objeto"]) - {""}, key=_ra_ordem)
+    i_eixo = {e: i for i, e in enumerate(eixos)}
+    i_sec = {x: i for i, x in enumerate(secretarias)}
+    i_obj = {o: i for i, o in enumerate(objetos)}
+    existentes = set()
+    for e, x, o in set(zip(linhas["_eixo"], linhas["_f_secretaria"], linhas["_f_objeto"])):
+        ie, ix, io = i_eixo.get(e, 0), i_sec.get(x, 0), i_obj.get(o, 0)
+        for a in (0, ie):
+            for b in (0, ix):
+                for c in (0, io):
+                    existentes.add((a, b, c))
     combos = []
-    for ie, e in enumerate(eixos):
-        for ix, x in enumerate(secretarias):
-            if (ie and e not in eixos_com) or (ix and x not in secs_com):
-                continue
-            if ie and ix and (e, x) not in pares:
-                continue
-            f = dict(filtros)
-            if ie:
-                f["eixo"] = [e]
-            if ix:
-                f["secretaria"] = [x]
-            combos.append((ie, ix, f))
-    if len(eixos) < 3 and len(secretarias) < 3:
-        return eixos, secretarias, [(0, 0, None)]
-    return eixos, secretarias, combos
+    for ie, ix, io in sorted(existentes):
+        f = dict(filtros)
+        if ie:
+            f["eixo"] = [eixos[ie]]
+        if ix:
+            f["secretaria"] = [secretarias[ix]]
+        if io:
+            f["objeto"] = [objetos[io]]
+        combos.append((ie, ix, io, f))
+    if len(eixos) < 3 and len(secretarias) < 3 and len(objetos) < 3:
+        return eixos, secretarias, objetos, [(0, 0, 0, None)]
+    return eixos, secretarias, objetos, combos
 
 
 def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
@@ -2871,10 +2927,10 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
     fixas no rodapé — ver JS_SELETOR_RECORTE) e p = peças do recorte
     inicial (CSS/JS/janela/mapa). `sufixo`: ids de cada recorte sufixados (página
     embutida na Apresentação CGAPE — ver _sufixar_ids_monitoramento)."""
-    eixos, secretarias, combos = _variantes_recorte(caminho_base, dados, filtros)
+    eixos, secretarias, objetos, combos = _variantes_recorte(caminho_base, dados, filtros)
     p, inicial, guardados, chaves = None, "", [], []
-    for ie, ix, f in combos:
-        dv = dados if (ie, ix) == (0, 0) else resumo_acoes_dados(caminho_base, f)
+    for ie, ix, io, f in combos:
+        dv = dados if (ie, ix, io) == (0, 0, 0) else resumo_acoes_dados(caminho_base, f)
         if dv["vazio"]:
             continue
         pv = _montar_blocos_monitoramento(caminho_base, dv)
@@ -2902,7 +2958,8 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
             if dv.get("top30") else "")
         bloco_quadros = (
             f'<div class="ra-quadros" data-fe="{_esc(eixos[ie]) if ie else ""}" '
-            f'data-fx="{_esc(secretarias[ix]) if ix else ""}">'
+            f'data-fx="{_esc(secretarias[ix]) if ix else ""}" '
+            f'data-fo="{_esc(objetos[io]) if io else ""}">'
             f'{pv["quadro_status_eixo_html"]}{pv["quadro_status_objeto_html"]}</div>')
         corpo_filtros = (
             f'<div class="filtros">{pv["filtros_html"]}'
@@ -2917,12 +2974,13 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
             corpo = f'{corpo_filtros}{bloco_total}{bloco_quadros}'
         if sufixo:
             corpo = _sufixar_ids_monitoramento(corpo, sufixo)
-        if (ie, ix) == (0, 0):
+        if (ie, ix, io) == (0, 0, 0):
             inicial = corpo
         if len(combos) > 1:
-            chaves.append(f"{ie}|{ix}")
+            chave = f"{ie}|{ix}|{io}"
+            chaves.append(chave)
             dado = base64.b64encode(gzip.compress(corpo.encode("utf-8"), 9)).decode("ascii")
-            guardados.append(f'<script type="application/octet-stream" class="ra-v" data-k="{ie}|{ix}">{dado}</script>')
+            guardados.append(f'<script type="application/octet-stream" class="ra-v" data-k="{chave}">{dado}</script>')
     data_oc = "ra-oc-dados" + (f"--{sufixo}" if sufixo else "")
     seletor = ""
     if len(combos) > 1:
@@ -2933,11 +2991,22 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
             f'<button type="button" class="sel-sec-btn{" ativo" if i == 0 else ""}" data-x="{i}">'
             f'{_esc("Todas as secretarias" if i == 0 else x)}</button>'
             for i, x in enumerate(secretarias))
-        seletor = ('<div class="sel-recorte" role="group" aria-label="Eixo e secretaria">'
+        b_obj = "".join(
+            f'<button type="button" class="sel-obj-btn{" ativo" if i == 0 else ""}" data-o="{i}">'
+            f'{_esc("Todos os objetos" if i == 0 else o)}</button>'
+            for i, o in enumerate(objetos))
+        # Objeto (pedido do usuário em 23/11/2026): lista longa, então vem
+        # num grupo recolhível com o objeto escolhido ao lado do título
+        seletor = ('<div class="sel-recorte" role="group" aria-label="Eixo, secretaria e objeto">'
                    '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Secretaria</div>'
                    f'<div class="sel-barra sel-barra-sec">{b_sec}</div></div>'
                    '<div class="sel-recorte-grupo"><div class="sel-recorte-titulo">Eixo</div>'
-                   f'<div class="sel-barra sel-barra-eixo">{b_eixo}</div></div></div>')
+                   f'<div class="sel-barra sel-barra-eixo">{b_eixo}</div></div>'
+                   + ('<details class="sel-obj-grupo"><summary class="sel-obj-titulo">Objeto'
+                      '<span class="sel-obj-atual">Todos</span></summary>'
+                      f'<div class="sel-barra sel-barra-obj">{b_obj}</div></details>'
+                      if len(objetos) > 1 else "")
+                   + '</div>')
         guardados.append('<script type="application/json" class="ra-v-lista">'
                          + json.dumps(chaves) + "</script>")
     # ações de todo o recorte (todas as combinações eixo × secretaria são
@@ -3030,6 +3099,7 @@ def montar_partes_html_monitoramento(caminho_base, dados, filtros=None):
     css_isolado = _escopar_css(css_renomeado, ".mon-ra",
                                nao_escopar=("#mon-dica", "#ra-oc-fundo", "#ra-ficha-fundo", ".sel-recorte",
                                             ".sel-barra", ".sel-barra-eixo", ".sel-barra-sec",
+                                            ".sel-barra-obj", ".sel-obj-grupo", ".sel-obj-titulo", ".sel-obj-atual",
                                             ".btn-filtros", "body.filtros-abertos"))
     js_isolado = (
         p["js_bruto"]
@@ -3473,14 +3543,15 @@ HTML_JANELA = r"""
   .ra-card b { display:block; font-size:28px; color:var(--cor-acento-mint-texto);
     margin:4px 0; white-space:nowrap; }
   .ra-rolagem { overflow-x:auto; }
-  .ra-tab { width:100%; border-collapse:collapse; font-size:12px;
+  .ra-tab { width:100%; border-collapse:collapse; font-size:calc(12px*var(--qe,1));
     background:var(--cor-card); }
   .ra-tab th, .ra-tab td { border:1px solid var(--cor-card-elevado);
-    padding:9px 6px; text-align:center; }
+    padding:calc(9px*var(--qe,1)) 6px; text-align:center; }
   .ra-tab th { color:var(--cor-texto-primario); }
   .ra-tab th:first-child, .ra-tab td:first-child { text-align:left; min-width:130px; }
   .ra-tab tfoot td, .ra-tab .tot { background:var(--cor-card-elevado); }
-  .ra-tab b { display:block; font-size:13px; white-space:nowrap; }
+  .ra-tab b { display:block; font-size:calc(13px*var(--qe,1)); white-space:nowrap; }
+  .ra-tab small { font-size:calc(11px*var(--qe,1)); }
   .ra-tab small { color:var(--cor-texto-secundario); }
   .ra-nota { font-size:12px; font-style:italic; color:var(--cor-texto-secundario);
     margin-top:10px; }
@@ -3612,7 +3683,7 @@ HTML_JANELA = r"""
     color:var(--cor-texto-terciario); }
   .ra-tab-obj th.ra-grupo { background:var(--cor-card-elevado);
     color:var(--cor-acento-mint-texto); font-size:12px; letter-spacing:.3px; }
-  .ra-tab-obj th.ra-obj { font-weight:600; font-size:11.5px; min-width:92px;
+  .ra-tab-obj th.ra-obj { font-weight:600; font-size:calc(11.5px*var(--qe,1)); min-width:92px;
     color:var(--cor-texto-secundario); }
   .ra-tab-obj .ra-ini-grupo { border-left:2px solid var(--cor-acento-teal); }
   .ra-tab-obj td:first-child, .ra-tab-obj th:first-child { position:sticky; left:0;
@@ -3991,7 +4062,7 @@ HTML_JANELA = r"""
           '<small>' + (n === 1 ? "acompanhada" : "acompanhadas") + ' pelo Estado da Bahia</small></div></div>';
       }).join("") + "</div>" +
       raGraficosHtml(d.graficos) +
-      '<div class="ra-rolagem"><table class="ra-tab"><thead><tr><th>Status</th>' +
+      '<div class="ra-rolagem"><table class="ra-tab"' + raEscalaQuadro(d.eixos.length + 1) + '><thead><tr><th>Status</th>' +
       d.eixos.map(function (e) { return "<th>" + esc(e) + "</th>"; }).join("") +
       '<th class="tot">Total</th></tr></thead><tbody>' +
       d.linhas.map(function (l) { return "<tr>" + linha(l) + "</tr>"; }).join("") +
@@ -4303,6 +4374,12 @@ HTML_JANELA = r"""
   }
   // Quadro Status × Objeto: mesmo formato, com o eixo do objeto numa linha
   // de cabeçalho acima (mesma ordem de eixos do quadro Status × Eixo).
+  // Fonte dos quadros maior com poucas colunas (23/11/2026) — mesma regra
+  // de escala() em _montar_blocos_monitoramento (HTML).
+  function raEscalaQuadro(n) {
+    var k = Math.min(1.6, Math.max(1, 1 + (11 - n) * 0.07));
+    return ' style="--qe:' + k.toFixed(2) + '"';
+  }
   function raQuadroObjeto(q) {
     if (!q || !q.grupos || !q.grupos.length) return "";
     var inicio = {}, n = 0, colunas = [];
@@ -4322,7 +4399,7 @@ HTML_JANELA = r"""
     };
     return '<div class="ra-quadro-titulo">QUADRO RESUMO — STATUS × OBJETO ' +
       "<small>(objetos agrupados pelo eixo, na mesma ordem do quadro acima; role para o lado)</small></div>" +
-      '<div class="ra-rolagem"><table class="ra-tab ra-tab-obj"><thead><tr>' +
+      '<div class="ra-rolagem"><table class="ra-tab ra-tab-obj"' + raEscalaQuadro(colunas.length + 1) + '><thead><tr>' +
       '<th rowspan="2">Status</th>' +
       q.grupos.map(function (g) {
         return '<th class="ra-grupo ra-ini-grupo" colspan="' + g.objetos.length + '">' + esc(g.eixo) + "</th>";
