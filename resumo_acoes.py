@@ -465,6 +465,59 @@ def _ra_chave_mapa(nome):
     return _chave_municipio(mon.APELIDOS_MUNICIPIO.get(k, k))
 
 
+RA_CONC_TRIMESTRES = 9   # trimestres a partir do atual; depois, "AAAA+"
+
+
+def _ra_eh_andamento(serie_status):
+    return serie_status.map(lambda v: _normalizar(v).casefold()).str.contains("andamento")
+
+
+def _ra_conclusao_andamento(df):
+    """Previsão de conclusão (data Entrega Obra) das obras em andamento do
+    recorte, por trimestre — pedido do usuário em 24/11/2026. Colunas:
+    vencidas (prazo antes de hoje), os próximos RA_CONC_TRIMESTRES
+    trimestres a partir do atual, "AAAA+" (depois disso) e sem data. "pe" =
+    chave do período para a janela de cards (ver api_cards)."""
+    if not len(df) or "_d_entrega" not in df.columns:
+        return {"colunas": [], "n": 0}
+    a = df[_ra_eh_andamento(df["_f_status"])]
+    if not len(a):
+        return {"colunas": [], "n": 0}
+    hoje = pd.Timestamp.today().normalize()
+    d = a["_d_entrega"]
+    cols = []
+
+    def add(rot, sub, p, pe, tipo):
+        cols.append({"rot": rot, "sub": sub, "qtd": int(len(p)), "valor": float(p["_valor"].sum()),
+                     "orc": bool(p["_orc"].any()), "pe": pe, "tipo": tipo})
+
+    venc = a[d < hoje]
+    if len(venc):
+        add("Vencidas", "prazo já passou", venc, "venc", "venc")
+    fut = a[d >= hoje]
+    per = fut["_d_entrega"].dt.to_period("Q")
+    q0 = hoje.to_period("Q")
+    ult = q0 + (RA_CONC_TRIMESTRES - 1)
+    tri = []
+    for q in pd.period_range(q0, ult, freq="Q"):
+        p = fut[per == q]
+        ini = max(q.start_time.normalize(), hoje)
+        tri.append((f"{q.quarter}º tri", str(q.year), p,
+                    f"{ini:%Y-%m-%d}|{q.end_time:%Y-%m-%d}"))
+    while tri and not len(tri[-1][2]):   # sem trimestres vazios no fim
+        tri.pop()
+    for rot, sub, p, pe in tri:
+        add(rot, sub, p, pe, "tri")
+    resto = fut[per > ult]
+    if len(resto):
+        add(f"{(ult + 1).year}+" if (ult + 1).quarter == 1 else f"{(ult + 1).quarter}º tri {(ult + 1).year}+",
+            "em diante", resto, f"{(ult + 1).start_time:%Y-%m-%d}|", "tri")
+    sem = a[d.isna()]
+    if len(sem):
+        add("Sem data", "não informada", sem, "sem", "sem")
+    return {"colunas": cols, "n": int(len(a))}
+
+
 def _ra_linha_tempo(df, eixos):
     """Linha do tempo por eixo > executor (pedido do usuário em 24/11/2026):
     para cada grupo, a MAIOR data de cada marco (RA_FICHA_ESQUEMA["marcos"])
@@ -532,7 +585,8 @@ def _ra_graficos(df, eixos):
                            float(p["_inv"].sum()), float(p.loc[p["_orc"], "_valor"].sum())]
     return {"total": total, "eixos": por_eixo, "status": por_status,
             "objetos": por_objeto, "n_objetos": n_objetos, "mapa": mapa,
-            "linha_tempo": _ra_linha_tempo(df, eixos)}
+            "linha_tempo": _ra_linha_tempo(df, eixos),
+            "conclusao": _ra_conclusao_andamento(df)}
 
 
 def api_cards(filtros=None, alvo=None):
@@ -556,6 +610,21 @@ def api_cards(filtros=None, alvo=None):
             df = df[df["_eixo"] == alvo["ei"]]
         if alvo.get("ob") and "_f_objeto" in df.columns:
             df = df[df["_f_objeto"] == alvo["ob"]]
+        # "pe": período da previsão de conclusão das obras em andamento
+        # (gráfico do card Total do recorte — ver _ra_conclusao_andamento)
+        if alvo.get("pe"):
+            df = df[_ra_eh_andamento(df["_f_status"])]
+            d, hoje = df["_d_entrega"], pd.Timestamp.today().normalize()
+            if alvo["pe"] == "venc":
+                df = df[d < hoje]
+            elif alvo["pe"] == "sem":
+                df = df[d.isna()]
+            else:
+                ini, _, fim = alvo["pe"].partition("|")
+                marca = d >= pd.Timestamp(ini)
+                if fim:
+                    marca &= d <= pd.Timestamp(fim) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+                df = df[marca]
         if alvo.get("ex") and "_f_executor" in df.columns:
             df = df[df["_f_executor"] == alvo["ex"]]
         if alvo.get("mu") and "Município" in df.columns:
@@ -3819,6 +3888,23 @@ HTML_JANELA = r"""
     color:var(--cor-texto-secundario); }
   .ra-mapa-slot { flex:1; display:flex; align-items:center; justify-content:center; min-height:200px; }
   .ra-mapa-svg { width:100%; height:auto; max-height:330px; display:block; }
+  /* Previsão de conclusão das obras em andamento (24/11/2026) */
+  .ra-conc { margin-top:16px; padding-top:12px; border-top:1px solid var(--cor-card-elevado); }
+  .ra-conc-tit { font-size:12px; font-weight:800; letter-spacing:.4px; color:var(--cor-texto-secundario); margin-bottom:8px; }
+  .ra-conc-tit small { font-weight:400; letter-spacing:0; color:var(--cor-texto-terciario); margin-left:6px; }
+  .ra-conc-graf { display:flex; align-items:stretch; gap:6px; }
+  .ra-conc-col { flex:1; min-width:0; display:flex; flex-direction:column; border-radius:6px; padding:2px 0; }
+  .ra-conc-clic { cursor:pointer; }
+  .ra-conc-clic:hover, .ra-conc-clic:focus-visible { background:var(--cor-card-elevado); outline:none; }
+  .ra-conc-area { height:150px; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; }
+  .ra-conc-area i { display:block; width:62%; max-width:38px; border-radius:4px 4px 0 0; background:var(--ra-cor-inv); }
+  .ra-conc-venc .ra-conc-area i { background:#D9822B; }
+  .ra-conc-sem .ra-conc-area i { background:var(--ra-cor-orc); }
+  .ra-conc-n { font-size:12px; font-weight:800; color:var(--cor-texto-primario); margin-bottom:3px; }
+  .ra-conc-rot { text-align:center; font-size:11.5px; font-weight:700; color:var(--cor-texto-primario);
+    border-top:1px solid var(--cor-card-elevado); padding-top:4px; white-space:nowrap; }
+  .ra-conc-rot small { display:block; font-size:10.5px; font-weight:400; color:var(--cor-texto-terciario); }
+  .ra-conc-venc .ra-conc-rot { color:#D9822B; }
   /* Linha do tempo eixo > executor (24/11/2026) */
   .ra-lt-linha { display:grid; grid-template-columns:minmax(190px, 24%) 1fr; gap:12px; align-items:center;
     padding:2px 4px; border-radius:6px; }
@@ -4371,8 +4457,10 @@ HTML_JANELA = r"""
       return '<div class="ra-graf-card' + (classe ? " " + classe : "") + '"><div class="ra-graf-cab"><h4>' + titulo +
         '</h4><span class="ra-graf-legs">' + (extra || legenda) + '</span></div>' + corpo + '</div>';
     };
+    // "Valor total" saiu daqui (já está no destaque do topo) e entrou o
+    // gráfico da previsão de conclusão das obras em andamento — pedido do
+    // usuário em 24/11/2026
     var totalHtml =
-      '<div class="ra-graf-valor-total"><span>Valor total</span><b>' + raRs(t.total) + '</b></div>' +
       '<div class="ra-graf-comp"><div class="ra-gbar-linha">' + raPilha(t, t.total || 1, 99) + '</div></div>' +
       '<div class="ra-graf-herois">' +
         '<div><span><i class="inv"></i>Investimento</span><b class="inv">' + raRs(t.inv) +
@@ -4381,7 +4469,8 @@ HTML_JANELA = r"""
           ' <small>' + raPct(t.orc, t.total) + '</small></b><small>' + raQtdTxt(t.n_orc) + ' sem investimento, só com orçamento</small></div>' +
       '</div>' +
       '<div class="ra-graf-razao">O orçamento das ações que já têm valor de investimento não entra' +
-        (t.n_sem ? ' · ' + raQtdTxt(t.n_sem) + ' sem nenhum dos dois valores' : '') + '.</div>';
+        (t.n_sem ? ' · ' + raQtdTxt(t.n_sem) + ' sem nenhum dos dois valores' : '') + '.</div>' +
+      raConclusaoHtml(g.conclusao);
     var nObj = g.n_objetos > g.objetos.length
       ? ' <small>(' + g.objetos.length + ' maiores de ' + g.n_objetos + ')</small>' : '';
     return '<div class="ra-quadro-titulo">VISÃO GRÁFICA — COMPOSIÇÃO DO VALOR TOTAL ' +
@@ -4401,6 +4490,48 @@ HTML_JANELA = r"""
   // do recorte (Python: _ra_linha_tempo). Ponto destacado = maior prazo do
   // grupo; clique no eixo abre os executores, clique no executor abre os
   // cards das ações dele.
+  // ---- Previsão de conclusão das obras em andamento (24/11/2026), dentro
+  // do card Total do recorte: colunas por trimestre (Python:
+  // _ra_conclusao_andamento); clique abre os cards das obras do período.
+  var raConcCols = [];
+  function raConclusaoHtml(c) {
+    raConcCols = (c && c.colunas) || [];
+    if (!raConcCols.length) return '<div class="ra-conc"><div class="ra-conc-tit">PREVISÃO DE CONCLUSÃO · OBRAS EM ANDAMENTO</div>' +
+      '<div class="ra-graf-vazio">Nenhuma obra em andamento no recorte</div></div>';
+    var max = Math.max.apply(null, raConcCols.map(function (x) { return x.qtd; })) || 1;
+    return '<div class="ra-conc"><div class="ra-conc-tit">PREVISÃO DE CONCLUSÃO · OBRAS EM ANDAMENTO ' +
+      '<small>' + raQtdTxt(c.n).replace("ações", "obras").replace("ação", "obra") +
+      ' · data de entrega da obra, por trimestre · clique numa coluna para ver as obras</small></div>' +
+      '<div class="ra-conc-graf">' + raConcCols.map(function (x, i) {
+        var h = x.qtd ? Math.max(3, Math.round(x.qtd / max * 100)) : 0;
+        return '<div class="ra-conc-col ra-conc-' + x.tipo + (x.qtd ? " ra-conc-clic" : "") + '" data-ci="' + i + '"' +
+          (x.qtd ? ' tabindex="0" role="button"' : '') + '>' +
+          '<div class="ra-conc-area"><span class="ra-conc-n">' + (x.qtd || "") + '</span>' +
+          '<i style="height:' + h + '%"></i></div>' +
+          '<div class="ra-conc-rot">' + esc(x.rot) + '<small>' + esc(x.sub) + '</small></div></div>';
+      }).join("") + '</div></div>';
+  }
+  function raLigarConclusao(raiz) {
+    Array.prototype.forEach.call(raiz.querySelectorAll(".ra-conc-col.ra-conc-clic"), function (el) {
+      var x = raConcCols[+el.dataset.ci];
+      var nome = x.tipo === "tri" ? x.rot + " " + x.sub : x.rot;
+      el.addEventListener("mousemove", function (ev) {
+        raDica("<b>Conclusão prevista: " + esc(nome) + "</b><div>Obras/Serviços em Andamento</div>" +
+          "<ul><li><span>Obras</span><b>" + x.qtd.toLocaleString("pt-BR") + "</b></li>" +
+          "<li><span>Valor total</span><b>" + raRs(x.valor) + (x.orc ? "*" : "") + "</b></li></ul>", ev);
+      });
+      el.addEventListener("mouseleave", function () { raDica(null); });
+      var abrir = function () {
+        raDica(null);
+        raAbrirCards({pe: x.pe}, null, {titulo: "Conclusão prevista: " + nome,
+                                        partes: ["Obras/Serviços em Andamento"]});
+      };
+      el.addEventListener("click", abrir);
+      el.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abrir(); }
+      });
+    });
+  }
   var raLtItens = [], raLtMarcos = [];
   function raDataBr(iso) { var p = String(iso).split("-"); return p[2] + "/" + p[1] + "/" + p[0]; }
   function raLtFim(i) {
@@ -4586,6 +4717,7 @@ HTML_JANELA = r"""
       raUltimoMapa = g.mapa;
     }
     raLigarLinhaTempo(raiz);
+    raLigarConclusao(raiz);
     Array.prototype.forEach.call(raiz.querySelectorAll(".ra-gbar[data-gi]"), function (el) {
       var i = raGrafItens[+el.dataset.gi];
       el.addEventListener("mousemove", function (ev) {
