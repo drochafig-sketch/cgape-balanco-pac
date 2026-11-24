@@ -17591,6 +17591,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
           var resultado = await chamarAPI("buscar_ficha_por_item", item);
           if (resultado && resultado.ok) {
             abrirFicha(resultado.dados);
+            // Por cima do Controle de Qualidade (#modal-overlay, z-index
+            // 1200) — a ficha (97) abria escondida atrás dele; pedido do
+            // usuário em 24/11/2026. abrirFicha zera o z-index na próxima.
+            document.getElementById("ficha-overlay").style.zIndex = "1300";
           } else {
             alert((resultado && resultado.erro) || "Não foi possível abrir essa ação.");
           }
