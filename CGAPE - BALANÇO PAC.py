@@ -7082,11 +7082,14 @@ def _campos_alerta_qualidade(row, hoje=None):
     # pendências diferentes — uma é campo vazio, a outra é valor
     # preenchido mas não compatibilizado com o detalhamento — e cada ação
     # pode ter só uma, a outra, ou nenhuma.
+    # DESLIGADA em 24/11/2026 a pedido do usuário (o gatilho "Valor
+    # Contratado não bate" saiu do Controle de Qualidade) — bloco mantido
+    # só para referência.
     _colunas_detalhamento_contratado = (
         col_apoiado_contratado, col_contrapartida_contratado,
         col_complementar_contratado, col_financiamento_contratado,
     )
-    if all(c in row.index for c in _colunas_detalhamento_contratado):
+    if False and all(c in row.index for c in _colunas_detalhamento_contratado):
         _soma_detalhamento = sum(float(row.get(c) or 0)
                                  for c in _colunas_detalhamento_contratado)
         _valor_contratado_linha = float(row.get(col_valor_contratado) or 0)
@@ -7274,7 +7277,9 @@ def _montar_aviso_qualidade(df):
             col_apoiado_contratado, col_contrapartida_contratado,
             col_complementar_contratado, col_financiamento_contratado,
         )
-        if all(c in df.columns for c in _colunas_detalhamento_contratado):
+        # Desligado em 24/11/2026 junto com o gatilho "Valor Contratado não
+        # bate" (pedido do usuário).
+        if False and all(c in df.columns for c in _colunas_detalhamento_contratado):
             _total_valor_contratado = float(
                 df[COLUNAS_CONTRATADO_PLANILHA[col_valor_contratado]].sum())
             _total_detalhamento = float(
@@ -18941,7 +18946,17 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var blocosOutros = MON.dados.blocos.filter(function (b) { return MON_BLOCOS_OUTROS.indexOf(b.chave) !== -1; });
     var caixaOutrosFiltros = blocosOutros.length ? monCaixaOutros("mon-outros-filtros", "OUTROS FILTROS", "◂",
       blocosOutros.map(function (b) { return b.titulo; }), "mon-outros-grade-filtros") : null;
-    MON.dados.blocos.forEach(function (bloco) {
+    // Ordem dos blocos na grade, igual ao painel de filtros do PAC (pedido do
+    // usuário em 24/11/2026): 1ª linha SECRETARIA, EXECUTOR, EIXO, OBJETO,
+    // STATUS; 2ª linha ESCOPO, PROGRAMA, MUNICÍPIO; os demais (se houver)
+    // seguem na ordem original. Só a tela muda — CAMPOS_FILTRO continua igual.
+    var MON_ORDEM_BLOCOS = ["SECRETARIA", "EXECUTOR", "EIXO", "OBJETO", "SITUACAO",
+                            "ESCOPO", "PROGRAMA", "MUNICIPIO"];
+    var blocosOrdenados = MON.dados.blocos.map(function (b, i) {
+      var p = MON_ORDEM_BLOCOS.indexOf(b.chave);
+      return {b: b, k: p === -1 ? 100 + i : p};
+    }).sort(function (x, y) { return x.k - y.k; }).map(function (x) { return x.b; });
+    blocosOrdenados.forEach(function (bloco) {
       var el = monCriarBloco(bloco.titulo, bloco.chave);
       var lista = document.createElement("div");
       lista.className = "bloco-lista";
