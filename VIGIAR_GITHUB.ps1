@@ -55,7 +55,11 @@ $NomeAviso = "_CONFLITO_SINCRONIZACAO.txt"
 # Para religar, devolva as duas linhas abaixo para dentro de $Destinos.
 #   @{ Nome = "OneDrive"; Pasta = "C:\Users\diego.figueiredo\OneDrive\2025 2026 Onedrive\MONITORAMENTO\PANORAMA\Ambiente Virtual"; Log = "_sync_onedrive.log"; Recolher = $true },
 #   @{ Nome = "COAHS"; Pasta = "S:\00 NOVA REDE - COAM\venv"; Log = "_sync_coam.log"; Recolher = $false }
-$Destinos = @()
+# 24/11/2026: espelho RELIGADO apenas para o COAHS (S:\00 NOVA REDE - COAM)
+# -- pedido do usuario; o OneDrive continua desligado.
+$Destinos = @(
+    @{ Nome = "COAHS"; Pasta = "S:\00 NOVA REDE - COAM\venv"; Log = "_sync_coam.log"; Recolher = $false }
+)
 $ExcluirPastas = @("Lib", "Scripts", "Include", "share", "build", "dist", "__pycache__", ".git", ".claude", ".venv", "_conflitos_onedrive")
 $ExcluirArquivos = @(".git", "Thumbs.db", "pyvenv.cfg", "desktop.ini", "_sync_onedrive.log", "_sync_coam.log", "_vigia_sincronizacao.log", $NomeAviso)
 $IntervaloGithub = 300   # segundos entre consultas ao GitHub (e conferencias do OneDrive)
