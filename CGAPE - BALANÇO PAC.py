@@ -10870,13 +10870,8 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   body.secao-mon .fab-filtros-qtd { color: var(--cor-acento-secundario); }
   .fab-filtros-qtd.tem { display: block; }
   @media print { .fab-filtros { display: none !important; } }
-  /* Sublinhado discreto no título, PAC (padrão) ou MONITORAMENTO, nas três
-     telas (filtros, dash do PAC e dash do MONITORAMENTO). */
-  .topo-titulo-principal, .modal-titulo-principal {
-    border-bottom: 2px solid var(--cor-acento-teal);
-    padding-bottom: 2px;
-  }
-  body.secao-mon .topo-titulo-principal { border-bottom-color: var(--cor-acento-secundario); }
+  /* (Sublinhado do título — PAC/MONITORAMENTO, nas três telas — removido a
+     pedido do usuário em 24/11/2026.) */
   /* 5 colunas (antes 6): com RESPONSÁVEL INFORMAÇÃO, TERRITÓRIO DE
      IDENTIDADE e PRAZO CONTRATUAL guardados no botão OUTROS FILTROS, sobram
      8 blocos + DETALHAMENTO + o botão = 2 linhas de 5 — pedido do usuário
@@ -11093,6 +11088,15 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     transition: border-color var(--transicao-padrao);
   }
   .bloco:hover { border-color: var(--cor-acento-teal); }
+  /* Ações em Monitoramento: borda dos blocos e caixas de seleção na cor da
+     seção (acento secundário), não no azul do PAC — pedido do usuário em
+     24/11/2026. */
+  #grade-mon .bloco { border-color: color-mix(in srgb, var(--cor-acento-secundario) 25%, transparent); }
+  #grade-mon .bloco:hover { border-color: var(--cor-acento-secundario); }
+  #grade-mon label.item input[type="checkbox"]:checked {
+    background: var(--cor-acento-secundario);
+    border-color: var(--cor-acento-secundario);
+  }
 
   /* --- Par de blocos empilhados numa única célula da grade ---
      Hoje só TERMO DE COMPROMISSO + OBRA NÃO INICIADA: dois blocos
