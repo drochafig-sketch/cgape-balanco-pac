@@ -2549,6 +2549,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
   // indicado em data-oc pelo contêiner).
   var fundo=document.getElementById("ra-oc-fundo");
   if(!fundo)return;
+  if(window.cardsBusca)window.cardsBusca(fundo,{{fechar:".ra-oc-fechar",corpo:".ra-oc-corpo",card:".ra-oc-card"}});
   var D=null,C={{}};
   function carregar(id){{
     var el=document.getElementById(id);
@@ -2682,7 +2683,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
         # e JS próprios dela e o desenho comum (pac.JS_FICHA_VISUAL)
         "css_bruto": css_bruto + RA_CSS_FICHA + (
             pac.css_ficha_visual_clara("#ra-ficha-fundo") if hasattr(pac, "css_ficha_visual_clara") else ""),
-        "js_bruto": js_bruto + RA_JS_FICHA + "\n" + getattr(pac, "JS_FICHA_VISUAL", ""),
+        "js_bruto": JS_CARDS_BUSCA + "\n" + js_bruto + RA_JS_FICHA + "\n" + getattr(pac, "JS_FICHA_VISUAL", ""),
         "oc_html": oc_html,
         "recorte_txt": recorte_txt,
         "agora": agora,
@@ -2712,6 +2713,85 @@ RA_CSS_FICHA = """
 # Clique num card da janela de cards (#ra-oc-fundo) abre a ficha: os dados
 # de TODAS as ações do recorte vêm compactados (.ra-fichas-dados, gzip +
 # base64, ver _fichas_mon_tabela) e são lidos uma vez só, no 1º clique.
+# Campo de busca em TODAS as janelas de cards (pedido do usuário em
+# 24/11/2026): dash do PAC (#cards-acoes-fundo), dash do Monitoramento
+# (#raOcFundo), HTML do Monitoramento (#ra-oc-fundo) e Apresentação HTML
+# (#oc-fundo). Filtra os cards já desenhados pelo texto de cada um (todas as
+# palavras, sem acento/caixa); conteúdo novo na janela zera a busca. Definição
+# única, protegida contra inclusão repetida na mesma página.
+JS_CARDS_BUSCA = r"""
+(function () {
+  if (window.cardsBusca) return;
+  var CSS = ".cards-busca{display:flex;align-items:center;gap:10px;margin-left:auto;margin-right:6px;align-self:center;flex:none}" +
+    ".cards-busca-campo{position:relative;display:block}" +
+    ".cards-busca input{font:inherit;font-size:13px;color:inherit;background:rgba(128,128,128,.10);border:1px solid rgba(128,128,128,.45);" +
+    "border-radius:8px;padding:7px 10px 7px 30px;width:280px;max-width:40vw;outline:none;box-sizing:border-box}" +
+    ".cards-busca input:focus{border-color:#2B8FD6;box-shadow:0 0 0 2px rgba(43,143,214,.25)}" +
+    ".cards-busca svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.6;pointer-events:none}" +
+    ".cards-busca-n{font-size:12px;opacity:.75;white-space:nowrap}" +
+    ".cards-busca-vazio{grid-column:1/-1;padding:20px 4px;font-size:13px;opacity:.7}" +
+    "@media print{.cards-busca{display:none!important}}";
+  function norm(t) { return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+  function ehVazio(n) { return n.classList && n.classList.contains("cards-busca-vazio"); }
+  // fundo: a janela; o.fechar / o.corpo / o.card: seletores do botão de
+  // fechar (o campo entra antes dele), da área dos cards e de cada card.
+  window.cardsBusca = function (fundo, o) {
+    if (!fundo || fundo._cardsBusca) return;
+    var fechar = fundo.querySelector(o.fechar), corpo = fundo.querySelector(o.corpo);
+    if (!fechar || !corpo) return;
+    fundo._cardsBusca = true;
+    if (!document.getElementById("cards-busca-css")) {
+      var st = document.createElement("style");
+      st.id = "cards-busca-css"; st.textContent = CSS;
+      document.head.appendChild(st);
+    }
+    var w = document.createElement("div");
+    w.className = "cards-busca";
+    w.innerHTML = '<span class="cards-busca-n"></span><label class="cards-busca-campo">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">' +
+      '<circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>' +
+      '<input type="search" placeholder="Buscar nos cards (ação, município, executor…)" autocomplete="off" aria-label="Buscar nos cards"></label>';
+    fechar.parentNode.insertBefore(w, fechar);
+    var inp = w.querySelector("input"), n = w.querySelector(".cards-busca-n");
+    function aplicar() {
+      var termos = norm(inp.value).split(/\s+/).filter(Boolean);
+      var cards = corpo.querySelectorAll(o.card), vis = 0;
+      Array.prototype.forEach.call(cards, function (c) {
+        if (c._cbTxt == null) c._cbTxt = norm(c.textContent);
+        var ok = termos.every(function (t) { return c._cbTxt.indexOf(t) !== -1; });
+        c.style.display = ok ? "" : "none";
+        if (ok) vis++;
+      });
+      var vazio = corpo.querySelector(".cards-busca-vazio");
+      if (termos.length && cards.length && !vis) {
+        if (!vazio) {
+          vazio = document.createElement("div");
+          vazio.className = "cards-busca-vazio";
+          vazio.textContent = "Nenhum card com o texto buscado.";
+          corpo.appendChild(vazio);
+        }
+      } else if (vazio) vazio.parentNode.removeChild(vazio);
+      n.textContent = termos.length && cards.length ? vis + " de " + cards.length : "";
+    }
+    inp.addEventListener("input", aplicar);
+    inp.addEventListener("keydown", function (ev) {
+      // Esc com texto limpa a busca; sem texto, segue e fecha a janela
+      if (ev.key === "Escape" && inp.value) { ev.preventDefault(); inp.value = ""; aplicar(); }
+      if (ev.key !== "Escape") ev.stopPropagation();
+    });
+    // cards novos na janela (outro clique) -> busca zerada
+    new MutationObserver(function (ms) {
+      var novo = ms.some(function (m) {
+        return Array.prototype.some.call(m.addedNodes, function (x) { return !ehVazio(x); }) ||
+               Array.prototype.some.call(m.removedNodes, function (x) { return !ehVazio(x); });
+      });
+      if (novo) { inp.value = ""; aplicar(); }
+    }).observe(corpo, {childList: true});
+  };
+})();
+"""
+
+
 RA_JS_FICHA = r"""
 (function(){
   var fundo=document.getElementById("ra-ficha-fundo");
@@ -3110,6 +3190,70 @@ def gerar_html_resumo_acoes(caminho_base, dados, filtros=None):
 {p["js_bruto"]}{JS_SELETOR_RECORTE}
 </script>
 </body></html>"""
+
+
+def gerar_html_top30(caminho_base, dados):
+    """Página dedicada "30 maiores municípios — necessidades" (pedido do
+    usuário em 24/11/2026): no dash, a chave 30 MAIORES MUNICÍPIOS deixou de
+    mexer no painel principal e passou a abrir esta página, com os cards
+    (estado x 30 maiores), o mapa e o gráfico do Índice de Necessidade, a
+    leitura da carteira e os cartões por município com a classificação —
+    as mesmas peças da seção dos 30 maiores do HTML, num recorte só (sem as
+    variantes Eixo x Secretaria x Objeto). `dados` já vem com top30."""
+    pv = _montar_blocos_monitoramento(caminho_base, dados)
+    json_oc, _, resto = pv["oc_html"].partition('<div id="ra-oc-fundo">')
+    fundo_oc = '<div id="ra-oc-fundo">' + resto
+    guarda = f'<div class="ra-mapa-guarda">{pv["mapa_svg"]}</div>' if pv.get("mapa_svg") else ""
+    base_qd = _ra_base(caminho_base)
+    if dados.get("entregue"):
+        base_qd, _ = _ra_juntar_entregues(base_qd)
+    json_fichas = json.dumps(_fichas_mon_tabela(base_qd.iloc[dados["ids"]]),
+                             ensure_ascii=False, separators=(",", ":"))
+    fichas = ('<script type="application/octet-stream" class="ra-fichas-dados">'
+              + base64.b64encode(gzip.compress(json_fichas.encode("utf-8"), 9)).decode("ascii")
+              + "</script>")
+    corpo = (f'<div class="filtros">{pv["filtros_html"]}'
+             f'Gerado em {pv["agora"]:%d/%m/%Y às %Hh%M}.</div>'
+             f'<div class="cards">{pv["cards_html"]}</div>'
+             f'{pv["secao_mapa"]}{pv["secao_top30_grafico"]}{pv["secao_cartoes"]}{json_oc}')
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>30 maiores municípios — necessidades</title>
+<style>
+{pv["css_bruto"]}
+</style></head><body>
+<header><div><h1>30 MAIORES MUNICÍPIOS — NECESSIDADES DE INVESTIMENTO</h1>
+<p>AÇÕES EM MONITORAMENTO · ÍNDICE DE NECESSIDADE POR POPULAÇÃO</p></div>
+<div class="gov">GOVERNO DO ESTADO DA BAHIA<br>CASA CIVIL</div></header>
+<main>
+<div class="ra-sel-raiz"><div class="ra-recorte" data-oc="ra-oc-dados">{corpo}</div>{fichas}</div>
+</main>
+<footer>CGAPE · Casa Civil · Base Ações do Cronograma</footer>
+<div id="dica"></div>
+{guarda}
+{fundo_oc}
+<script>
+{pv["js_bruto"]}
+</script>
+</body></html>"""
+
+
+def api_top30_html(filtros=None):
+    """Página dos 30 maiores (gerar_html_top30) para o dash do Monitoramento,
+    que a mostra numa camada própria por cima dele."""
+    try:
+        caminho_base = caminho_planilha()
+        if not caminho_base:
+            return {"ok": False, "mensagem": _sem_planilha()}
+        f = dict(filtros or {})
+        f["top30"] = True
+        dados = resumo_acoes_dados(caminho_base, f)
+        if dados["vazio"]:
+            return {"ok": False, "mensagem": "Nenhuma ação dos 30 maiores municípios no recorte."}
+        return {"ok": True, "html": gerar_html_top30(caminho_base, dados)}
+    except Exception as exc:
+        return {"ok": False, "mensagem": f"Erro ao montar a página dos 30 maiores: {exc}"}
 
 
 def montar_partes_html_monitoramento(caminho_base, dados, filtros=None):
@@ -3564,6 +3708,28 @@ HTML_JANELA = r"""
     font-size:12px; font-weight:600; color:#F2B632; background:rgba(242,182,50,.12);
     border:1px solid rgba(242,182,50,.5); }
   .ra-destaques { display:flex; flex-wrap:wrap; gap:18px 64px; margin-bottom:18px; }
+  /* entrada e camada da página dos 30 maiores (24/11/2026) */
+  .ra-top30-entrada { display:flex; align-items:center; gap:18px; width:100%; margin:0 0 16px; padding:14px 18px;
+    background:var(--cor-card); color:var(--cor-texto-primario); border:1px solid var(--cor-acento-teal);
+    border-left:5px solid var(--cor-acento-teal); border-radius:8px; cursor:pointer; text-align:left; font:inherit; }
+  .ra-top30-entrada:hover, .ra-top30-entrada:focus-visible { background:var(--cor-card-elevado); outline:none; }
+  .ra-top30-entrada span { flex:1; min-width:0; }
+  .ra-top30-entrada b { display:block; font-size:14px; letter-spacing:.4px; }
+  .ra-top30-entrada small { display:block; margin-top:3px; font-size:12px; color:var(--cor-texto-secundario); }
+  .ra-top30-entrada i { font-style:normal; font-weight:800; font-size:13px; white-space:nowrap;
+    color:var(--cor-acento-mint-texto); }
+  #raTop30Pag { display:none; position:fixed; inset:0; z-index:300; background:var(--cor-fundo);
+    flex-direction:column; }
+  #raTop30Pag.aberta { display:flex; }
+  .ra-top30-barra { display:flex; align-items:center; gap:16px; padding:10px 16px;
+    background:var(--cor-card); border-bottom:1px solid var(--cor-card-elevado); }
+  .ra-top30-barra b { font-size:13.5px; letter-spacing:.4px; color:var(--cor-texto-primario); }
+  .ra-top30-msg { flex:1; font-size:12.5px; color:var(--cor-texto-secundario); }
+  .ra-top30-barra button { font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; border-radius:6px;
+    padding:7px 14px; border:1px solid var(--cor-card-elevado); background:var(--cor-card-elevado);
+    color:var(--cor-texto-primario); }
+  .ra-top30-barra button:hover { border-color:var(--cor-acento-teal); }
+  .ra-top30-quadro { flex:1; width:100%; border:0; background:#fff; }
   .ra-destaque { display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px 40px; }
   .ra-destaque-rot { display:block; font-size:15px; font-weight:800; letter-spacing:.3px;
     text-transform:uppercase; color:var(--cor-texto-secundario); }
@@ -3850,6 +4016,7 @@ HTML_JANELA = r"""
   // desta tela antes de clicar nele.
   var MON_RA_CHAVE_STORAGE = "monRaFiltros";
   var raFiltros = {};
+  var raTop30 = false;   // chave 30 MAIORES do painel (ver abrirResumoAcoes)
   // Prazo contratual, DATAS E PRAZOS e "30 MAIORES MUNICÍPIOS" saíram deste
   // popup e foram pro painel de filtros compartilhado (#grade-mon, ver
   // relatorio_monitoramento.CAMPOS_DATA) — pedido do usuário em 20/11/2026.
@@ -4137,6 +4304,11 @@ HTML_JANELA = r"""
           '<b class="ra-destaque-valor">' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".") + '</b>' +
           '<small>' + (n === 1 ? "acompanhada" : "acompanhadas") + ' pelo Estado da Bahia</small></div></div>';
       }).join("") + "</div>" +
+      (raTop30 ? '<button type="button" class="ra-top30-entrada" id="raTop30Abrir">' +
+        '<span><b>30 MAIORES MUNICÍPIOS — NECESSIDADES DE INVESTIMENTO</b>' +
+        '<small>Mapa e gráfico do Índice de Necessidade, leitura da carteira e cartões por município com a classificação ' +
+        '(Prioridade alta · Atenção · Adequado). O dash acima e abaixo segue o recorte inteiro.</small></span>' +
+        '<i>Abrir a página ›</i></button>' : "") +
       raGraficosHtml(d.graficos) +
       '<div class="ra-rolagem"><table class="ra-tab"' + raEscalaQuadro(d.eixos.length + 1) + '><thead><tr><th>Status</th>' +
       d.eixos.map(function (e) { return "<th>" + esc(e) + "</th>"; }).join("") +
@@ -4146,6 +4318,8 @@ HTML_JANELA = r"""
       raQuadroObjeto(d.quadro_objeto) +
       '<div class="ra-nota">' + esc(d.nota) + "</div>";
     raLigarGraficos(d.graficos);
+    var btTop30 = document.getElementById("raTop30Abrir");
+    if (btTop30) btTop30.onclick = raAbrirTop30;
   }
 
   // ---- Gráficos Orçamento × Investimento + mapa (pedido do usuário em
@@ -4464,7 +4638,16 @@ HTML_JANELA = r"""
       '<div class="ra-oc-cab"><div><div class="ra-oc-titulo"></div><div class="ra-oc-sub"></div></div>' +
       '<button type="button" class="ra-oc-fechar" title="Fechar (Esc)">&times;</button></div>' +
       '<div class="ra-oc-corpo"></div></div>';
-    document.getElementById("ra-overlay").appendChild(f);
+    // no <body> (não dentro do #ra-overlay): o botão AÇÕES NO RECORTE do
+    // painel de filtros abre esta janela com o dash fechado (24/11/2026)
+    document.body.appendChild(f);
+    if (window.cardsBusca) window.cardsBusca(f, {fechar: ".ra-oc-fechar", corpo: ".ra-oc-corpo", card: ".ra-oc-card"});
+    document.addEventListener("keydown", function (ev) {
+      // com o dash aberto, o Esc é do atalho geral do overlay
+      if (ev.key !== "Escape" || !f.classList.contains("aberta")) return;
+      if (document.getElementById("ra-overlay").classList.contains("aberto")) return;
+      f.classList.remove("aberta");
+    });
     f.addEventListener("click", function (ev) {
       if (ev.target === f || ev.target.closest(".ra-oc-fechar")) { f.classList.remove("aberta"); return; }
       var c = ev.target.closest(".ra-oc-card[data-fi]");
@@ -4486,20 +4669,26 @@ HTML_JANELA = r"""
       else alert((r && r.mensagem) || "Não foi possível abrir a ficha da ação.");
     }).catch(function (e) { alert("Não foi possível abrir a ficha da ação: " + e); });
   }
-  function raAbrirCards(alvo, nomeMunicipio) {
+  // opc (opcional): {titulo, partes: [subtítulo], filtros} — usado pelo
+  // botão AÇÕES NO RECORTE do painel (window.raAbrirCardsDoRecorte)
+  function raAbrirCards(alvo, nomeMunicipio, opc) {
     var f = raOcJanela();
-    var titulo = alvo.ob || nomeMunicipio || alvo.ex || alvo.ei || (alvo.st ? semNum(alvo.st) : "Todas as ações");
+    opc = opc || {};
+    var titulo = opc.titulo || alvo.ob || nomeMunicipio || alvo.ex || alvo.ei || (alvo.st ? semNum(alvo.st) : "Todas as ações");
     // subtítulo: eixo do objeto, status (se não for o próprio título) e,
     // depois da busca, a quantidade de ações
     var partes = [];
-    if ((alvo.ob || alvo.ex) && alvo.ei) partes.push(alvo.ei);
-    if (!alvo.st) partes.push("Todos os status");
-    else if (titulo !== semNum(alvo.st)) partes.push(semNum(alvo.st));
+    if (opc.partes) partes = opc.partes.slice();
+    else {
+      if ((alvo.ob || alvo.ex) && alvo.ei) partes.push(alvo.ei);
+      if (!alvo.st) partes.push("Todos os status");
+      else if (titulo !== semNum(alvo.st)) partes.push(semNum(alvo.st));
+    }
     f.querySelector(".ra-oc-titulo").textContent = titulo;
     f.querySelector(".ra-oc-sub").textContent = partes.concat(["carregando…"]).join(" · ");
     f.querySelector(".ra-oc-corpo").innerHTML = '<div class="ra-oc-vazio">Buscando as ações…</div>';
     f.classList.add("aberta");
-    api("resumo_acoes_cards", raFiltros, alvo).then(function (r) {
+    api("resumo_acoes_cards", opc.filtros || raFiltros, alvo).then(function (r) {
       if (!r || !r.ok) {
         f.querySelector(".ra-oc-corpo").innerHTML = '<div class="ra-oc-vazio">' + esc((r && r.mensagem) || "Erro ao buscar as ações") + '</div>';
         return;
@@ -4514,6 +4703,13 @@ HTML_JANELA = r"""
       f.querySelector(".ra-oc-corpo").innerHTML = '<div class="ra-oc-vazio">Erro ao buscar as ações: ' + esc(e) + '</div>';
     });
   }
+  // Botão AÇÕES NO RECORTE do painel de filtros do MONITORAMENTO (pedido do
+  // usuário em 24/11/2026): cards das ações do recorte da grade — os
+  // "Código" vêm de resumo_acoes_codigos_do_recorte (mesma regra da contagem).
+  window.raAbrirCardsDoRecorte = function (codigos, descricao) {
+    raAbrirCards({}, null, {titulo: "Ações no recorte", filtros: {_codigos: codigos || []},
+                            partes: descricao ? [descricao] : []});
+  };
   (function () {
     var q = document.getElementById("raQuadro");
     if (!q) return;
@@ -4603,6 +4799,37 @@ HTML_JANELA = r"""
       raMontar(r.dados);
     }).catch(function (e) { msg.textContent = "Erro ao ler a planilha: " + e; });
   }
+  // ---- Página dedicada dos 30 maiores municípios (24/11/2026): camada
+  // por cima do dash com a página de resumo_acoes.gerar_html_top30 num
+  // <iframe> (desenho, mapa, cards e ficha próprios dela).
+  function raTop30Camada() {
+    var c = document.getElementById("raTop30Pag");
+    if (c) return c;
+    c = document.createElement("div");
+    c.id = "raTop30Pag";
+    c.innerHTML = '<div class="ra-top30-barra"><button type="button" class="ra-top30-voltar">← Voltar ao dash</button>' +
+      '<b>30 MAIORES MUNICÍPIOS — NECESSIDADES DE INVESTIMENTO</b><span class="ra-top30-msg"></span>' +
+      '<button type="button" class="ra-top30-pdf" title="Imprime/salva em PDF esta página">Gerar PDF</button></div>' +
+      '<iframe class="ra-top30-quadro" title="30 maiores municípios — necessidades"></iframe>';
+    overlay.appendChild(c);
+    c.querySelector(".ra-top30-voltar").onclick = function () { c.classList.remove("aberta"); };
+    c.querySelector(".ra-top30-pdf").onclick = function () {
+      var w = c.querySelector("iframe").contentWindow;
+      if (w) { w.focus(); w.print(); }
+    };
+    return c;
+  }
+  function raAbrirTop30() {
+    var c = raTop30Camada(), msg = c.querySelector(".ra-top30-msg"), fr = c.querySelector("iframe");
+    c.classList.add("aberta");
+    msg.textContent = "Montando a página…";
+    fr.srcdoc = "";
+    api("resumo_acoes_top30_html", raFiltros).then(function (r) {
+      if (!r || !r.ok) { msg.textContent = (r && r.mensagem) || "Erro ao montar a página."; return; }
+      msg.textContent = "";
+      fr.srcdoc = r.html;
+    }).catch(function (e) { msg.textContent = "Erro ao montar a página: " + e; });
+  }
   function raGerar() {
     var msg = document.getElementById("raMsg");
     var botao = document.getElementById("raGerar");
@@ -4631,8 +4858,11 @@ HTML_JANELA = r"""
   window.abrirResumoAcoes = function (codigosRestricao, opcoes) {
     if (codigosRestricao) raFiltros._codigos = codigosRestricao;
     else delete raFiltros._codigos;
-    if (opcoes && opcoes.top30) raFiltros.top30 = true;
-    else delete raFiltros.top30;
+    // A chave 30 MAIORES MUNICÍPIOS não mexe mais no dash (pedido do
+    // usuário em 24/11/2026): o painel fica com o recorte inteiro e a
+    // chave só abre a página dedicada (raAbrirTop30).
+    raTop30 = !!(opcoes && opcoes.top30);
+    delete raFiltros.top30;
     // opcoes.entregue: chave STATUS ENTREGUE do painel de filtros (antes
     // ficava no popup FILTROS daqui) — pedido do usuário em 20/11/2026.
     if (opcoes && opcoes.entregue) raFiltros.entregue = true;
@@ -4777,10 +5007,14 @@ HTML_JANELA = r"""
     // Menu de grade aberto: deixa o Esc seguir até o fecharMenu() dele (que
     // também acerta o aria-expanded) em vez de sair do dash.
     if (overlay.querySelector(".ra-menu.aberto")) return;
+    var pag30 = document.getElementById("raTop30Pag");
     if (cardsAbertos && cardsAbertos.classList.contains("aberta")) cardsAbertos.classList.remove("aberta");
+    else if (pag30 && pag30.classList.contains("aberta")) pag30.classList.remove("aberta");
     else fechar();
     e.stopPropagation();
   }, true);
 })();
 </script>
 """
+# busca nas janelas de cards (dash do PAC e do Monitoramento, mesma página)
+HTML_JANELA += "<script>" + JS_CARDS_BUSCA + "</script>"

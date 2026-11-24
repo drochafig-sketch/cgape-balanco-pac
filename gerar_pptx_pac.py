@@ -5553,6 +5553,7 @@ function gerarPdfCompleto() {{
 <script>{getattr(pac, "JS_FICHA_VISUAL", "")}</script>
 <script>{JS_CLAUSULAS}</script>
 <script>{JS_PAINEL_FILTROS}</script>
+<script>{_js_cards_busca()}</script>
 <script>{JS_CARDS_OBJETO.replace("__ICONE__", json.dumps(_SVG_ICONE_LOCALIZACAO))}</script>
 <script>{JS_VISAO_GERAL_DASH}</script>
 {js_monitoramento}
@@ -5645,6 +5646,14 @@ CSS_CARDS_OBJETO = """
     @media print { #oc-fundo { display:none !important; } .obj-clic { color:inherit; text-decoration:none; } }
 """
 
+def _js_cards_busca():
+    """Campo de busca das janelas de cards (resumo_acoes.JS_CARDS_BUSCA)."""
+    try:
+        return pac._modulo_resumo_acoes().JS_CARDS_BUSCA.replace("</", "<\\/")
+    except Exception:
+        return ""
+
+
 JS_CARDS_OBJETO = r"""
 (function () {
   var el = document.getElementById('oc-dados');
@@ -5652,6 +5661,8 @@ JS_CARDS_OBJETO = r"""
   var D = JSON.parse(el.textContent), C = {};
   D.campos.forEach(function (k, i) { C[k] = i; });
   var fundo = document.getElementById('oc-fundo');
+  // campo de busca nos cards (24/11/2026) — resumo_acoes.JS_CARDS_BUSCA
+  if (window.cardsBusca) window.cardsBusca(fundo, {fechar: '.cl-ficha-fechar', corpo: '#oc-corpo', card: '.entrega-card'});
   var ICONE = __ICONE__;
   function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
   function gauge(v) {

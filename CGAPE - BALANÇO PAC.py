@@ -10998,6 +10998,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .mon-recorte-num { font-size: 34px; font-weight: 800; line-height: 1.1;
     color: var(--cor-acento-secundario-texto, var(--cor-acento-secundario)); }
   .mon-recorte-de { font-size: 12px; color: var(--cor-texto-terciario); }
+  .mon-recorte-btn { font: inherit; color: inherit; border: 1px solid transparent; cursor: pointer;
+    transition: border-color .15s, box-shadow .15s, transform .15s; }
+  .mon-recorte-btn:hover, .mon-recorte-btn:focus-visible { border-color: var(--cor-acento-secundario);
+    box-shadow: var(--sombra-card); outline: none; transform: translateY(-1px); }
+  .mon-recorte-btn::after { content: "Ver os cards das ações ›"; margin-top: 6px; font-size: 11.5px; font-weight: 700;
+    letter-spacing: .3px; color: var(--cor-acento-secundario-texto, var(--cor-acento-secundario)); }
   .mon-outros-grade-filtros { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .mon-outros-grade-filtros .bloco { height: min(340px, 52vh); border: 1px solid var(--cor-card-elevado); }
   .mon-outros.aberto .mon-outros-painel { display: block; }
@@ -15615,6 +15621,8 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       + '<button type="button" class="cards-acoes-fechar" title="Fechar (Esc)">×</button></div>'
       + '<div class="cards-acoes-corpo"></div></div>';
     document.body.appendChild(_cardsFundo);
+    // campo de busca nos cards (24/11/2026) — resumo_acoes.JS_CARDS_BUSCA
+    if (window.cardsBusca) window.cardsBusca(_cardsFundo, {fechar: ".cards-acoes-fechar", corpo: ".cards-acoes-corpo", card: ".cards-acao"});
     _cardsFundo.addEventListener("click", function (ev) {
       if (ev.target === _cardsFundo || ev.target.closest(".cards-acoes-fechar")) { fecharCardsAcoes(); return; }
       if (ev.target.closest(".cards-icone-local")) return;   // link abre sozinho
@@ -19009,8 +19017,22 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     // PDF: ver monRenderizarDetalhamentoRelatorio — pedido do usuário em
     // 21/11/2026. No lugar dele, um resumo de quantas ações estão no
     // recorte, que antes era a última linha desse bloco.)
-    var elRecorte = document.createElement("div");
-    elRecorte.className = "mon-recorte";
+    // AÇÕES NO RECORTE virou botão: abre a janela de cards com as ações do
+    // recorte (pedido do usuário em 24/11/2026). Os "Código" vêm da mesma
+    // regra do relatório (resumo_acoes_codigos_do_recorte, com o TOP30 —
+    // igual à contagem daqui); a janela é a dos cards do dash de
+    // Monitoramento (window.raAbrirCardsDoRecorte, resumo_acoes.py).
+    var elRecorte = document.createElement("button");
+    elRecorte.type = "button";
+    elRecorte.title = "Ver os cards das ações do recorte";
+    elRecorte.className = "mon-recorte mon-recorte-btn";
+    elRecorte.addEventListener("click", function () {
+      if (!window.raAbrirCardsDoRecorte) return;
+      chamarAPI("resumo_acoes_codigos_do_recorte", monFiltrosAtuais()).then(function (r) {
+        if (!r || !r.ok) { alert((r && r.erro) || "Não foi possível montar o recorte."); return; }
+        window.raAbrirCardsDoRecorte(r.codigos || [], r.descricao || "");
+      });
+    });
     elRecorte.innerHTML = '<span class="mon-recorte-rotulo">AÇÕES NO RECORTE</span>' +
       '<span class="mon-recorte-num" id="mon-contador-num">—</span>' +
       '<span class="mon-recorte-de" id="mon-contador"></span>';
@@ -19621,6 +19643,12 @@ def _api_resumo_acoes_base():
     return _modulo_resumo_acoes().api_base()
 
 
+def _api_resumo_acoes_top30_html(filtros=None):
+    # Página dedicada dos 30 maiores municípios no dash do Monitoramento
+    # (24/11/2026) — ver resumo_acoes.api_top30_html
+    return _modulo_resumo_acoes().api_top30_html(filtros)
+
+
 def _api_resumo_acoes_cards(filtros=None, alvo=None):
     # cards das ações ao clicar nos quadros/gráficos da tela Ações em
     # Monitoramento (19/11/2026)
@@ -20009,6 +20037,9 @@ def abrir_interface_filtros(df_base):
 
         def resumo_acoes_cards(self, filtros=None, alvo=None):
             return _api_resumo_acoes_cards(filtros, alvo)
+
+        def resumo_acoes_top30_html(self, filtros=None):
+            return _api_resumo_acoes_top30_html(filtros)
 
         def resumo_acoes_ficha(self, indice):
             return _api_resumo_acoes_ficha(indice)
