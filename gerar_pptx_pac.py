@@ -4951,7 +4951,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
     qr_fichas = {}
     if hasattr(pac, "qr_compacto"):
         for f in fichas_cartoes:
-            for chave in ("link_monitora", "link_localizacao"):
+            for chave in ("link_localizacao",):   # Link Monitora oculto (24/11/2026)
                 url = str((f or {}).get(chave) or "").strip()
                 if url and url not in qr_fichas:
                     codigo = pac.qr_compacto(url)
@@ -5877,7 +5877,7 @@ JS_CLAUSULAS = r"""
           + FV.linhaDoTempo(f, alertas) + '</div>';
         return;
       }
-      if (FV && chaves.indexOf('link_monitora') !== -1) {
+      if (FV && chaves.indexOf('link_localizacao') !== -1) {
         html += '<div class="cl-ficha-secao"><div class="cl-ficha-secao-titulo">' + esc(s.titulo) + '</div>'
           + FV.links(f, s.campos, DADOS_CL.qr || {}, alertas) + '</div>';
         return;

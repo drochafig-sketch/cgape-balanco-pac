@@ -465,6 +465,40 @@ def _ra_chave_mapa(nome):
     return _chave_municipio(mon.APELIDOS_MUNICIPIO.get(k, k))
 
 
+def _ra_linha_tempo(df, eixos):
+    """Linha do tempo por eixo > executor (pedido do usuário em 24/11/2026):
+    para cada grupo, a MAIOR data de cada marco (RA_FICHA_ESQUEMA["marcos"])
+    entre as ações do recorte — o prazo mais longo do grupo em cada etapa.
+    Datas em "AAAA-MM-DD"; "com" = ações com pelo menos um marco datado."""
+    marcos = [(k, rot) for k, rot in RA_FICHA_ESQUEMA["marcos"] if "_d_" + k in df.columns]
+    if not marcos or not len(df):
+        return {"marcos": [], "eixos": []}
+    cols = ["_d_" + k for k, _ in marcos]
+
+    def resumo(p):
+        mx = p[cols].max()
+        m = {k: mx[c].strftime("%Y-%m-%d") for (k, _), c in zip(marcos, cols) if pd.notna(mx[c])}
+        return {"n": int(len(p)), "com": int(p[cols].notna().any(axis=1).sum()), "m": m}
+
+    def fim(g):
+        return max(g["m"].values()) if g["m"] else ""
+
+    saida = []
+    tem_ex = "_f_executor" in df.columns
+    for e in eixos:
+        p = df[df["_eixo"] == e]
+        if not len(p):
+            continue
+        g = {"nome": e, **resumo(p), "ex": []}
+        if tem_ex:
+            g["ex"] = [{"nome": x, **resumo(q)} for x, q in p.groupby("_f_executor")]
+            # maior prazo primeiro (sem nenhuma data por último); empate pelo nome
+            g["ex"].sort(key=lambda x: x["nome"])
+            g["ex"].sort(key=fim, reverse=True)
+        saida.append(g)
+    return {"marcos": [[k, rot] for k, rot in marcos], "eixos": saida}
+
+
 def _ra_graficos(df, eixos):
     # Composição do VALOR TOTAL (mesma regra dos cards, pedido do usuário em
     # 19/11/2026): inv = Valor de Investimento; orc = Valor do Orçamento SÓ
@@ -497,7 +531,8 @@ def _ra_graficos(df, eixos):
                 mapa[k] = [float(p["_valor"].sum()), int(len(p)), bool(p["_orc"].any()),
                            float(p["_inv"].sum()), float(p.loc[p["_orc"], "_valor"].sum())]
     return {"total": total, "eixos": por_eixo, "status": por_status,
-            "objetos": por_objeto, "n_objetos": n_objetos, "mapa": mapa}
+            "objetos": por_objeto, "n_objetos": n_objetos, "mapa": mapa,
+            "linha_tempo": _ra_linha_tempo(df, eixos)}
 
 
 def api_cards(filtros=None, alvo=None):
@@ -521,6 +556,8 @@ def api_cards(filtros=None, alvo=None):
             df = df[df["_eixo"] == alvo["ei"]]
         if alvo.get("ob") and "_f_objeto" in df.columns:
             df = df[df["_f_objeto"] == alvo["ob"]]
+        if alvo.get("ex") and "_f_executor" in df.columns:
+            df = df[df["_f_executor"] == alvo["ex"]]
         if alvo.get("mu") and "Município" in df.columns:
             df = df[df["Município"].map(_ra_chave_mapa) == alvo["mu"]]
         # maior valor primeiro
@@ -3562,7 +3599,9 @@ HTML_JANELA = r"""
   .ra-graf-card { background:var(--cor-card); border-radius:8px; padding:14px 16px;
     box-shadow:var(--sombra-card); min-width:0; }
   /* mapa à direita, na altura dos 3 cards da esquerda (total, eixo, status) */
-  .ra-graf-mapa { grid-column:2; grid-row:1 / span 3; display:flex; flex-direction:column; }
+  /* mapa só ao lado do card "Total do recorte" (antes ocupava a altura de
+     três cards) — pedido do usuário em 24/11/2026 */
+  .ra-graf-mapa { grid-column:2; grid-row:1; display:flex; flex-direction:column; }
   .ra-graf-largo { grid-column:1 / -1; }
   .ra-graf-cab { display:flex; justify-content:space-between; align-items:center; gap:10px;
     flex-wrap:wrap; margin-bottom:12px; }
@@ -3612,8 +3651,47 @@ HTML_JANELA = r"""
   .ra-graf-comp .ra-gbar-linha i { height:12px; }
   .ra-gbar-linha em { font-style:normal; font-size:11.5px; font-weight:600; white-space:nowrap;
     color:var(--cor-texto-secundario); }
-  .ra-mapa-slot { flex:1; display:flex; align-items:center; justify-content:center; min-height:260px; }
-  .ra-mapa-svg { width:100%; height:auto; max-height:560px; display:block; }
+  .ra-mapa-slot { flex:1; display:flex; align-items:center; justify-content:center; min-height:200px; }
+  .ra-mapa-svg { width:100%; height:auto; max-height:330px; display:block; }
+  /* Linha do tempo eixo > executor (24/11/2026) */
+  .ra-lt-linha { display:grid; grid-template-columns:minmax(190px, 24%) 1fr; gap:12px; align-items:center;
+    padding:2px 4px; border-radius:6px; }
+  .ra-lt-linha.ra-lt-dado:hover { background:var(--cor-card-elevado); }
+  .ra-lt-rot { min-width:0; }
+  .ra-lt-rot span { display:block; font-size:12.5px; font-weight:600; color:var(--cor-texto-primario);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ra-lt-rot small { display:block; font-size:11px; color:var(--cor-texto-terciario); white-space:nowrap; }
+  .ra-lt-eixo .ra-lt-rot span { font-weight:800; }
+  .ra-lt-eixo .ra-lt-rot span::before { content:"▸"; display:inline-block; width:14px; color:var(--cor-texto-terciario);
+    transition:transform .15s; }
+  .ra-lt-grupo.aberto .ra-lt-eixo .ra-lt-rot span::before { transform:rotate(90deg); }
+  .ra-lt-eixo, .ra-lt-exec { cursor:pointer; }
+  .ra-lt-execs { display:none; }
+  .ra-lt-grupo.aberto .ra-lt-execs { display:block; }
+  .ra-lt-execs .ra-lt-rot { padding-left:18px; }
+  .ra-lt-execs .ra-lt-rot span { font-size:12px; font-weight:500; }
+  .ra-lt-trilho { position:relative; height:24px; }
+  .ra-lt-eixo-x .ra-lt-trilho { height:32px; }
+  .ra-lt-ano { position:absolute; top:0; bottom:0; border-left:1px solid var(--cor-card-elevado); }
+  .ra-lt-eixo-x .ra-lt-ano { border:none; top:auto; bottom:0; font-size:11px; font-weight:700;
+    color:var(--cor-texto-terciario); transform:translateX(-50%); }
+  .ra-lt-hoje { position:absolute; top:0; bottom:0; border-left:1.5px dashed var(--cor-acento-mint-texto); }
+  .ra-lt-eixo-x .ra-lt-hoje { border:none; font-size:10.5px; font-weight:800; color:var(--cor-acento-mint-texto);
+    transform:translateX(-50%); letter-spacing:.4px; top:0; bottom:auto; }
+  .ra-lt-barra { position:absolute; top:50%; height:2px; margin-top:-1px; border-radius:1px;
+    background:var(--cor-texto-terciario); opacity:.55; }
+  .ra-lt-ponto { position:absolute; top:50%; width:8px; height:8px; border-radius:50%;
+    transform:translate(-50%, -50%); background:var(--cor-texto-secundario); box-shadow:0 0 0 2px var(--cor-card); }
+  .ra-lt-ponto.fim { width:12px; height:12px; background:var(--cor-acento-teal); }
+  .ra-lt-data { position:absolute; top:50%; transform:translate(10px, -50%); font-size:11.5px; font-weight:700;
+    white-space:nowrap; color:var(--cor-texto-primario); }
+  .ra-lt-data.esq { transform:translate(calc(-100% - 10px), -50%); }
+  .ra-lt-sem { font-size:11.5px; font-style:italic; color:var(--cor-texto-terciario); line-height:24px; }
+  .ra-graf-leg i.ra-lt-leg-ponto, .ra-graf-leg i.ra-lt-leg-fim { border-radius:50%; }
+  .ra-graf-leg i.ra-lt-leg-hoje { width:0; border-radius:0; }
+  .ra-lt-leg-ponto { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--cor-texto-secundario); }
+  .ra-lt-leg-fim { display:inline-block; width:11px; height:11px; border-radius:50%; background:var(--cor-acento-teal); }
+  .ra-lt-leg-hoje { display:inline-block; width:0; height:12px; border-left:1.5px dashed var(--cor-acento-mint-texto); }
   .ra-mapa-svg path:hover { stroke:var(--cor-texto-primario) !important; stroke-width:1.2 !important; }
   .ra-mapa-escala { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; font-size:12px;
     color:var(--cor-texto-secundario); }
@@ -3957,12 +4035,10 @@ HTML_JANELA = r"""
       var classe = (c.tipo === "valor" ? "dir" : (c.tipo === "data" ? "centro" : "")) +
         ((c.filtro && raFiltros[c.filtro]) || (c.filtro === "municipio" && raFiltros.top30) ||
          bcol[c.rotulo] ? " ra-col-filtro" : "");
-      var termo = bcol[c.rotulo] || "";
+      // Campos "Buscar…" do cabeçalho removidos (pedido do usuário em
+      // 24/11/2026) — a busca geral, acima, continua.
       return '<th class="' + classe + '" data-col="' + i + '" title="Ordenar">' + esc(c.rotulo) +
-        (raTab.col === i ? (raTab.dir > 0 ? " ▲" : " ▼") : "") +
-        '<input type="text" class="ra-col-busca' + (termo ? " ativo" : "") + '" data-rot="' + esc(c.rotulo) +
-        '" value="' + esc(termo) + '" placeholder="Buscar…" autocomplete="off" title="Buscar só nesta coluna">' +
-        "</th>";
+        (raTab.col === i ? (raTab.dir > 0 ? " ▲" : " ▼") : "") + "</th>";
     }).join("");
     var vis = ids.slice(0, raTab.limite);
     var corpo = vis.map(function (id, n) {
@@ -4143,7 +4219,104 @@ HTML_JANELA = r"""
         card("Por eixo", raBarrasPar(g.eixos, false, "eixo")) +
         card("Por status", raBarrasPar(g.status, false, "status")) +
         card("Principais objetos" + nObj, raBarrasPar(g.objetos, true, "objeto"), "ra-graf-largo") +
+        raLinhaTempoCard(g.linha_tempo, card) +
       '</div>';
+  }
+  // ---- Linha do tempo por eixo > executor (pedido do usuário em
+  // 24/11/2026): em cada linha, a MAIOR data de cada marco entre as ações
+  // do recorte (Python: _ra_linha_tempo). Ponto destacado = maior prazo do
+  // grupo; clique no eixo abre os executores, clique no executor abre os
+  // cards das ações dele.
+  var raLtItens = [], raLtMarcos = [];
+  function raDataBr(iso) { var p = String(iso).split("-"); return p[2] + "/" + p[1] + "/" + p[0]; }
+  function raLtFim(i) {
+    var f = ""; Object.keys(i.m || {}).forEach(function (k) { if (i.m[k] > f) f = i.m[k]; }); return f;
+  }
+  function raLinhaTempoCard(lt, card) {
+    raLtItens = [];
+    if (!lt || !lt.eixos || !lt.eixos.length) return "";
+    raLtMarcos = lt.marcos || [];
+    var ms = function (iso) { var p = iso.split("-"); return Date.UTC(+p[0], +p[1] - 1, +p[2]); };
+    var datas = [];
+    lt.eixos.forEach(function (e) {
+      [e].concat(e.ex || []).forEach(function (i) {
+        Object.keys(i.m || {}).forEach(function (k) { datas.push(ms(i.m[k])); });
+      });
+    });
+    var titulo = "Linha do tempo — maior prazo por eixo › executor " +
+      "<small>(maior data de cada marco no recorte; clique no eixo para ver os executores)</small>";
+    if (!datas.length) return card(titulo,
+      '<div class="ra-graf-vazio">Nenhuma ação do recorte com data de marco preenchida</div>', "ra-graf-largo", '<span></span>');
+    var hojeD = new Date(), hoje = Date.UTC(hojeD.getFullYear(), hojeD.getMonth(), hojeD.getDate());
+    var a0 = new Date(Math.min.apply(null, datas.concat([hoje]))).getUTCFullYear();
+    var a1 = new Date(Math.max.apply(null, datas.concat([hoje]))).getUTCFullYear() + 1;
+    var ini = Date.UTC(a0, 0, 1), fim = Date.UTC(a1, 0, 1);
+    var pos = function (t) { return ((t - ini) / (fim - ini) * 100).toFixed(2) + "%"; };
+    var passo = a1 - a0 > 12 ? 2 : 1, anos = [];
+    for (var a = a0; a <= a1; a += passo) anos.push(a);
+    var grade = anos.map(function (a) { return '<i class="ra-lt-ano" style="left:' + pos(Date.UTC(a, 0, 1)) + '"></i>'; }).join("") +
+      '<i class="ra-lt-hoje" style="left:' + pos(hoje) + '"></i>';
+    var linha = function (i, classe, rotSub) {
+      var gi = raLtItens.push(i) - 1;
+      var ts = raLtMarcos.filter(function (m) { return i.m && i.m[m[0]]; })
+        .map(function (m) { return ms(i.m[m[0]]); });
+      var trilho = grade;
+      if (ts.length) {
+        var tmin = Math.min.apply(null, ts), tmax = Math.max.apply(null, ts);
+        trilho += '<i class="ra-lt-barra" style="left:' + pos(tmin) + ';width:' + ((tmax - tmin) / (fim - ini) * 100).toFixed(2) + '%"></i>' +
+          ts.map(function (t) {
+            return '<i class="ra-lt-ponto' + (t === tmax ? " fim" : "") + '" style="left:' + pos(t) + '"></i>';
+          }).join("") +
+          '<span class="ra-lt-data' + ((tmax - ini) / (fim - ini) > 0.86 ? " esq" : "") + '" style="left:' + pos(tmax) + '">' +
+            raDataBr(raLtFim(i)) + '</span>';
+      } else {
+        trilho += '<span class="ra-lt-sem">sem marcos com data</span>';
+      }
+      return '<div class="ra-lt-linha ra-lt-dado ' + classe + '" data-lt="' + gi + '" tabindex="0">' +
+        '<div class="ra-lt-rot"><span>' + esc(i.nome) + '</span><small>' + rotSub + '</small></div>' +
+        '<div class="ra-lt-trilho">' + trilho + '</div></div>';
+    };
+    var eixoX = '<div class="ra-lt-linha ra-lt-eixo-x"><div class="ra-lt-rot"></div><div class="ra-lt-trilho">' +
+      anos.map(function (a) { return '<span class="ra-lt-ano" style="left:' + pos(Date.UTC(a, 0, 1)) + '">' + a + '</span>'; }).join("") +
+      '<span class="ra-lt-hoje" style="left:' + pos(hoje) + '">HOJE</span></div></div>';
+    var corpo = eixoX + lt.eixos.map(function (e) {
+      var nEx = (e.ex || []).length;
+      return '<div class="ra-lt-grupo">' +
+        linha(e, "ra-lt-eixo", raQtdTxt(e.n) + (nEx ? " · " + nEx + (nEx === 1 ? " executor" : " executores") : "")) +
+        '<div class="ra-lt-execs">' + (e.ex || []).map(function (x) {
+          x.eixo = e.nome;
+          // sem "ra-cel-clic": o clique geral dos quadros (que lê data-st/
+          // data-ei/data-ob) abria TODAS as ações do recorte — o clique do
+          // executor é só o de raLigarLinhaTempo (correção de 24/11/2026)
+          return linha(x, "ra-lt-exec", raQtdTxt(x.n));
+        }).join("") + '</div></div>';
+    }).join("");
+    var leg = '<span class="ra-graf-leg"><i class="ra-lt-leg-ponto"></i>marcos</span>' +
+      '<span class="ra-graf-leg"><i class="ra-lt-leg-fim"></i>maior prazo</span>' +
+      '<span class="ra-graf-leg"><i class="ra-lt-leg-hoje"></i>hoje</span>';
+    return card(titulo, '<div class="ra-lt">' + corpo + '</div>', "ra-graf-largo", leg);
+  }
+  function raLigarLinhaTempo(raiz) {
+    Array.prototype.forEach.call(raiz.querySelectorAll(".ra-lt-dado[data-lt]"), function (el) {
+      var i = raLtItens[+el.dataset.lt], f = raLtFim(i);
+      el.addEventListener("mousemove", function (ev) {
+        raDica("<b>" + esc(i.nome) + "</b>" + (i.eixo ? "<div>" + esc(i.eixo) + "</div>" : "") +
+          "<ul>" + raLtMarcos.map(function (m) {
+            var d = i.m && i.m[m[0]];
+            return "<li><span>" + esc(m[1]) + "</span><b>" + (d ? (d === f ? "▶ " : "") + raDataBr(d) : "—") + "</b></li>";
+          }).join("") +
+          "<li><span>Ações</span><b>" + raQtdTxt(i.n) + (i.com < i.n ? " (" + i.com + " com data)" : "") + "</b></li></ul>", ev);
+      });
+      el.addEventListener("mouseleave", function () { raDica(null); });
+      if (el.classList.contains("ra-lt-eixo")) {
+        el.addEventListener("click", function () { el.parentNode.classList.toggle("aberto"); });
+      } else {
+        el.addEventListener("click", function () { raDica(null); raAbrirCards({ei: i.eixo, ex: i.nome}); });
+      }
+      el.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); el.click(); }
+      });
+    });
   }
   var raMapaSvg = null, raMapaPedido = null, raMapaDados = {};
   // rampa sequencial (um tom, claro -> escuro) e cor de "sem ação"
@@ -4238,6 +4411,7 @@ HTML_JANELA = r"""
       }
       raUltimoMapa = g.mapa;
     }
+    raLigarLinhaTempo(raiz);
     Array.prototype.forEach.call(raiz.querySelectorAll(".ra-gbar[data-gi]"), function (el) {
       var i = raGrafItens[+el.dataset.gi];
       el.addEventListener("mousemove", function (ev) {
@@ -4314,11 +4488,11 @@ HTML_JANELA = r"""
   }
   function raAbrirCards(alvo, nomeMunicipio) {
     var f = raOcJanela();
-    var titulo = alvo.ob || nomeMunicipio || alvo.ei || (alvo.st ? semNum(alvo.st) : "Todas as ações");
+    var titulo = alvo.ob || nomeMunicipio || alvo.ex || alvo.ei || (alvo.st ? semNum(alvo.st) : "Todas as ações");
     // subtítulo: eixo do objeto, status (se não for o próprio título) e,
     // depois da busca, a quantidade de ações
     var partes = [];
-    if (alvo.ob && alvo.ei) partes.push(alvo.ei);
+    if ((alvo.ob || alvo.ex) && alvo.ei) partes.push(alvo.ei);
     if (!alvo.st) partes.push("Todos os status");
     else if (titulo !== semNum(alvo.st)) partes.push(semNum(alvo.st));
     f.querySelector(".ra-oc-titulo").textContent = titulo;

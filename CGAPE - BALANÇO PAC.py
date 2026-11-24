@@ -1760,7 +1760,10 @@ def _montar_dados_ficha_acao(row):
         "providencias": campo(col_providencias),
         "prazo_pendencia": campo(col_prazo_pendencia),
         "proximos_passos": campo(col_proximos_passos),
-        "link_monitora": _normalizar_link_ficha(campo(col_link_monitora)),
+        # Link do Monitora Bahia oculto em todo o projeto (pedido do usuário
+        # em 24/11/2026): o valor nem sai daqui — ficha, PDF e HTML só
+        # mostram o Link Localização.
+        "link_monitora": "",
         "link_localizacao": _normalizar_link_ficha(campo(col_link_localizacao)),
         "aviso_licitacao": campo(col_aviso_licitacao),
         "abertura_licitacao": campo(col_abertura_licitacao),
@@ -1839,9 +1842,10 @@ def _definicao_secoes_ficha():
         # versão PDF, é a única com QR Code — precisa de mais largura por
         # campo do que as 3 colunas padrão dariam, mas cabe lado a lado, ao
         # contrário das demais seções "largo" (texto corrido). Ordem
-        # esquerda→direita: Localização primeiro, Monitora depois.
+        # esquerda→direita: Localização primeiro, Monitora depois. Link
+        # Monitora oculto em 24/11/2026 (pedido do usuário).
         {"titulo": "LINKS", "largo": True, "colunas": 2, "campos": [
-            ("link_localizacao", "Link Localização"), ("link_monitora", "Link Monitora"),
+            ("link_localizacao", "Link Localização"),
         ]},
     ]
 
@@ -17727,7 +17731,6 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         { rotulo: "Próximos Passos", chave: "proximos_passos" },
       ]},
       { titulo: "Links", largo: true, campos: [
-        { rotulo: "Link Monitora", chave: "link_monitora", link: true },
         { rotulo: "Link Localização", chave: "link_localizacao", link: true },
       ]},
     ];
@@ -17781,7 +17784,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         corpo.appendChild(secaoEl);
         return;
       }
-      if (FV && chaves.indexOf("link_monitora") !== -1) {
+      if (FV && chaves.indexOf("link_localizacao") !== -1) {
         camposLinks = secao.campos.map(function (c) { return [c.chave, c.rotulo]; });
         secaoEl.innerHTML = '<div class="ficha-secao-titulo">' + secao.titulo + '</div>' + FV.links(dados, camposLinks, null, camposAlerta);
         corpo.appendChild(secaoEl);
