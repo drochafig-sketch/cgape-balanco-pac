@@ -472,7 +472,7 @@ def _ra_eh_andamento(serie_status):
     return serie_status.map(lambda v: _normalizar(v).casefold()).str.contains("andamento")
 
 
-def _ra_conclusao_andamento(df):
+def _ra_conclusao_andamento(df, com_ix=False):
     """Previsão de conclusão (data Entrega Obra) das obras em andamento do
     recorte, por trimestre — pedido do usuário em 24/11/2026. Colunas:
     vencidas (prazo antes de hoje), os próximos RA_CONC_TRIMESTRES
@@ -490,6 +490,8 @@ def _ra_conclusao_andamento(df):
     def add(rot, sub, p, pe, tipo):
         cols.append({"rot": rot, "sub": sub, "qtd": int(len(p)), "valor": float(p["_valor"].sum()),
                      "orc": bool(p["_orc"].any()), "pe": pe, "tipo": tipo})
+        if com_ix:   # HTML: ações de cada coluna (ver _html_conclusao_andamento)
+            cols[-1]["ix"] = list(p.index)
 
     venc = a[d < hoje]
     if len(venc):
@@ -533,6 +535,52 @@ def _ra_conclusao_andamento(df):
     add(f"Após jun/{ano + 1}", "e sem data", pd.concat([fut[fut["_d_entrega"] > fim_sem], sem]),
         f"apos|{fim_sem + pd.Timedelta(days=1):%Y-%m-%d}", "apos")
     return {"colunas": trimestral, "semestre": cols, "n": int(len(a))}
+
+
+def _html_conclusao_andamento(conc, pos):
+    """Gráfico "Previsão de conclusão · obras em andamento" do HTML das
+    Ações em Monitoramento, com a chave Semestral (pedido do usuário em
+    25/11/2026 — o mesmo do dash). As duas visões vão prontas; a chave só
+    alterna qual aparece (classe conc-sem em .ra-sel-raiz, ver
+    JS do clique em .ra-conc-chave). `pos`: índice da ação na base ->
+    posição na lista de cards (.ra-qd-dados), usada pelo clique nas colunas."""
+    if not conc.get("colunas"):
+        return ""
+
+    def graf(cols, cls):
+        mx = max(c["qtd"] for c in cols) or 1
+        partes = []
+        for c in cols:
+            h = max(3, round(c["qtd"] / mx * 100)) if c["qtd"] else 0
+            nome = f'{c["rot"]} {c["sub"]}' if c["tipo"] == "tri" else c["rot"]
+            if c["qtd"]:
+                ix = ",".join(str(pos[i]) for i in c.get("ix", []) if i in pos)
+                dica = (f'Conclusão prevista: {nome} — {c["qtd"]} obra{"s" if c["qtd"] != 1 else ""} · '
+                        f'{_ra_rs(c["valor"])}{"*" if c["orc"] else ""} · clique para ver as obras')
+                extra = (f' ra-conc-clic" tabindex="0" role="button" data-ix="{ix}" '
+                         f'data-nome="{_esc(nome)}" title="{_esc(dica)}"')
+            else:
+                extra = '"'
+            partes.append(
+                f'<div class="ra-conc-col ra-conc-{c["tipo"]}{extra}>'
+                f'<div class="ra-conc-area"><span class="ra-conc-n">{c["qtd"] or ""}</span>'
+                f'<i style="height:{h}%"></i></div>'
+                f'<div class="ra-conc-rot">{_esc(c["rot"])}<small>{_esc(c["sub"])}</small></div></div>')
+        return f'<div class="ra-conc-graf {cls}">{"".join(partes)}</div>'
+
+    n = conc["n"]
+    obras = f'{n} obra{"s" if n != 1 else ""}'
+    return ('<section class="ra-conc">'
+            '<div class="ra-conc-tit"><div><h2>PREVISÃO DE CONCLUSÃO · OBRAS EM ANDAMENTO</h2>'
+            f'<small><span class="ra-conc-so-tri">{obras} · data de entrega da obra, por trimestre</span>'
+            f'<span class="ra-conc-so-sem">{obras} · data de entrega da obra, por semestre</span>'
+            ' · clique numa coluna para ver as obras</small></div>'
+            '<button type="button" class="ra-conc-chave" role="switch" aria-checked="false" '
+            'title="Alterna entre a visão por trimestre e a visão semestral: vencidas, até dezembro do ano atual, '
+            '1º semestre do ano seguinte e depois disso (junto com as obras sem data).">'
+            '<span>Semestral</span><i><b></b></i></button></div>'
+            + graf(conc["colunas"], "ra-conc-tri-graf") + graf(conc["semestre"], "ra-conc-sem-graf")
+            + '</section>')
 
 
 def _ra_linha_tempo(df, eixos):
@@ -2728,6 +2776,33 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     var td=ev.target.closest&&ev.target.closest(".ra-cel-clic");
     if(td&&(ev.key==="Enter"||ev.key===" ")){{ev.preventDefault();abrirCelula(td);}}
   }});
+  // Previsão de conclusão das obras em andamento (25/11/2026): chave
+  // Semestral (vale para todos os recortes do seletor) e clique na coluna
+  function abrirConclusao(col){{
+    dadosQuadros(col).then(function(d){{
+      D=d;C={{}};(D.campos||[]).forEach(function(k,i){{C[k]=i;}});
+      var lista=(col.dataset.ix||"").split(",").filter(Boolean).map(function(i){{return D.acoes[+i];}}).filter(Boolean);
+      document.getElementById("ra-oc-titulo").textContent="Conclusão prevista: "+(col.dataset.nome||"");
+      document.getElementById("ra-oc-sub").textContent="Obras/Serviços em Andamento · "+lista.length+(lista.length===1?" obra":" obras");
+      document.getElementById("ra-oc-corpo").innerHTML=lista.map(card).join("")
+        ||'<div class="ra-oc-vazio">Nenhuma obra encontrada.</div>';
+      fundo.classList.add("aberta");
+    }});
+  }}
+  document.addEventListener("click",function(ev){{
+    var ch=ev.target.closest&&ev.target.closest(".ra-conc-chave");
+    if(ch){{
+      var raiz=ch.closest(".ra-sel-raiz")||document.body,liga=!raiz.classList.contains("conc-sem");
+      raiz.classList.toggle("conc-sem",liga);
+      return;
+    }}
+    var col=ev.target.closest&&ev.target.closest(".ra-conc-clic");
+    if(col)abrirConclusao(col);
+  }});
+  document.addEventListener("keydown",function(ev){{
+    var col=ev.target.closest&&ev.target.closest(".ra-conc-clic");
+    if(col&&(ev.key==="Enter"||ev.key===" ")){{ev.preventDefault();abrirConclusao(col);}}
+  }});
   if(fundo)fundo.addEventListener("click",function(ev){{if(ev.target===fundo)window.raOcFechar();}});
   document.addEventListener("keydown",function(e){{
     if(!fundo||!fundo.classList.contains("aberta"))return;
@@ -2923,6 +2998,44 @@ RA_JS_FICHA = r"""
     ev.stopImmediatePropagation();ev.preventDefault();fechar();
   },true);
 })();
+"""
+
+
+CSS_CONC_HTML = """
+/* Previsão de conclusão das obras em andamento com a chave Semestral
+   (pedido do usuário em 25/11/2026) */
+.ra-conc-tit{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:10px}
+.ra-conc-tit h2{margin:0 0 3px}
+.ra-conc-tit small{font-size:12px;color:var(--cinza)}
+.ra-conc-chave{display:inline-flex;align-items:center;gap:8px;background:none;border:0;padding:4px 0;cursor:pointer;
+  font:inherit;font-size:12px;font-weight:700;color:var(--cinza);letter-spacing:.3px;flex:none}
+.ra-conc-chave i{position:relative;width:34px;height:18px;border-radius:9px;background:var(--linha);border:1px solid #C3C9D3;transition:background .15s}
+.ra-conc-chave i b{position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.ra-conc-chave:hover i{border-color:#0E8C7A}
+.conc-sem .ra-conc-chave{color:var(--navy)}
+.conc-sem .ra-conc-chave i{background:#0E8C7A;border-color:#0E8C7A}
+.conc-sem .ra-conc-chave i b{transform:translateX(16px)}
+.ra-conc-graf{display:flex;align-items:stretch;gap:6px}
+.ra-conc-col{flex:1;min-width:0;display:flex;flex-direction:column;border-radius:6px;padding:2px 0}
+.ra-conc-clic{cursor:pointer}
+.ra-conc-clic:hover,.ra-conc-clic:focus-visible{background:var(--claro);outline:none}
+.ra-conc-area{height:150px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+.ra-conc-area i{display:block;width:62%;max-width:38px;border-radius:4px 4px 0 0;background:var(--azul)}
+.ra-conc-venc .ra-conc-area i{background:#D9822B}
+.ra-conc-sem .ra-conc-area i{background:#8C96A5}
+.ra-conc-apos .ra-conc-area i{background:#D64545}
+.ra-conc-n{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:3px}
+.ra-conc-rot{text-align:center;font-size:11.5px;font-weight:700;color:var(--navy);line-height:1.25;margin-top:4px}
+.ra-conc-rot small{display:block;font-size:10.5px;font-weight:400;color:var(--cinza)}
+.ra-conc-venc .ra-conc-rot{color:#D9822B}
+/* visão trimestral x semestral (depois de .ra-conc-graf, que define o flex) */
+.ra-conc .ra-conc-so-sem,.ra-conc .ra-conc-sem-graf{display:none}
+.conc-sem .ra-conc .ra-conc-so-sem{display:inline}
+.conc-sem .ra-conc .ra-conc-so-tri{display:none}
+.conc-sem .ra-conc .ra-conc-sem-graf{display:flex}
+.conc-sem .ra-conc .ra-conc-tri-graf{display:none}
+@media print{.ra-conc{break-inside:avoid}}
 """
 
 
@@ -3135,6 +3248,13 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
     embutida na Apresentação CGAPE — ver _sufixar_ids_monitoramento)."""
     eixos, secretarias, objetos, combos = _variantes_recorte(caminho_base, dados, filtros)
     p, inicial, guardados, chaves = None, "", [], []
+    # ações de todo o recorte (todas as combinações eixo × secretaria são
+    # subconjuntos dele) pra janela de cards das células dos quadros e das
+    # colunas da previsão de conclusão
+    base_qd = _ra_base(caminho_base)
+    if dados.get("entregue"):
+        base_qd, _ = _ra_juntar_entregues(base_qd)
+    pos_qd = {i: k for k, i in enumerate(base_qd.iloc[dados["ids"]].index)}
     for ie, ix, io, f in combos:
         dv = dados if (ie, ix, io) == (0, 0, 0) else resumo_acoes_dados(caminho_base, f)
         if dv["vazio"]:
@@ -3174,6 +3294,13 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
         # sem a chave dos 30 maiores (pedido do usuário em 19/11/2026; antes,
         # com a chave desligada, não havia card nenhum)
         bloco_total = f'<div class="cards">{pv["card_total_html"]}</div>' if pv.get("card_total_html") else ""
+        # previsão de conclusão das obras em andamento, com a chave
+        # Semestral, logo abaixo do total (pedido do usuário em 25/11/2026)
+        try:
+            bloco_total += _html_conclusao_andamento(
+                _ra_conclusao_andamento(base_qd.iloc[dv["ids"]], com_ix=True), pos_qd)
+        except Exception as exc:
+            print(f"[MONITORAMENTO] previsão de conclusão fora do HTML: {exc}")
         if dv.get("top30"):
             corpo = f'{corpo_filtros}{bloco_total}{bloco_quadros}{secoes_top30}'
         else:
@@ -3215,11 +3342,6 @@ def _montar_recortes(caminho_base, dados, filtros, sufixo=None):
                    + '</div>')
         guardados.append('<script type="application/json" class="ra-v-lista">'
                          + json.dumps(chaves) + "</script>")
-    # ações de todo o recorte (todas as combinações eixo × secretaria são
-    # subconjuntos dele) pra janela de cards das células dos quadros
-    base_qd = _ra_base(caminho_base)
-    if dados.get("entregue"):
-        base_qd, _ = _ra_juntar_entregues(base_qd)
     json_qd = json.dumps(_dados_cards_acoes(base_qd.iloc[dados["ids"]]),
                          ensure_ascii=False, separators=(",", ":"))
     guardados.append('<script type="application/octet-stream" class="ra-qd-dados">'
@@ -3261,7 +3383,7 @@ def gerar_html_resumo_acoes(caminho_base, dados, filtros=None):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ações em Monitoramento</title>
 <style>
-{p["css_bruto"]}{CSS_SELETOR_RECORTE}
+{p["css_bruto"]}{CSS_SELETOR_RECORTE}{CSS_CONC_HTML}
 </style></head><body>
 <button type="button" class="btn-pdf" onclick="gerarPdf()" title="Imprime/salva em PDF o recorte selecionado, com o mapa, o gráfico, a avaliação e o detalhamento por status de cada município já abertos">Gerar PDF</button>
 <header><div><h1>{p["titulo"]}</h1><p>COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</p></div>
@@ -3365,7 +3487,7 @@ def montar_partes_html_monitoramento(caminho_base, dados, filtros=None):
     # fora de qualquer .mon-ra, pra não sumir se o slide que o contém não
     # for o ativo — e window.gerarPdf vira window.monRaGerarPdf, sem botão
     # próprio: a apresentação já tem o seu, que imprime a página inteira.
-    css_renomeado = (p["css_bruto"] + CSS_SELETOR_RECORTE).replace("#dica", "#mon-dica")
+    css_renomeado = (p["css_bruto"] + CSS_SELETOR_RECORTE + CSS_CONC_HTML).replace("#dica", "#mon-dica")
     css_isolado = _escopar_css(css_renomeado, ".mon-ra",
                                nao_escopar=("#mon-dica", "#ra-oc-fundo", "#ra-ficha-fundo", ".sel-recorte",
                                             ".sel-barra", ".sel-barra-eixo", ".sel-barra-sec",
