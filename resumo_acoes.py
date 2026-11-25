@@ -2917,8 +2917,26 @@ JS_CARDS_BUSCA = r"""
       '<input type="search" placeholder="Buscar nos cards (ação, município, executor…)" autocomplete="off" aria-label="Buscar nos cards"></label>';
     fechar.parentNode.insertBefore(w, fechar);
     var inp = w.querySelector("input"), n = w.querySelector(".cards-busca-n");
+    // Janela (filho direto do fundo): durante a busca fica com o tamanho de
+    // antes de filtrar — com poucos cards ela encolhia e, centralizada, o
+    // cabeçalho (título, busca, fechar) mudava de lugar (pedido do usuário
+    // em 25/11/2026)
+    var jan = corpo;
+    while (jan.parentNode && jan.parentNode !== fundo) jan = jan.parentNode;
+    function travar(sim) {
+      if (!jan || jan === document.body) return;
+      if (sim && !jan._cbTrava) {
+        jan.style.minHeight = jan.offsetHeight + "px";
+        jan.style.minWidth = jan.offsetWidth + "px";
+        jan._cbTrava = true;
+      } else if (!sim && jan._cbTrava) {
+        jan.style.minHeight = ""; jan.style.minWidth = "";
+        jan._cbTrava = false;
+      }
+    }
     function aplicar() {
       var termos = norm(inp.value).split(/\s+/).filter(Boolean);
+      travar(termos.length > 0);
       var cards = corpo.querySelectorAll(o.card), vis = 0;
       Array.prototype.forEach.call(cards, function (c) {
         if (c._cbTxt == null) c._cbTxt = norm(c.textContent);
