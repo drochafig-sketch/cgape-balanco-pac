@@ -2054,7 +2054,7 @@ class LinhaDoTempoFicha(Flowable):
     # tracejada de HOJE com quanto falta para o próximo marco.
     MARGEM = 38
     ROTULO = 72
-    TOPO = 34
+    TOPO = 44
 
     def __init__(self, grupos, largura):
         Flowable.__init__(self)
@@ -2113,12 +2113,11 @@ class LinhaDoTempoFicha(Flowable):
                 c.line(xh, y - 4, xh, y + 16)
                 c.setDash()
                 c.setFillColor(_FV_HOJE)
-                c.setFont(FONTE_PADRAO_NEGRITO, 6.5)
-                c.drawCentredString(xh, y + 36, "HOJE")
-                c.setFont(FONTE_PADRAO_NEGRITO, 6.5)
-                c.drawCentredString(xh, y + 28, f"faltam {_fv_duracao((prox['dt'] - self.hoje).days)}")
-                c.setFont(FONTE_PADRAO, 5.8)
-                c.drawCentredString(xh, y + 20.5, "p/ o próximo marco")
+                c.setFont(FONTE_PADRAO_NEGRITO, 9)
+                c.drawCentredString(xh, y + 43, "HOJE")
+                c.drawCentredString(xh, y + 32.5, f"faltam {_fv_duracao((prox['dt'] - self.hoje).days)}")
+                c.setFont(FONTE_PADRAO, 8)
+                c.drawCentredString(xh, y + 22.5, "p/ o próximo marco")
         for g, x, linhas in zip(self.grupos, xs, self.linhas):
             passado = g["dt"] <= self.hoje
             cor = _FV_ALERTA if g["alerta"] else _FV_AZUL
@@ -2482,7 +2481,7 @@ _CSS_FICHA_VISUAL_CLARA = """
     ESCOPO .fv-destaque-menor { font-size:14px; }
     ESCOPO .fv-destaque-investimento { font-size:22px; font-weight:900; color:#0B5CAD; white-space:nowrap; }
     ESCOPO .fv-tl { overflow-x:auto; padding-bottom:4px; }
-    ESCOPO .fv-tl-faixa { display:flex; align-items:flex-start; padding:72px 70px 0; min-width:min-content; }
+    ESCOPO .fv-tl-faixa { display:flex; align-items:flex-start; padding:90px 70px 0; min-width:min-content; }
     ESCOPO .fv-tl-no { width:0; flex:none; display:flex; flex-direction:column; align-items:center; }
     ESCOPO .fv-tl-ponto { width:16px; height:16px; border-radius:50%; flex:none; background:#0B5CAD;
       border:3px solid #0B5CAD; }
@@ -2504,13 +2503,13 @@ _CSS_FICHA_VISUAL_CLARA = """
     ESCOPO .fv-tl-hoje { position:absolute; top:-26px; bottom:-4px; width:0; }
     ESCOPO .fv-tl-hoje i { position:absolute; top:0; bottom:0; left:-1px; border-left:2px dashed #E68A00; }
     ESCOPO .fv-tl-hoje em { position:absolute; bottom:100%; left:50%; transform:translateX(-50%); margin-bottom:1px;
-      font-size:10px; font-weight:800; font-style:normal; color:#E68A00; text-transform:uppercase; }
+      font-size:14px; font-weight:800; font-style:normal; color:#E68A00; text-transform:uppercase; }
     ESCOPO .fv-tl-nota { font-size:12.5px; color:#5B6576; margin-top:12px; }
     /* 23/11/2026: tempo até o próximo marco embaixo de "HOJE" e o total da
        linha do tempo ao lado do título da seção */
     ESCOPO .fv-tl-hoje em { text-align:center; white-space:nowrap; line-height:1.2; }
-    ESCOPO .fv-tl-hoje em small { display:block; font-size:10.5px; font-weight:700; text-transform:none; }
-    ESCOPO .fv-tl-hoje em small + small { font-size:9.5px; font-weight:600; }
+    ESCOPO .fv-tl-hoje em small { display:block; font-size:14px; font-weight:700; text-transform:none; }
+    ESCOPO .fv-tl-hoje em small + small { font-size:12.5px; font-weight:600; }
     ESCOPO .fv-titulo-extra { margin-left:14px; font-size:13px; font-weight:600; letter-spacing:0;
       text-transform:none; color:#5B6576; }
     ESCOPO .fv-titulo-extra b { font-size:15px; font-weight:900; color:#0B1F3F; }
@@ -12407,7 +12406,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False):
     white-space: nowrap; }
   /* linha do tempo dos prazos */
   #ficha-corpo .fv-tl { overflow-x: auto; padding-bottom: 4px; }
-  #ficha-corpo .fv-tl-faixa { display: flex; align-items: flex-start; padding: 72px 70px 0; min-width: min-content; }
+  #ficha-corpo .fv-tl-faixa { display: flex; align-items: flex-start; padding: 90px 70px 0; min-width: min-content; }
   #ficha-corpo .fv-tl-no { width: 0; flex: none; display: flex; flex-direction: column; align-items: center; }
   #ficha-corpo .fv-tl-ponto { width: 16px; height: 16px; border-radius: 50%; flex: none; box-sizing: border-box;
     background: var(--cor-acento-teal); border: 3px solid var(--cor-acento-teal); }
@@ -12429,13 +12428,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False):
   #ficha-corpo .fv-tl-hoje { position: absolute; top: -26px; bottom: -4px; width: 0; }
   #ficha-corpo .fv-tl-hoje i { position: absolute; top: 0; bottom: 0; left: -1px; border-left: 2px dashed #E68A00; }
   #ficha-corpo .fv-tl-hoje em { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 1px;
-    font-size: 10px; font-weight: 800; font-style: normal; color: #E68A00; text-transform: uppercase; }
+    font-size: 14px; font-weight: 800; font-style: normal; color: #E68A00; text-transform: uppercase; }
   #ficha-corpo .fv-tl-nota { font-size: 12.5px; color: var(--cor-texto-secundario); margin-top: 12px; }
   /* 23/11/2026: tempo até o próximo marco embaixo de "HOJE" e o total da
      linha do tempo ao lado do título da seção */
   #ficha-corpo .fv-tl-hoje em { text-align: center; white-space: nowrap; line-height: 1.2; }
-  #ficha-corpo .fv-tl-hoje em small { display: block; font-size: 10.5px; font-weight: 700; text-transform: none; }
-  #ficha-corpo .fv-tl-hoje em small + small { font-size: 9.5px; font-weight: 600; }
+  #ficha-corpo .fv-tl-hoje em small { display: block; font-size: 14px; font-weight: 700; text-transform: none; }
+  #ficha-corpo .fv-tl-hoje em small + small { font-size: 12.5px; font-weight: 600; }
   #ficha-corpo .fv-titulo-extra { margin-left: 14px; font-size: 13px; font-weight: 600; letter-spacing: 0;
     text-transform: none; color: var(--cor-texto-secundario); }
   #ficha-corpo .fv-titulo-extra b { font-size: 15px; font-weight: 900; color: var(--cor-texto-primario); }
