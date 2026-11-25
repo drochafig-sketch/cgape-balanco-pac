@@ -43,6 +43,10 @@ sys.modules[_spec.name] = pac
 _spec.loader.exec_module(pac)
 
 app = Flask(__name__)
+# Sessão do login (acesso.py, 25/11/2026): cookie assinado. Sem
+# CGAPE_SECRET_KEY no ambiente, uma chave aleatória por processo (um
+# reinício do servidor pede o login de novo).
+app.secret_key = os.environ.get("CGAPE_SECRET_KEY") or os.urandom(32)
 
 
 @app.route("/")
@@ -60,6 +64,8 @@ def painel():
     # (chamarAPI/baixarPDF, ver montar_html_painel) detecta sozinho que não
     # existe "window.pywebview" aqui e passa a falar com as rotas /api/*
     # abaixo em vez da ponte nativa. "← Início" (no cabeçalho) volta pra "/".
+    if not pac._sessao_atual().get("secoes"):
+        return pac.montar_html_login()
     return pac.montar_html_painel(pac.df_original)
 
 
@@ -68,12 +74,17 @@ def monitoramento():
     # Mesmo HTML do painel, só que com o overlay de Ações em Monitoramento
     # (resumo_acoes.py) já aberto direto — ver abrir_monitoramento em
     # montar_html_painel. Pedido do usuário em 14/11/2026 (tela HOME).
+    if not pac._sessao_atual().get("secoes"):
+        return pac.montar_html_login()
     return pac.montar_html_painel(pac.df_original, abrir_monitoramento=True)
 
 
 @app.route("/prazos")
 def prazos():
-    # Terceira seção, CONTROLE DE PRAZOS (controle_prazos.py) — 25/11/2026.
+    # Terceira seção, CONTROLE DE PRAZOS (controle_prazos.py) — 25/11/2026;
+    # só com login (acesso.py).
+    if not pac._secao_liberada("PRZ"):
+        return pac.montar_html_home()
     return pac.montar_html_painel(pac.df_original, abrir_prazos=True)
 
 
@@ -164,7 +175,7 @@ for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
     app.add_url_rule("/api/" + _nome_ra, endpoint="api_" + _nome_ra,
                      view_func=_rota_json(getattr(pac, "_api_" + _nome_ra)),
                      methods=["POST"])
-for _nome_prz in ("prazos_dados", "prazos_assinatura"):
+for _nome_prz in ("prazos_dados", "prazos_assinatura", "login", "acesso_livre", "sair"):
     app.add_url_rule("/api/" + _nome_prz, endpoint="api_" + _nome_prz,
                      view_func=_rota_json(getattr(pac, "_api_" + _nome_prz)),
                      methods=["POST"])

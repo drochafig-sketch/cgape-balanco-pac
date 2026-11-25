@@ -10198,6 +10198,9 @@ def _relancar_processo():
             # desta instância — que é apagada assim que esta aqui sai,
             # derrubando a nova. Com o reset, ela se extrai do zero.
             env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")
+        token = _preparar_sessao_relancamento()
+        if token:
+            env = dict(env or os.environ, CGAPE_SESSAO_TOKEN=token)
         else:
             # "python CGAPE - BALANÇO PAC.py [...]" — caminho absoluto do
             # script, porque o cwd abaixo pode não ser a pasta de onde o
@@ -10210,6 +10213,257 @@ def _relancar_processo():
         traceback.print_exc()
 
 
+# =====================================================================
+# LOGIN (pedido do usuário em 25/11/2026) — tela de usuário e senha antes
+# da HOME, com ACESSO LIVRE (só PAC e MONITORAMENTO); usuários cadastrados
+# em acesso.py veem as três seções. Sessão: no desktop, um dicionário deste
+# processo (uma pessoa por janela); no modo web, a sessão (cookie assinado)
+# do Flask, por navegador.
+# =====================================================================
+import acesso
+
+_SESSAO_DESKTOP = {}
+
+
+def _sessao_atual():
+    if MODO_WEB:
+        try:
+            from flask import has_request_context, session
+            if has_request_context():
+                return dict(session.get("cgape_sessao") or {})
+        except Exception:
+            pass
+        return {}
+    return _SESSAO_DESKTOP
+
+
+def _gravar_sessao(dados):
+    if MODO_WEB:
+        try:
+            from flask import session
+            if dados:
+                session["cgape_sessao"] = dados
+            else:
+                session.pop("cgape_sessao", None)
+            return
+        except Exception:
+            pass
+    _SESSAO_DESKTOP.clear()
+    if dados:
+        _SESSAO_DESKTOP.update(dados)
+
+
+def _secao_liberada(secao):
+    return secao in (_sessao_atual().get("secoes") or [])
+
+
+def _api_login(usuario=None, senha=None):
+    dados = acesso.autenticar(usuario, senha)
+    if not dados:
+        return {"ok": False, "mensagem": "Usuário ou senha incorretos."}
+    _gravar_sessao(dados)
+    return {"ok": True, "nome": dados["nome"]}
+
+
+def _api_acesso_livre():
+    _gravar_sessao(acesso.sessao_livre())
+    return {"ok": True, "nome": "Acesso livre"}
+
+
+def _api_sair():
+    _gravar_sessao(None)
+    return {"ok": True}
+
+
+# Relançamento do botão "Atualizar base de dados" (_relancar_processo): a
+# instância nova herda a sessão por um arquivo de uso único em
+# %LOCALAPPDATA%\CGAPE (nome aleatório passado por variável de ambiente,
+# válido por 2 minutos), para não pedir o login de novo.
+def _arquivo_sessao_relancamento(token):
+    pasta = os.path.join(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir(), "CGAPE")
+    return os.path.join(pasta, f"sessao_{token}.json")
+
+
+def _preparar_sessao_relancamento():
+    dados = _sessao_atual()
+    if not dados.get("secoes"):
+        return None
+    import secrets
+    token = secrets.token_hex(16)
+    try:
+        caminho = _arquivo_sessao_relancamento(token)
+        os.makedirs(os.path.dirname(caminho), exist_ok=True)
+        with open(caminho, "w", encoding="utf-8") as f:
+            json.dump({"usuario": dados.get("usuario", ""), "criado": time.time()}, f)
+        return token
+    except OSError:
+        return None
+
+
+def _restaurar_sessao_relancamento():
+    token = os.environ.pop("CGAPE_SESSAO_TOKEN", "")
+    if not token or not re.fullmatch(r"[0-9a-f]{32}", token):
+        return
+    caminho = _arquivo_sessao_relancamento(token)
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            dados = json.load(f)
+        os.remove(caminho)
+    except (OSError, ValueError):
+        return
+    if time.time() - float(dados.get("criado", 0)) > 120:
+        return
+    usuario = dados.get("usuario") or ""
+    _gravar_sessao(acesso.sessao_usuario(usuario) if usuario else acesso.sessao_livre())
+
+
+def _tela_inicial():
+    # (nome do arquivo temporário, HTML): login e HOME em arquivos
+    # DIFERENTES — o pywebview troca de tela atribuindo webview.Source, e o
+    # WebView2 não navega quando a URL é a mesma (o "ENTRANDO…" ficava
+    # parado na tela de login — corrigido em 25/11/2026).
+    if _sessao_atual().get("secoes"):
+        return "home", montar_html_home()
+    return "login", montar_html_login()
+
+
+def montar_html_login():
+    # Tela de acesso (25/11/2026): mesmo cabeçalho e tokens da HOME.
+    logo_governo = iv.data_uri_logo("GOVERNO.png")
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CGAPE - Acesso</title>
+<style>
+{iv.CSS_TOKENS}
+* {{ box-sizing:border-box; }}
+body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE_CSS}; color:{iv.hex_css(iv.NAVY)}; }}
+.ivp-governo-logo {{ position:absolute; top:14px; right:40px; height:46px; width:auto; }}
+.login-corpo {{ min-height:calc(100vh - 96px); display:flex; align-items:center; justify-content:center; padding:40px 20px; }}
+.login-cartao {{ background:#fff; border:1px solid {iv.hex_css(iv.CINZA_BORDA)}; border-radius:14px; width:400px; max-width:100%;
+  padding:34px 32px 28px; box-shadow:{iv.SOMBRA_HOVER}; }}
+.login-cartao h1 {{ margin:0; font-size:20px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; }}
+.login-cartao .sub {{ margin:6px 0 22px; font-size:13px; color:{iv.hex_css(iv.CINZA_TEXTO)}; }}
+.login-campo {{ display:block; margin-bottom:14px; }}
+.login-campo .rot {{ display:block; font-size:12px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
+  color:{iv.hex_css(iv.CINZA_TEXTO)}; margin-bottom:6px; }}
+.login-campo .caixa {{ position:relative; display:block; }}
+.login-campo input {{ width:100%; padding:11px 12px; font:inherit; font-size:14px; color:inherit; background:#fff;
+  border:1px solid {iv.hex_css(iv.CINZA_BORDA)}; border-radius:8px; outline:none; }}
+.login-campo input:focus {{ border-color:{iv.hex_css(iv.AZUL)}; box-shadow:0 0 0 3px rgba(11,92,173,.15); }}
+.login-campo input.senha {{ padding-right:44px; }}
+.login-olho {{ position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none;
+  color:{iv.hex_css(iv.CINZA_TEXTO)}; cursor:pointer; padding:6px; border-radius:6px; display:flex; }}
+.login-olho:hover {{ color:{iv.hex_css(iv.AZUL)}; }}
+.login-erro {{ min-height:20px; font-size:13px; font-weight:600; color:{iv.hex_css(iv.VERMELHO)}; margin:2px 0 8px; }}
+.login-entrar {{ width:100%; }}
+.login-entrar:disabled {{ opacity:.6; cursor:default; }}
+.login-ou {{ display:flex; align-items:center; gap:10px; margin:18px 0 14px; font-size:12px; color:{iv.hex_css(iv.CINZA_TEXTO)}; }}
+.login-ou::before, .login-ou::after {{ content:""; flex:1; height:1px; background:{iv.hex_css(iv.CINZA_BORDA)}; }}
+.login-livre {{ width:100%; padding:11px 16px; font:inherit; font-size:14px; font-weight:700; cursor:pointer; border-radius:8px;
+  background:transparent; color:{iv.hex_css(iv.NAVY)}; border:1px solid {iv.hex_css(iv.CINZA_BORDA)}; }}
+.login-livre:hover, .login-livre:focus-visible {{ border-color:{iv.hex_css(iv.AZUL)}; color:{iv.hex_css(iv.AZUL)}; outline:none; }}
+.login-livre small {{ display:block; font-weight:400; font-size:12px; color:{iv.hex_css(iv.CINZA_TEXTO)}; margin-top:2px; }}
+html[data-tema="escuro"] {{ color-scheme:dark; }}
+html[data-tema="escuro"] body {{ background:#0A1628; color:#EAF0F7; }}
+html[data-tema="escuro"] .login-cartao {{ background:#13233B; border-color:#1C304D; box-shadow:0 4px 16px rgba(0,0,0,.45); }}
+html[data-tema="escuro"] .login-cartao .sub, html[data-tema="escuro"] .login-campo .rot,
+html[data-tema="escuro"] .login-ou, html[data-tema="escuro"] .login-livre small {{ color:#AEBBCD; }}
+html[data-tema="escuro"] .login-campo input {{ background:#0A1628; border-color:#1C304D; color:#EAF0F7; }}
+html[data-tema="escuro"] .login-campo input:focus {{ border-color:#7DBBF3; box-shadow:0 0 0 3px rgba(125,187,243,.18); }}
+html[data-tema="escuro"] .login-ou::before, html[data-tema="escuro"] .login-ou::after {{ background:#1C304D; }}
+html[data-tema="escuro"] .login-livre {{ color:#EAF0F7; border-color:#1C304D; }}
+html[data-tema="escuro"] .login-livre:hover, html[data-tema="escuro"] .login-livre:focus-visible {{ border-color:#7DBBF3; color:#7DBBF3; }}
+html[data-tema="escuro"] .login-erro {{ color:#FF8A80; }}
+html[data-tema="escuro"] .login-olho {{ color:#AEBBCD; }}
+</style>
+<script>(function(){{var t="escuro";try{{t=localStorage.getItem("cgapeTemaV2")||"escuro";}}catch(e){{}}if(t==="escuro")document.documentElement.setAttribute("data-tema","escuro");}})();</script>
+</head>
+<body>
+<div class="ivp-cabecalho">
+  <div class="ivp-titulo">CGAPE</div>
+  <div class="ivp-subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
+  <img class="ivp-governo-logo" src="{logo_governo}" alt="Governo do Estado da Bahia">
+</div>
+<div class="login-corpo">
+  <form class="login-cartao" id="login-form" autocomplete="off" novalidate>
+    <h1>Acesso ao painel</h1>
+    <p class="sub">Entre com seu usuário e senha para ver todas as seções.</p>
+    <label class="login-campo"><span class="rot">Usuário</span>
+      <span class="caixa"><input type="text" id="login-usuario" placeholder="nome.sobrenome" autocapitalize="off" spellcheck="false"></span></label>
+    <label class="login-campo"><span class="rot">Senha</span>
+      <span class="caixa"><input type="password" id="login-senha" class="senha">
+      <button type="button" class="login-olho" id="login-olho" title="Mostrar a senha" aria-label="Mostrar a senha" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+      </button></span></label>
+    <div class="login-erro" id="login-erro" role="alert"></div>
+    <button type="submit" class="ivp-botao login-entrar" id="login-entrar">ENTRAR</button>
+    <div class="login-ou">ou</div>
+    <button type="button" class="login-livre" id="login-livre">ACESSO LIVRE
+      <small>Balanço PAC e Ações em Monitoramento</small></button>
+  </form>
+</div>
+<script>
+  function apiDesktop() {{ return !!(window.pywebview && window.pywebview.api); }}
+  async function chamar(nome) {{
+    var args = Array.prototype.slice.call(arguments, 1);
+    if (apiDesktop()) return await window.pywebview.api[nome].apply(null, args);
+    var r = await fetch("/api/" + nome, {{method:"POST", headers:{{"Content-Type":"application/json"}}, body:JSON.stringify(args)}});
+    return await r.json();
+  }}
+  async function irParaHome() {{
+    if (apiDesktop()) {{ await window.pywebview.api.ir_para_home(); return; }}
+    window.location.href = "/";
+  }}
+  var campoUsuario = document.getElementById("login-usuario");
+  var campoSenha = document.getElementById("login-senha");
+  var erro = document.getElementById("login-erro");
+  var entrar = document.getElementById("login-entrar");
+  try {{ campoUsuario.value = localStorage.getItem("cgapeUltimoUsuario") || ""; }} catch (e) {{}}
+  (campoUsuario.value ? campoSenha : campoUsuario).focus();
+  document.getElementById("login-olho").onclick = function () {{
+    var mostrar = campoSenha.type === "password";
+    campoSenha.type = mostrar ? "text" : "password";
+    this.setAttribute("aria-pressed", mostrar ? "true" : "false");
+    this.title = mostrar ? "Esconder a senha" : "Mostrar a senha";
+    campoSenha.focus();
+  }};
+  document.getElementById("login-form").addEventListener("submit", async function (ev) {{
+    ev.preventDefault();
+    erro.textContent = "";
+    if (!campoUsuario.value.trim() || !campoSenha.value) {{ erro.textContent = "Informe o usuário e a senha."; return; }}
+    entrar.disabled = true; entrar.textContent = "ENTRANDO…";
+    try {{
+      var r = await chamar("login", campoUsuario.value.trim(), campoSenha.value);
+      if (r && r.ok) {{
+        try {{ localStorage.setItem("cgapeUltimoUsuario", campoUsuario.value.trim().toLowerCase()); }} catch (e) {{}}
+        await irParaHome();
+        return;
+      }}
+      erro.textContent = (r && r.mensagem) || "Não foi possível entrar.";
+      campoSenha.select();
+    }} catch (e) {{
+      erro.textContent = "Erro ao entrar: " + e;
+    }}
+    entrar.disabled = false; entrar.textContent = "ENTRAR";
+  }});
+  document.getElementById("login-livre").onclick = async function () {{
+    var r = await chamar("acesso_livre");
+    if (r && r.ok) await irParaHome();
+  }};
+  // fecha o programa depois de 20 min sem uso, igual à HOME e ao painel
+  var temporizador = null;
+  function reiniciarInatividade() {{
+    clearTimeout(temporizador);
+    temporizador = setTimeout(function () {{ if (apiDesktop()) window.pywebview.api.fechar_por_inatividade(); }}, 20 * 60 * 1000);
+  }}
+  ["mousemove", "keydown", "click", "wheel"].forEach(function (ev) {{ document.addEventListener(ev, reiniciarInatividade); }});
+  reiniciarInatividade();
+</script>
+</body>
+</html>"""
+
+
 def montar_html_home():
     # Tela inicial do app (desktop e web) — pedido do usuário em 14/11/2026
     # ("Prompt — Identidade visual única + tela HOME"): primeira coisa que
@@ -10218,6 +10472,13 @@ def montar_html_home():
     # resumo_acoes.py, só que já aberto direto — ver ir_para_monitoramento/
     # rota "/monitoramento"). Tokens e logos vêm de identidade_visual.py,
     # a mesma referência usada no resto do projeto.
+    sessao = _sessao_atual()
+    if not sessao.get("secoes"):
+        return montar_html_login()
+    prazos_liberado = "PRZ" in sessao["secoes"]
+    from html import escape as _escapar_html
+    nome_sessao = _escapar_html(sessao.get("nome") or "")
+    rotulo_sair = "Sair" if sessao.get("usuario") else "Entrar com usuário"
     logo_pac = iv.data_uri_logo("PAC.png")
     logo_governo = iv.data_uri_logo("GOVERNO.png")
     # Cada cartão usa uma base própria (PAC: a planilha principal; MONITORAMENTO:
@@ -10263,6 +10524,15 @@ body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE
 .home-cartao img.home-cartao-logo {{ height:64px; width:auto; }}
 .home-cartao-icone {{ color:{iv.hex_css(iv.AZUL)}; }}
 .home-cartao-prazos .home-cartao-icone {{ color:{iv.hex_css(iv.VERMELHO)}; }}
+.home-cartao[hidden] {{ display:none; }}
+.home-sessao {{ display:flex; justify-content:flex-end; align-items:center; gap:12px; padding:12px 40px 0;
+  font-size:13px; color:{iv.hex_css(iv.CINZA_TEXTO)}; }}
+.home-sessao button {{ font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; border-radius:8px; padding:6px 14px;
+  background:transparent; color:{iv.hex_css(iv.NAVY)}; border:1px solid {iv.hex_css(iv.CINZA_BORDA)}; }}
+.home-sessao button:hover {{ border-color:{iv.hex_css(iv.AZUL)}; color:{iv.hex_css(iv.AZUL)}; }}
+html[data-tema="escuro"] .home-sessao {{ color:#AEBBCD; }}
+html[data-tema="escuro"] .home-sessao button {{ color:#EAF0F7; border-color:#1C304D; }}
+html[data-tema="escuro"] .home-sessao button:hover {{ border-color:#7DBBF3; color:#7DBBF3; }}
 .home-cartao-prazos:hover, .home-cartao-prazos:focus-visible {{ border-color:{iv.hex_css(iv.VERMELHO)}; }}
 .home-cartao-rotulo {{ font-size:16px; font-weight:800; letter-spacing:.4px; color:{iv.hex_css(iv.NAVY)};
   text-transform:uppercase; }}
@@ -10293,6 +10563,7 @@ html[data-tema="escuro"] .home-cartao-prazos:hover, html[data-tema="escuro"] .ho
   <div class="ivp-subtitulo">COORDENAÇÃO GERAL DE ACOMPANHAMENTO DE POLÍTICAS ESTRATÉGICAS</div>
   <img class="ivp-governo-logo" src="{logo_governo}" alt="Governo do Estado da Bahia">
 </div>
+<div class="home-sessao"><span>{nome_sessao}</span><button type="button" id="home-sair">{rotulo_sair}</button></div>
 <div class="home-corpo">
   <div class="home-cartoes">
     <div class="home-cartao" id="home-pac" role="button" tabindex="0" aria-label="Abrir Balanço PAC - Bahia">
@@ -10315,7 +10586,7 @@ html[data-tema="escuro"] .home-cartao-prazos:hover, html[data-tema="escuro"] .ho
     </div>
     <!-- Terceira seção: CONTROLE DE PRAZOS (controle_prazos.py) — 25/11/2026 -->
     <div class="home-cartao home-cartao-prazos" id="home-prazos" role="button" tabindex="0"
-         aria-label="Abrir Controle de Prazos">
+         aria-label="Abrir Controle de Prazos"{'' if prazos_liberado else ' hidden'}>
       <svg class="home-cartao-icone" viewBox="0 0 24 24" width="64" height="64" fill="none"
            stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="13" r="8"></circle>
@@ -10338,6 +10609,11 @@ html[data-tema="escuro"] .home-cartao-prazos:hover, html[data-tema="escuro"] .ho
   document.getElementById("home-pac").addEventListener("click", function () {{ irPara("pac"); }});
   document.getElementById("home-monitoramento").addEventListener("click", function () {{ irPara("monitoramento"); }});
   document.getElementById("home-prazos").addEventListener("click", function () {{ irPara("prazos"); }});
+  document.getElementById("home-sair").addEventListener("click", async function () {{
+    if (pacApiDesktopDisponivel()) {{ await window.pywebview.api.sair(); await window.pywebview.api.ir_para_home(); return; }}
+    await fetch("/api/sair", {{method:"POST", headers:{{"Content-Type":"application/json"}}, body:"[]"}});
+    window.location.href = "/";
+  }});
   document.getElementById("home-prazos").addEventListener("keydown", teclaAtivarHome);
   function teclaAtivarHome(ev) {{
     if (ev.key === "Enter" || ev.key === " ") {{ ev.preventDefault(); ev.currentTarget.click(); }}
@@ -18668,6 +18944,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False):
   // (estadoSelecao/MON.sel não são tocados aqui).
   function trocarBase(base, opcoes) {
     if (base !== "PAC" && base !== "MON" && base !== "PRZ") return;
+    if (base === "PRZ" && !document.getElementById("prz-overlay")) return;   // acesso livre (login)
     opcoes = opcoes || {};
     var tela = opcoes.tela || telaAtualDetectada();
     window.baseAtiva = base;
@@ -19370,12 +19647,20 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False):
         # usuário em 25/11/2026: dash #prz-overlay + grade #grade-prz, logo
         # depois do HTML do MONITORAMENTO (usa as classes .ra-cabecalho/
         # .ra-botoes de lá para ter o mesmo cabeçalho).
+        prazos_liberado = _secao_liberada("PRZ")
         try:
-            injetar += "\n" + _modulo_controle_prazos().HTML_JANELA
+            if prazos_liberado:
+                injetar += "\n" + _modulo_controle_prazos().HTML_JANELA
         except Exception:
             import traceback
             traceback.print_exc()
-        if abrir_prazos:
+        if not prazos_liberado:
+            # acesso livre: some o botão PRAZOS das chaves de seção (login,
+            # pedido do usuário em 25/11/2026)
+            _btn_prz = r'\s*<button type="button"[^>]*data-secao="PRZ"[^>]*>PRAZOS<span class="contagem-base"></span></button>'
+            html_paginal = re.sub(_btn_prz, "", html_paginal)
+            injetar = re.sub(_btn_prz, "", injetar)
+        if abrir_prazos and prazos_liberado:
             injetar += (
                 '\n<script>'
                 'if (window.PAC_MODO_WEB || window.pywebview) { window.trocarBase("PRZ", {tela:"dash"}); }'
@@ -19770,11 +20055,18 @@ def _modulo_controle_prazos():
     return controle_prazos
 
 
+_SEM_ACESSO_PRAZOS = {"ok": False, "mensagem": "Acesso restrito: entre com usuário e senha para ver o Controle de Prazos."}
+
+
 def _api_prazos_dados():
+    if not _secao_liberada("PRZ"):
+        return dict(_SEM_ACESSO_PRAZOS)
     return _modulo_controle_prazos().api_dados()
 
 
 def _api_prazos_assinatura():
+    if not _secao_liberada("PRZ"):
+        return dict(_SEM_ACESSO_PRAZOS)
     return _modulo_controle_prazos().api_assinatura()
 
 
@@ -20443,7 +20735,7 @@ def abrir_interface_filtros(df_base):
         # uma segunda janela — não precisa recriar js_api, a ponte
         # continua a mesma.
         def ir_para_home(self):
-            _carregar_tela("home", montar_html_home())
+            _carregar_tela(*_tela_inicial())
             return {"ok": True}
 
         def ir_para_pac(self):
@@ -20456,8 +20748,21 @@ def abrir_interface_filtros(df_base):
             return {"ok": True}
 
         def ir_para_prazos(self):
+            if not _secao_liberada("PRZ"):
+                _carregar_tela(*_tela_inicial())
+                return {"ok": True}
             _carregar_tela("prazos", montar_html_painel(df_base, abrir_prazos=True))
             return {"ok": True}
+
+        # Login (25/11/2026) — ver acesso.py e montar_html_login
+        def login(self, usuario=None, senha=None):
+            return _api_login(usuario, senha)
+
+        def acesso_livre(self):
+            return _api_acesso_livre()
+
+        def sair(self):
+            return _api_sair()
 
         def prazos_dados(self):
             return _api_prazos_dados()
@@ -20486,7 +20791,11 @@ def abrir_interface_filtros(df_base):
     # no mesmo tipo de lugar, mesmo com o JS validado como correto) —
     # carregando de um arquivo real, o navegador lê exatamente como está
     # gravado no disco, sem esse tipo de limite.
-    arquivo_home = _carregar_tela("home", montar_html_home())
+    # Login antes da HOME (25/11/2026): montar_html_home devolve a tela de
+    # login enquanto não houver sessão; no relançamento do "Atualizar base
+    # de dados" a sessão volta sozinha (_restaurar_sessao_relancamento).
+    _restaurar_sessao_relancamento()
+    arquivo_home = _carregar_tela(*_tela_inicial())
 
     janela = webview.create_window(
         "CGAPE - BALANÇO PAC",
