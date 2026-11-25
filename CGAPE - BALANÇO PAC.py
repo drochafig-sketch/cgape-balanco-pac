@@ -10226,6 +10226,14 @@ def montar_html_home():
     # único no cabeçalho (que sugeria uma base só) — pedido do usuário em 14/11/2026.
     atualizacao_pac = f'Base atualizada em {ultima_atualizacao.strftime("%d/%m/%Y às %Hh%Mmin")}'
     data_monitoramento = _modulo_resumo_acoes().data_atualizacao_base()
+    try:
+        data_prazos = _modulo_controle_prazos().data_atualizacao_base()
+    except Exception:
+        data_prazos = None
+    atualizacao_prazos = (
+        f'Planilha atualizada em {data_prazos.strftime("%d/%m/%Y às %Hh%Mmin")}'
+        if data_prazos else "Planilha do Controle de Prazos não encontrada"
+    )
     atualizacao_monitoramento = (
         f'Base atualizada em {data_monitoramento.strftime("%d/%m/%Y às %Hh%Mmin")}'
         if data_monitoramento else "Base “Ações do Cronograma” não encontrada"
@@ -10242,7 +10250,7 @@ body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE
 .ivp-governo-logo {{ position:absolute; top:14px; right:40px; height:46px; width:auto; }}
 .home-corpo {{ min-height:calc(100vh - 96px); display:flex; align-items:center; justify-content:center;
   padding:40px 20px; }}
-.home-cartoes {{ display:flex; gap:32px; flex-wrap:wrap; justify-content:center; max-width:900px; }}
+.home-cartoes {{ display:flex; gap:32px; flex-wrap:wrap; justify-content:center; max-width:1100px; }}
 .home-cartao {{
   background:#fff; border:1px solid {iv.hex_css(iv.CINZA_BORDA)}; border-radius:14px;
   width:320px; padding:40px 28px; display:flex; flex-direction:column; align-items:center;
@@ -10254,6 +10262,8 @@ body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE
 }}
 .home-cartao img.home-cartao-logo {{ height:64px; width:auto; }}
 .home-cartao-icone {{ color:{iv.hex_css(iv.AZUL)}; }}
+.home-cartao-prazos .home-cartao-icone {{ color:{iv.hex_css(iv.VERMELHO)}; }}
+.home-cartao-prazos:hover, .home-cartao-prazos:focus-visible {{ border-color:{iv.hex_css(iv.VERMELHO)}; }}
 .home-cartao-rotulo {{ font-size:16px; font-weight:800; letter-spacing:.4px; color:{iv.hex_css(iv.NAVY)};
   text-transform:uppercase; }}
 .home-cartao-sub {{ font-size:12.5px; color:{iv.hex_css(iv.CINZA_TEXTO)}; }}
@@ -10272,6 +10282,8 @@ html[data-tema="escuro"] .home-cartao:hover, html[data-tema="escuro"] .home-cart
 html[data-tema="escuro"] .home-cartao-rotulo {{ color:#EAF0F7; }}
 html[data-tema="escuro"] .home-cartao-sub, html[data-tema="escuro"] .home-cartao-data {{ color:#AEBBCD; }}
 html[data-tema="escuro"] .home-cartao-icone {{ color:#7DBBF3; }}
+html[data-tema="escuro"] .home-cartao-prazos .home-cartao-icone {{ color:#FF8A80; }}
+html[data-tema="escuro"] .home-cartao-prazos:hover, html[data-tema="escuro"] .home-cartao-prazos:focus-visible {{ border-color:#FF8A80; }}
 </style>
 <script>(function(){{var t="escuro";try{{t=localStorage.getItem("cgapeTemaV2")||"escuro";}}catch(e){{}}if(t==="escuro")document.documentElement.setAttribute("data-tema","escuro");}})();</script>
 </head>
@@ -10301,6 +10313,20 @@ html[data-tema="escuro"] .home-cartao-icone {{ color:#7DBBF3; }}
       <div class="home-cartao-sub">Base "Ações do Cronograma"</div>
       <div class="home-cartao-data">{atualizacao_monitoramento}</div>
     </div>
+    <!-- Terceira seção: CONTROLE DE PRAZOS (controle_prazos.py) — 25/11/2026 -->
+    <div class="home-cartao home-cartao-prazos" id="home-prazos" role="button" tabindex="0"
+         aria-label="Abrir Controle de Prazos">
+      <svg class="home-cartao-icone" viewBox="0 0 24 24" width="64" height="64" fill="none"
+           stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="13" r="8"></circle>
+        <path d="M12 9v4l2.5 2.5"></path>
+        <path d="M9 2h6"></path>
+        <path d="M12 2v3"></path>
+      </svg>
+      <div class="home-cartao-rotulo">Controle de Prazos</div>
+      <div class="home-cartao-sub">Pauta do Governador · Portos e Transporte</div>
+      <div class="home-cartao-data">{atualizacao_prazos}</div>
+    </div>
   </div>
 </div>
 <script>
@@ -10311,6 +10337,8 @@ html[data-tema="escuro"] .home-cartao-icone {{ color:#7DBBF3; }}
   }}
   document.getElementById("home-pac").addEventListener("click", function () {{ irPara("pac"); }});
   document.getElementById("home-monitoramento").addEventListener("click", function () {{ irPara("monitoramento"); }});
+  document.getElementById("home-prazos").addEventListener("click", function () {{ irPara("prazos"); }});
+  document.getElementById("home-prazos").addEventListener("keydown", teclaAtivarHome);
   function teclaAtivarHome(ev) {{
     if (ev.key === "Enter" || ev.key === " ") {{ ev.preventDefault(); ev.currentTarget.click(); }}
   }}
@@ -10335,7 +10363,7 @@ html[data-tema="escuro"] .home-cartao-icone {{ color:#7DBBF3; }}
 </html>"""
 
 
-def montar_html_painel(df_base, abrir_monitoramento=False):
+def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False):
     # Monta a string HTML/CSS/JS completa do painel de filtros — só isso,
     # sem abrir janela nenhuma. Usada tanto pelo modo desktop
     # (abrir_interface_filtros, logo abaixo, que pega esse HTML e abre numa
@@ -10589,6 +10617,12 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
        par do --cor-acento-teal-hover do PAC — pedido do usuário em
        21/11/2026. */
     --cor-acento-secundario-hover: #23677A;
+    /* Cor da seção CONTROLE DE PRAZOS (terceira base, controle_prazos.py):
+       vermelho da identidade (identidade_visual.VERMELHO) nos destaques e
+       contornos — pedido do usuário em 25/11/2026. */
+    --cor-acento-prazos: #C62828;
+    --cor-acento-prazos-hover: #A61F1F;
+    --cor-acento-prazos-texto: #C62828;
     --raio-sm: 4px;
     --raio-md: 10px;
     --raio-lg: 14px;
@@ -10624,6 +10658,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     --cor-acento-mint-texto: #7DBBF3;
     --cor-acento-secundario: #4FA7B8;
     --cor-acento-secundario-hover: #2F8A9D;
+    --cor-acento-prazos: #D32F2F;
+    --cor-acento-prazos-hover: #E04848;
+    --cor-acento-prazos-texto: #FF8A80;
     --sombra-card: 0 4px 16px rgba(0, 0, 0, 0.45);
   }
 
@@ -10818,6 +10855,24 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   .seletor-secao.troca-base button[data-secao="MON"].ativo {
     background: var(--cor-acento-secundario);
   }
+  /* Terceira base: CONTROLE DE PRAZOS, em vermelho (25/11/2026). */
+  .seletor-secao.troca-base.chave-prz { border-color: var(--cor-acento-prazos); }
+  .seletor-secao.troca-base button[data-secao="PRZ"].ativo,
+  .ra-botoes .seletor-secao.troca-base button[data-secao="PRZ"].ativo,
+  .modal-titulo-botoes .seletor-secao.troca-base button[data-secao="PRZ"].ativo {
+    background: var(--cor-acento-prazos); color: #fff;
+  }
+  body.secao-prz .fab-filtros { background: var(--cor-acento-prazos); }
+  body.secao-prz .fab-filtros-qtd { color: var(--cor-acento-prazos); }
+  body.secao-prz #grade, body.secao-prz #grade-mon { display: none !important; }
+  body.secao-prz #grade-prz { display: grid; }
+  body.secao-prz #filtros-qc-btn, body.secao-prz #btn-gerencial-filtros,
+  body.secao-prz #btn-gerar { display: none !important; }
+  body.secao-prz .busca-geral-campo:focus,
+  body.secao-prz .dash-busca-geral.ativo .busca-geral-campo { border-color: var(--cor-acento-prazos); }
+  body.secao-prz #botoes-topo .btn:hover { background: var(--cor-acento-prazos-hover); color: #fff; }
+  body.secao-prz #botoes-topo .botao-icone-topo:hover,
+  body.secao-prz #botoes-topo .botao-icone-topo[aria-expanded="true"] { background: var(--cor-acento-prazos); }
   .seletor-secao.troca-base button:focus-visible {
     outline: 2px solid var(--cor-acento-gold);
     outline-offset: -2px;
@@ -13720,7 +13775,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       <!-- Chave pizza | PAC | MONITORAMENTO com a busca geral logo à direita
            — mesma posição dos dashes — pedido do usuário em 21/11/2026. -->
       <div class="linha-chave-busca">
-      <div class="seletor-secao troca-base" id="seletor-secao" data-tela="filtros" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
+      <div class="seletor-secao troca-base" id="seletor-secao" data-tela="filtros" role="tablist" title="Seção ativa (PAC, MONITORAMENTO ou PRAZOS) — o relatório gerado traz PAC e MONITORAMENTO. Atalho: Alt+1 / Alt+2 / Alt+3.">
         <!-- Só no painel de filtros: no lugar da casa (Início), o ícone de
              gráfico de pizza volta pro DASH da base exibida (PAC ou
              MONITORAMENTO) — pedido do usuário em 20/11/2026. Os dashes
@@ -13728,6 +13783,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         <button type="button" class="btn-casa" id="btn-dash-filtros" title="Voltar ao dashboard" aria-label="Voltar ao dashboard"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M11 2v20c-5.07-.5-9-4.79-9-10s3.93-9.5 9-10zm2.03 0v8.99H22c-.47-4.74-4.24-8.52-8.97-8.99zm0 11.01V22c4.74-.47 8.5-4.25 8.97-8.99h-8.97z"></path></svg></button>
         <button type="button" class="ativo" data-secao="PAC" role="tab" aria-selected="true" tabindex="0">PAC<span class="contagem-base"></span></button>
         <button type="button" data-secao="MON" role="tab" aria-selected="false" tabindex="-1">MONITORAMENTO<span class="contagem-base"></span></button>
+        <button type="button" data-secao="PRZ" role="tab" aria-selected="false" tabindex="-1">PRAZOS<span class="contagem-base"></span></button>
       </div>
       <!-- Busca geral digitada, no lugar da lupa da janela de busca de ficha
            — mesmo campo dos dashes — pedido do usuário em 21/11/2026. É o
@@ -13782,6 +13838,8 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   </div>
   <div id="grade"></div>
   <div id="grade-mon"><div class="mon-aviso">Carregando a base do MONITORAMENTO...</div></div>
+  <!-- Grade de filtros da seção CONTROLE DE PRAZOS (montada por controle_prazos.py) -->
+  <div id="grade-prz"><div class="prz-grade-aviso">Carregando a planilha do Controle de Prazos…</div></div>
 </div>
 
 <div id="aviso-inatividade"><div class="caixa">Painel fechado por inatividade.</div></div>
@@ -13937,10 +13995,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
       <!-- 2ª linha do cabeçalho, colada à esquerda — mesma posição exata da
            chave no dash do MONITORAMENTO (ver ra-cabecalho em
            resumo_acoes.py) — pedido do usuário em 20/11/2026. -->
-      <div class="seletor-secao troca-base" data-tela="dash" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
+      <div class="seletor-secao troca-base" data-tela="dash" role="tablist" title="Seção ativa (PAC, MONITORAMENTO ou PRAZOS) — o relatório gerado traz PAC e MONITORAMENTO. Atalho: Alt+1 / Alt+2 / Alt+3.">
         <button type="button" class="btn-casa" id="btn-inicio-dash" title="Início (voltar à tela inicial)" aria-label="Início — voltar à tela inicial"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path></svg></button>
         <button type="button" class="ativo" data-secao="PAC" role="tab" aria-selected="true" tabindex="0">PAC<span class="contagem-base"></span></button>
         <button type="button" data-secao="MON" role="tab" aria-selected="false" tabindex="-1">MONITORAMENTO<span class="contagem-base"></span></button>
+        <button type="button" data-secao="PRZ" role="tab" aria-selected="false" tabindex="-1">PRAZOS<span class="contagem-base"></span></button>
       </div>
       <div class="modal-titulo-botoes">
         <!-- Busca geral digitada, no lugar da lupa que abria a janela de
@@ -18045,12 +18104,15 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   var PLACEHOLDER_BUSCA = {
     PAC: "Buscar em todas as colunas (item, objeto, município, executor, status…)",
     MON: "Buscar em todas as colunas (código, ação, município, executor, objeto…)",
+    PRZ: "Buscar em todas as colunas (órgão, projeto, ação, responsável…)",
   };
   var TITULO_BUSCA = {
     PAC: "Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha do PAC",
     MON: "Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha Ações do Cronograma",
+    PRZ: "Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha do Controle de Prazos",
   };
   function textoBuscaDaBaseAtiva() {
+    if (window.baseAtiva === "PRZ") return window.przBuscaAtual ? window.przBuscaAtual() : "";
     if (window.baseAtiva === "MON") return window.raBuscaGeralAtual ? window.raBuscaGeralAtual() : "";
     var campoDash = document.getElementById("dash-busca-geral-campo");
     return campoDash ? campoDash.value : "";
@@ -18059,7 +18121,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var campo = document.getElementById("filtros-busca-geral-campo");
     // (pode ser chamada pelo contador antes destas constantes existirem)
     if (!campo || !PLACEHOLDER_BUSCA) return;
-    var base = window.baseAtiva === "MON" ? "MON" : "PAC";
+    var base = window.baseAtiva === "MON" || window.baseAtiva === "PRZ" ? window.baseAtiva : "PAC";
     campo.placeholder = PLACEHOLDER_BUSCA[base];
     campo.title = TITULO_BUSCA[base];
     // Não sobrescreve o que a pessoa está digitando agora.
@@ -18073,7 +18135,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     function aplicar() {
       var texto = campo.value;
       campo.parentNode.classList.toggle("ativo", !!texto.trim());
-      if (window.baseAtiva === "MON") {
+      if (window.baseAtiva === "PRZ") {
+        if (window.przDefinirBusca) window.przDefinirBusca(texto);
+      } else if (window.baseAtiva === "MON") {
         if (window.raDefinirBuscaGeral) window.raDefinirBuscaGeral(texto);
       } else {
         var campoDash = document.getElementById("dash-busca-geral-campo");
@@ -18380,11 +18444,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
     if (ev.key === "1") { ev.preventDefault(); trocarBase("PAC"); }
     else if (ev.key === "2") { ev.preventDefault(); trocarBase("MON"); }
+    else if (ev.key === "3") { ev.preventDefault(); trocarBase("PRZ"); }
   });
 
   function atualizarSeletoresSecao() {
     document.querySelectorAll(".troca-base").forEach(function (container) {
       container.classList.toggle("chave-mon", window.baseAtiva === "MON");
+      container.classList.toggle("chave-prz", window.baseAtiva === "PRZ");
       container.querySelectorAll("button[data-secao]").forEach(function (b) {
         var ativo = b.dataset.secao === window.baseAtiva;
         b.classList.toggle("ativo", ativo);
@@ -18417,10 +18483,15 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     document.querySelectorAll('.troca-base button[data-secao="MON"] .contagem-base').forEach(function (el) {
       el.textContent = nMon ? " (" + nMon + ")" : "";
     });
+    // CONTROLE DE PRAZOS (controle_prazos.py) — 25/11/2026
+    var nPrz = window.przContarFiltros ? window.przContarFiltros() : 0;
+    document.querySelectorAll('.troca-base button[data-secao="PRZ"] .contagem-base').forEach(function (el) {
+      el.textContent = nPrz ? " (" + nPrz + ")" : "";
+    });
     // Selinho do botão flutuante do painel de filtros: filtros da base ativa.
     var fabQtd = document.getElementById("fab-filtros-qtd");
     if (fabQtd) {
-      var nAtiva = window.baseAtiva === "MON" ? nMon : nPac;
+      var nAtiva = window.baseAtiva === "MON" ? nMon : window.baseAtiva === "PRZ" ? nPrz : nPac;
       fabQtd.textContent = nAtiva || "";
       fabQtd.classList.toggle("tem", nAtiva > 0);
     }
@@ -18459,7 +18530,10 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     var fab = document.getElementById("fab-filtros");
     if (!fab) return;
     var topo = null;
-    if (window.baseAtiva === "MON") {
+    if (window.baseAtiva === "PRZ") {
+      var corpoPrz = document.querySelector("#prz-overlay .prz-corpo");
+      if (corpoPrz && corpoPrz.offsetParent !== null) topo = corpoPrz.getBoundingClientRect().top + 10;
+    } else if (window.baseAtiva === "MON") {
       var corpoRa = document.querySelector("#ra-overlay .ra-corpo");
       if (corpoRa && corpoRa.offsetParent !== null) topo = corpoRa.getBoundingClientRect().top + 10;
     } else {
@@ -18487,7 +18561,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   };
   function atualizarCabecalhoFiltros() {
     if (!_tituloFiltrosEl || !_dataFiltrosEl) return;
-    if (window.baseAtiva === "MON") {
+    if (window.baseAtiva === "PRZ") {
+      var cabPrz = window.przCabecalho ? window.przCabecalho() : {titulo: "CONTROLE DE PRAZOS", data: ""};
+      _tituloFiltrosEl.textContent = cabPrz.titulo;
+      _dataFiltrosEl.textContent = cabPrz.data;
+    } else if (window.baseAtiva === "MON") {
       _tituloFiltrosEl.textContent = "AÇÕES EM MONITORAMENTO";
       _dataFiltrosEl.textContent = MON.dados && MON.dados.atualizado_em
         ? "Base Ações do Cronograma atualizada em " + MON.dados.atualizado_em
@@ -18498,8 +18576,11 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
     }
   }
 
+  window.atualizarCabecalhoFiltros = atualizarCabecalhoFiltros;   // controle_prazos.py
+
   function atualizarRotulosLimpar() {
-    var rotulo = "LIMPAR FILTROS (" + (window.baseAtiva === "MON" ? "MONITORAMENTO" : "PAC") + ")";
+    var rotulo = "LIMPAR FILTROS (" + (window.baseAtiva === "MON" ? "MONITORAMENTO"
+      : window.baseAtiva === "PRZ" ? "PRAZOS" : "PAC") + ")";
     [document.getElementById("btn-limpar-tudo"), document.getElementById("dash-limpar"),
      document.getElementById("raLimparBase")].forEach(function (b) {
       if (b) b.textContent = rotulo;
@@ -18509,6 +18590,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // LIMPAR FILTROS: só a base ativa; Shift+clique ("ambas") limpa as duas —
   // "Oferecer limpar as duas" (TAREFA D) — pedido do usuário em 20/11/2026.
   function limparFiltrosBaseAtiva(ambas) {
+    if (window.baseAtiva === "PRZ" && window.przLimpar) window.przLimpar();
     if (ambas || window.baseAtiva === "PAC") limparTodosFiltros();
     if (ambas || window.baseAtiva === "MON") {
       monLimpar();
@@ -18529,6 +18611,16 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   function mostrarDashDaBaseAtiva() {
     var preview = document.getElementById("preview-overlay");
     var ra = document.getElementById("ra-overlay");
+    // CONTROLE DE PRAZOS (terceira base, controle_prazos.py — 25/11/2026):
+    // dash próprio (#prz-overlay); os outros dois ficam ocultos.
+    if (window.baseAtiva !== "PRZ" && window.przFecharDash) window.przFecharDash();
+    if (window.baseAtiva === "PRZ") {
+      basePedidoMon++;
+      preview.style.display = "none";
+      if (ra) { ra.classList.remove("aberto"); ra.setAttribute("aria-hidden", "true"); }
+      if (window.przAbrirDash) window.przAbrirDash();
+      return;
+    }
     if (window.baseAtiva === "MON") {
       preview.style.display = "none";
       if (!window.abrirResumoAcoes) return;
@@ -18575,12 +18667,14 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
   // TAREFA B). Os filtros de cada base continuam vivos nos dois lados
   // (estadoSelecao/MON.sel não são tocados aqui).
   function trocarBase(base, opcoes) {
-    if (base !== "PAC" && base !== "MON") return;
+    if (base !== "PAC" && base !== "MON" && base !== "PRZ") return;
     opcoes = opcoes || {};
     var tela = opcoes.tela || telaAtualDetectada();
     window.baseAtiva = base;
     try { localStorage.setItem(CHAVE_BASE_ATIVA, base); } catch (e) {}
     document.body.classList.toggle("secao-mon", base === "MON");
+    document.body.classList.toggle("secao-prz", base === "PRZ");
+    if (base === "PRZ" && window.przGarantirCarga) window.przGarantirCarga();
     atualizarSeletoresSecao();
     atualizarRotulosLimpar();
     atualizarContadoresBase();
@@ -19272,6 +19366,22 @@ def montar_html_painel(df_base, abrir_monitoramento=False):
         # (window.pywebview ainda não existe) e cair no fetch() de
         # "/api/..." — que não existe numa página file://, e devolve HTML de
         # erro em vez de JSON ("corrija" do usuário em 14/11/2026).
+        # Terceira seção, CONTROLE DE PRAZOS (controle_prazos.py) — pedido do
+        # usuário em 25/11/2026: dash #prz-overlay + grade #grade-prz, logo
+        # depois do HTML do MONITORAMENTO (usa as classes .ra-cabecalho/
+        # .ra-botoes de lá para ter o mesmo cabeçalho).
+        try:
+            injetar += "\n" + _modulo_controle_prazos().HTML_JANELA
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        if abrir_prazos:
+            injetar += (
+                '\n<script>'
+                'if (window.PAC_MODO_WEB || window.pywebview) { window.trocarBase("PRZ", {tela:"dash"}); }'
+                'else { window.addEventListener("pywebviewready", function () { window.trocarBase("PRZ", {tela:"dash"}); }, { once: true }); }'
+                '</script>'
+            )
         if abrir_monitoramento:
             injetar += (
                 '\n<script>'
@@ -19652,6 +19762,20 @@ def _modulo_resumo_acoes():
     import resumo_acoes
     resumo_acoes.configurar(sys.modules[__name__])
     return resumo_acoes
+
+
+def _modulo_controle_prazos():
+    # Seção CONTROLE DE PRAZOS (25/11/2026) — ver controle_prazos.py
+    import controle_prazos
+    return controle_prazos
+
+
+def _api_prazos_dados():
+    return _modulo_controle_prazos().api_dados()
+
+
+def _api_prazos_assinatura():
+    return _modulo_controle_prazos().api_assinatura()
 
 
 def _api_resumo_acoes(filtros=None):
@@ -20330,6 +20454,16 @@ def abrir_interface_filtros(df_base):
             _carregar_tela(
                 "monitoramento", montar_html_painel(df_base, abrir_monitoramento=True))
             return {"ok": True}
+
+        def ir_para_prazos(self):
+            _carregar_tela("prazos", montar_html_painel(df_base, abrir_prazos=True))
+            return {"ok": True}
+
+        def prazos_dados(self):
+            return _api_prazos_dados()
+
+        def prazos_assinatura(self):
+            return _api_prazos_assinatura()
 
     # Envolve TODOS os métodos de APIFiltros em _api_pendente (ver
     # definição acima, perto de _carregar_tela) — pedido do usuário em

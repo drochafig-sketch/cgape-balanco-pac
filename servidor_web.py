@@ -71,6 +71,12 @@ def monitoramento():
     return pac.montar_html_painel(pac.df_original, abrir_monitoramento=True)
 
 
+@app.route("/prazos")
+def prazos():
+    # Terceira seção, CONTROLE DE PRAZOS (controle_prazos.py) — 25/11/2026.
+    return pac.montar_html_painel(pac.df_original, abrir_prazos=True)
+
+
 def _argumentos_da_requisicao():
     # O JS do painel sempre manda a lista de argumentos como um array JSON
     # no corpo do POST (ver chamarAPI/baixarPDF no HTML) — corresponde 1:1
@@ -157,6 +163,10 @@ for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
                  "resumo_acoes_ficha", "resumo_acoes_top30_html"):
     app.add_url_rule("/api/" + _nome_ra, endpoint="api_" + _nome_ra,
                      view_func=_rota_json(getattr(pac, "_api_" + _nome_ra)),
+                     methods=["POST"])
+for _nome_prz in ("prazos_dados", "prazos_assinatura"):
+    app.add_url_rule("/api/" + _nome_prz, endpoint="api_" + _nome_prz,
+                     view_func=_rota_json(getattr(pac, "_api_" + _nome_prz)),
                      methods=["POST"])
 app.add_url_rule(
     "/api/iniciar_geracao", view_func=_rota_json(pac._api_iniciar_geracao), methods=["POST"]

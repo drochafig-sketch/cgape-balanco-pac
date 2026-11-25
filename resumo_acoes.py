@@ -3596,13 +3596,15 @@ HTML_JANELA = r"""
              20/11/2026. Configurada via window.configurarSeletorSecao
              (definida lá, chamada aqui embaixo porque este HTML só existe
              depois daquele <script>). -->
-        <div class="seletor-secao troca-base" data-tela="dash" role="tablist" title="Base ativa (PAC ou MONITORAMENTO) — o relatório gerado sempre traz as duas. Atalho: Alt+1 / Alt+2.">
+        <div class="seletor-secao troca-base" data-tela="dash" role="tablist" title="Seção ativa (PAC, MONITORAMENTO ou PRAZOS) — o relatório gerado traz PAC e MONITORAMENTO. Atalho: Alt+1 / Alt+2 / Alt+3.">
           <!-- Início (casa) dentro da chave, à esquerda (casa | PAC |
                MONITORAMENTO), no lugar do "← Início" solto — pedido do
                usuário em 20/11/2026. -->
           <button type="button" class="btn-casa" id="raInicio" title="Início (voltar à tela inicial)" aria-label="Início — voltar à tela inicial"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path></svg></button>
           <button type="button" data-secao="PAC" role="tab" aria-selected="false" tabindex="-1">PAC<span class="contagem-base"></span></button>
           <button type="button" class="ativo" data-secao="MON" role="tab" aria-selected="true" tabindex="0">MONITORAMENTO<span class="contagem-base"></span></button>
+          <!-- Terceira seção: CONTROLE DE PRAZOS (controle_prazos.py) — 25/11/2026 -->
+          <button type="button" data-secao="PRZ" role="tab" aria-selected="false" tabindex="-1">PRAZOS<span class="contagem-base"></span></button>
         </div>
         <!-- Busca geral logo à direita da chave casa | PAC | MONITORAMENTO,
              igual nos três cabeçalhos (dash do PAC, este e painel de
