@@ -515,7 +515,24 @@ def _ra_conclusao_andamento(df):
     sem = a[d.isna()]
     if len(sem):
         add("Sem data", "não informada", sem, "sem", "sem")
-    return {"colunas": cols, "n": int(len(a))}
+    trimestral = cols
+    # Visão semestral (chave "Semestral" do card, como na Previsão de
+    # Conclusão da Fase do PAC — pedido do usuário em 25/11/2026): vencidas,
+    # até dezembro do ano atual, 1º semestre do seguinte e, por último (em
+    # vermelho), depois disso junto com as sem data.
+    cols = []
+    ano = hoje.year
+    fim_ano = pd.Timestamp(ano, 12, 31)
+    fim_sem = pd.Timestamp(ano + 1, 6, 30)
+    if len(venc):
+        add("Vencidas", "prazo já passou", venc, "venc", "venc")
+    add(f"Até dez/{ano}", "a partir de hoje", fut[fut["_d_entrega"] <= fim_ano],
+        f"{hoje:%Y-%m-%d}|{fim_ano:%Y-%m-%d}", "semestre")
+    add(f"1º sem/{ano + 1}", "jan a jun", fut[(fut["_d_entrega"] > fim_ano) & (fut["_d_entrega"] <= fim_sem)],
+        f"{fim_ano + pd.Timedelta(days=1):%Y-%m-%d}|{fim_sem:%Y-%m-%d}", "semestre")
+    add(f"Após jun/{ano + 1}", "e sem data", pd.concat([fut[fut["_d_entrega"] > fim_sem], sem]),
+        f"apos|{fim_sem + pd.Timedelta(days=1):%Y-%m-%d}", "apos")
+    return {"colunas": trimestral, "semestre": cols, "n": int(len(a))}
 
 
 def _ra_linha_tempo(df, eixos):
@@ -619,6 +636,9 @@ def api_cards(filtros=None, alvo=None):
                 df = df[d < hoje]
             elif alvo["pe"] == "sem":
                 df = df[d.isna()]
+            elif alvo["pe"].startswith("apos|"):
+                # coluna "Após jun/AAAA e sem data" da visão semestral
+                df = df[d.isna() | (d >= pd.Timestamp(alvo["pe"][5:]))]
             else:
                 ini, _, fim = alvo["pe"].partition("|")
                 marca = d >= pd.Timestamp(ini)
@@ -3907,6 +3927,15 @@ HTML_JANELA = r"""
     border-top:1px solid var(--cor-card-elevado); padding-top:4px; white-space:nowrap; }
   .ra-conc-rot small { display:block; font-size:10.5px; font-weight:400; color:var(--cor-texto-terciario); }
   .ra-conc-venc .ra-conc-rot { color:#D9822B; }
+  /* chave Semestral à direita do título e coluna "Após jun/AAAA e sem data"
+     em vermelho, como o último semestre do PAC (25/11/2026) */
+  .ra-conc-tit { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .ra-conc-chave { flex-shrink:0; letter-spacing:0; }
+  /* na cor do MONITORAMENTO (a chave do PAC usa o azul do PAC) */
+  .ra-conc .ra-conc-chave input:checked + .chave-financeiro-trilho { background:var(--cor-acento-secundario); border-color:var(--cor-acento-secundario); }
+  .ra-conc .ra-conc-chave:hover .chave-financeiro-trilho { border-color:var(--cor-acento-secundario); }
+  .ra-conc .ra-conc-chave input:focus-visible + .chave-financeiro-trilho { outline-color:var(--cor-acento-secundario); }
+  .ra-conc-apos .ra-conc-area i { background:#D64545; }
   /* Linha do tempo eixo > executor (24/11/2026) */
   .ra-lt-linha { display:grid; grid-template-columns:minmax(190px, 24%) 1fr; gap:12px; align-items:center;
     padding:2px 4px; border-radius:6px; }
@@ -4051,6 +4080,8 @@ HTML_JANELA = r"""
   /* Busca geral no cabeçalho, ao lado de "← Início" — fica sempre visível
      (pedido do usuário em 18/11/2026). */
   .ra-busca-geral { position:relative; flex:1 1 320px; max-width:620px; min-width:180px; }
+  /* botões alinhados à direita, com espaço depois da busca (25/11/2026) */
+  .ra-botoes .ra-busca-geral { margin-right:auto; }
   #raBuscaGeral { width:100%; box-sizing:border-box; background:var(--cor-card);
     color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado);
     border-radius:8px; padding:7px 36px 7px 38px; font-size:13px; font-family:inherit;
@@ -4495,25 +4526,57 @@ HTML_JANELA = r"""
   // ---- Previsão de conclusão das obras em andamento (24/11/2026), dentro
   // do card Total do recorte: colunas por trimestre (Python:
   // _ra_conclusao_andamento); clique abre os cards das obras do período.
-  var raConcCols = [];
-  function raConclusaoHtml(c) {
-    raConcCols = (c && c.colunas) || [];
-    if (!raConcCols.length) return '<div class="ra-conc"><div class="ra-conc-tit">PREVISÃO DE CONCLUSÃO · OBRAS EM ANDAMENTO</div>' +
-      '<div class="ra-graf-vazio">Nenhuma obra em andamento no recorte</div></div>';
+  var raConcCols = [], raConcDados = null;
+  // chave "Semestral" (como a do PAC — pedido do usuário em 25/11/2026);
+  // a escolha vale até fechar o programa e sobrevive à troca de filtros
+  var raConcSemestral = false;
+  function raConcGrafHtml() {
+    var c = raConcDados || {};
+    raConcCols = (raConcSemestral && c.semestre ? c.semestre : c.colunas) || [];
     var max = Math.max.apply(null, raConcCols.map(function (x) { return x.qtd; })) || 1;
-    return '<div class="ra-conc"><div class="ra-conc-tit">PREVISÃO DE CONCLUSÃO · OBRAS EM ANDAMENTO ' +
-      '<small>' + raQtdTxt(c.n).replace("ações", "obras").replace("ação", "obra") +
-      ' · data de entrega da obra, por trimestre · clique numa coluna para ver as obras</small></div>' +
-      '<div class="ra-conc-graf">' + raConcCols.map(function (x, i) {
+    return raConcCols.map(function (x, i) {
         var h = x.qtd ? Math.max(3, Math.round(x.qtd / max * 100)) : 0;
         return '<div class="ra-conc-col ra-conc-' + x.tipo + (x.qtd ? " ra-conc-clic" : "") + '" data-ci="' + i + '"' +
           (x.qtd ? ' tabindex="0" role="button"' : '') + '>' +
           '<div class="ra-conc-area"><span class="ra-conc-n">' + (x.qtd || "") + '</span>' +
           '<i style="height:' + h + '%"></i></div>' +
           '<div class="ra-conc-rot">' + esc(x.rot) + '<small>' + esc(x.sub) + '</small></div></div>';
-      }).join("") + '</div></div>';
+      }).join("");
+  }
+  function raConcSub() {
+    return raQtdTxt((raConcDados || {}).n).replace("ações", "obras").replace("ação", "obra") +
+      ' · data de entrega da obra, ' + (raConcSemestral ? 'por semestre' : 'por trimestre') +
+      ' · clique numa coluna para ver as obras';
+  }
+  function raConclusaoHtml(c) {
+    raConcDados = c || null;
+    raConcCols = (c && c.colunas) || [];
+    if (!raConcCols.length) return '<div class="ra-conc"><div class="ra-conc-tit">PREVISÃO DE CONCLUSÃO · OBRAS EM ANDAMENTO</div>' +
+      '<div class="ra-graf-vazio">Nenhuma obra em andamento no recorte</div></div>';
+    var chave = c.semestre ? '<label class="chave-financeiro ra-conc-chave" title="Alterna entre a visão por trimestre e a visão semestral: ' +
+        'vencidas, até dezembro do ano atual, 1º semestre do ano seguinte e depois disso (junto com as obras sem data).">' +
+        '<span class="chave-financeiro-texto">Semestral</span>' +
+        '<input type="checkbox" class="ra-conc-semestral" role="switch"' + (raConcSemestral ? ' checked' : '') + '>' +
+        '<span class="chave-financeiro-trilho"><span class="chave-financeiro-bolinha"></span></span></label>' : '';
+    return '<div class="ra-conc"><div class="ra-conc-tit"><span>PREVISÃO DE CONCLUSÃO · OBRAS EM ANDAMENTO ' +
+      '<small class="ra-conc-sub">' + raConcSub() + '</small></span>' + chave + '</div>' +
+      '<div class="ra-conc-graf">' + raConcGrafHtml() + '</div></div>';
   }
   function raLigarConclusao(raiz) {
+    var chave = raiz.querySelector(".ra-conc-semestral");
+    if (chave && !chave.dataset.ligada) {
+      chave.dataset.ligada = "1";
+      chave.addEventListener("change", function () {
+        raConcSemestral = chave.checked;
+        var conc = chave.closest(".ra-conc");
+        conc.querySelector(".ra-conc-graf").innerHTML = raConcGrafHtml();
+        conc.querySelector(".ra-conc-sub").textContent = raConcSub();
+        raLigarColunasConclusao(conc);
+      });
+    }
+    raLigarColunasConclusao(raiz);
+  }
+  function raLigarColunasConclusao(raiz) {
     Array.prototype.forEach.call(raiz.querySelectorAll(".ra-conc-col.ra-conc-clic"), function (el) {
       var x = raConcCols[+el.dataset.ci];
       var nome = x.tipo === "tri" ? x.rot + " " + x.sub : x.rot;

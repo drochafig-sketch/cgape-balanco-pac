@@ -12846,6 +12846,9 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False):
      usuário em 21/11/2026. */
   #preview-modal .modal-titulo-botoes { margin-left: 0; flex: 1 1 auto; min-width: 0; }
   .dash-busca-geral { position: relative; flex: 1 1 320px; max-width: 620px; min-width: 180px; }
+  /* Botões do dash (LIMPAR FILTROS ... ACESSO RÁPIDO) alinhados à direita,
+     com espaço entre eles e a busca — pedido do usuário em 25/11/2026 */
+  #dash-busca-geral { margin-right: auto; }
   .busca-geral-campo {
     width: 100%; box-sizing: border-box; background: var(--cor-card);
     color: var(--cor-texto-primario); border: 1px solid var(--cor-card-elevado);
