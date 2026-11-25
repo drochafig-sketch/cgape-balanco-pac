@@ -353,7 +353,13 @@ $script:CopiaCommit = ""
 function Preparar-Copia([string]$commit) {
     # copia limpa do que esta no GitHub: uma "worktree" do Git (preserva os
     # nomes com acento -- o tar do Windows os corrompia), sem nada local
-    if ($script:CopiaCommit -eq $commit -and (Test-Path (Join-Path $Espelho ".git"))) { return $true }
+    # Mesmo commit ja preparado: so atualiza o .exe (antes voltava direto e o
+    # .exe novo, gerado sem commit novo, nao chegava ao COAHS -- 25/11/2026)
+    if ($script:CopiaCommit -eq $commit -and (Test-Path (Join-Path $Espelho ".git"))) {
+        $exe = Join-Path $Repo $NomeExe
+        if (Test-Path $exe) { Copy-Item $exe (Join-Path $Espelho $NomeExe) -Force }
+        return $true
+    }
     if (-not (Test-Path (Join-Path $Espelho ".git"))) {
         if (Test-Path $Espelho) { Remove-Item $Espelho -Recurse -Force }
         G worktree prune | Out-Null
