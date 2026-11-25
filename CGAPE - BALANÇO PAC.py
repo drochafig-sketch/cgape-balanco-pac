@@ -36,7 +36,8 @@ import threading
 import time
 import unicodedata
 import webbrowser
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from reportlab.lib.utils import simpleSplit
 import numpy as np
 import pandas as pd
 import openpyxl
@@ -1905,6 +1906,236 @@ class QRCodeLink(Flowable):
                           self.tamanho), relative=1, thickness=0)
 
 
+# --- Elementos gráficos da ficha da tela levados ao PDF (pedido do usuário
+# em 25/11/2026): velocímetro do AVANÇO FÍSICO ao lado do título e a LINHA DO
+# TEMPO dos PRAZOS — mesmo desenho do JS_FICHA_VISUAL (cores do CSS claro).
+_FV_AZUL = colors.HexColor("#0B5CAD")
+_FV_TRILHO = colors.HexColor("#D8DCE3")
+_FV_TEXTO = colors.HexColor("#0B1F3F")
+_FV_ROTULO = colors.HexColor("#5B6576")
+_FV_HOJE = colors.HexColor("#E68A00")
+_FV_ALERTA = colors.HexColor("#D64545")
+_FV_VERDE = colors.HexColor("#2E7D32")
+_FV_MARCOS = [
+    ("aviso_licitacao", "Aviso de Licitação"), ("abertura_licitacao", "Abertura de Licitação"),
+    ("previsao_contratacao", "Previsão de Contratação"), ("emissao_os", "Emissão de O.S."),
+    ("conclusao_original", "Conclusão Original"), ("prazo_atual", "Previsão de Conclusão Atual"),
+    ("prazo_fase", "Prazo de Conclusão da Fase"),
+]
+
+
+def _fv_data(valor):
+    # "dd/mm/aa", "dd/mm/aaaa" ou "aaaa-mm-dd" -> date (igual ao data() do JS)
+    s = str(valor or "").strip()
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})$", s)
+    try:
+        if m:
+            a = int(m.group(3))
+            return date(a + 2000 if a < 100 else a, int(m.group(2)), int(m.group(1)))
+        m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
+        if m:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+    return None
+
+
+def _fv_duracao(dias):
+    dias = round(abs(dias))
+    if dias == 0:
+        return "mesmo dia"
+    if dias < 45:
+        return f"{dias} dia" if dias == 1 else f"{dias} dias"
+    meses = round(dias / 30.4375)
+    if meses < 12:
+        return f"{meses} mês" if meses == 1 else f"{meses} meses"
+    anos, r = divmod(meses, 12)
+    txt = f"{anos} ano" if anos == 1 else f"{anos} anos"
+    if r:
+        txt += f" e {r} mês" if r == 1 else f" e {r} meses"
+    return txt
+
+
+def _fv_pct(valor):
+    s = str(valor if valor is not None else "").replace("%", "").strip()
+    if not s:
+        return None
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        return max(0.0, min(100.0, float(s)))
+    except ValueError:
+        return None
+
+
+def _fv_hoje():
+    try:
+        return agora_bahia().date()
+    except Exception:
+        return date.today()
+
+
+class GaugeAvancoFicha(Flowable):
+    # Velocímetro do avanço físico (arco de 250°, verde sobre trilho cinza,
+    # percentual no centro e "AVANÇO FÍSICO" embaixo), como no card.
+    def __init__(self, valor, lado=56):
+        Flowable.__init__(self)
+        self.valor = _fv_pct(valor)
+        self.lado = lado
+        self.width = lado + 16
+        self.height = lado + 6
+
+    def draw(self):
+        c = self.canv
+        lado = self.lado
+        cx, cy = self.width / 2, 6 + lado / 2
+        r = lado * 32.06 / 76
+        if self.valor is None:
+            c.setFont(FONTE_PADRAO_NEGRITO, 7)
+            c.setFillColor(colors.HexColor("#8C8C8C"))
+            for i, t in enumerate(("Avanço", "não", "informado")):
+                c.drawCentredString(cx, cy + 8 - i * 9, t)
+            return
+        c.saveState()
+        c.setLineCap(1)
+        c.setLineWidth(lado * 9.88 / 76)
+        for cor, extensao in ((_FV_TRILHO, -250), (_FV_VERDE, -250 * self.valor / 100)):
+            if cor is _FV_VERDE and self.valor <= 0.5:
+                continue
+            c.setStrokeColor(cor)
+            p = c.beginPath()
+            p.arc(cx - r, cy - r, cx + r, cy + r, startAng=215, extent=extensao)
+            c.drawPath(p, stroke=1, fill=0)
+        c.setFillColor(_FV_TEXTO)
+        c.setFont(FONTE_PADRAO_NEGRITO, lado * 0.25)
+        c.drawCentredString(cx, cy - lado * 0.08, f"{round(self.valor)}%")
+        c.setFillColor(_FV_ROTULO)
+        c.setFont(FONTE_PADRAO_NEGRITO, 6.5)
+        c.drawCentredString(cx, 1, "AVANÇO FÍSICO")
+        c.restoreState()
+
+
+def _fv_grupos_marcos(dados, alertas=()):
+    # Marcos com data agrupados por dia (na ordem do processo em caso de
+    # empate) + lista dos marcos sem data — como o linhaDoTempo do JS.
+    grupos, sem_data = {}, []
+    for ordem, (chave, rotulo) in enumerate(_FV_MARCOS):
+        dt = _fv_data(dados.get(chave))
+        alerta = chave in alertas
+        if not dt:
+            sem_data.append((rotulo, str(dados.get(chave) or "").strip(), alerta))
+            continue
+        g = grupos.setdefault(dt, {"dt": dt, "rots": [], "alerta": False, "ordem": ordem})
+        g["rots"].append(rotulo)
+        g["alerta"] = g["alerta"] or alerta
+    return sorted(grupos.values(), key=lambda g: (g["dt"], g["ordem"])), sem_data
+
+
+def _fv_resumo_tempo(dados):
+    # Texto ao lado do título PRAZOS ("Do primeiro ao último marco: ...")
+    ts = [d for d in (_fv_data(dados.get(k)) for k, _ in _FV_MARCOS) if d]
+    if not ts:
+        return ""
+    hoje, ini, fim = _fv_hoje(), min(ts), max(ts)
+    partes = []
+    if fim > ini:
+        partes.append(f"Do primeiro ao último marco: <b>{_fv_duracao((fim - ini).days)}</b>")
+    if hoje < ini:
+        partes.append(f"Hoje: faltam <b>{_fv_duracao((ini - hoje).days)}</b> para o primeiro marco")
+    elif hoje > fim:
+        partes.append(f"Hoje: <b>{_fv_duracao((hoje - fim).days)}</b> depois do último marco")
+    return " · ".join(partes)
+
+
+class LinhaDoTempoFicha(Flowable):
+    # Linha do tempo dos PRAZOS: trechos proporcionais à duração (com um
+    # mínimo pra caber os rótulos), duração escrita em cada trecho, marcos
+    # passados cheios e futuros vazados, alerta do QC em vermelho e a marca
+    # tracejada de HOJE com quanto falta para o próximo marco.
+    MARGEM = 38
+    ROTULO = 72
+    TOPO = 34
+
+    def __init__(self, grupos, largura):
+        Flowable.__init__(self)
+        self.grupos = grupos
+        self.width = largura
+        self.hoje = _fv_hoje()
+        self.linhas = []
+        for g in grupos:
+            linhas = []
+            for r in g["rots"]:
+                linhas += simpleSplit(r.upper(), FONTE_PADRAO_NEGRITO, 6, self.ROTULO)
+            self.linhas.append(linhas)
+        maior = max((len(l) for l in self.linhas), default=0)
+        self.height = self.TOPO + 8 + 12 + maior * 7 + 4
+
+    def _posicoes(self):
+        n = len(self.grupos)
+        if n == 1:
+            return [self.width / 2]
+        util = self.width - 2 * self.MARGEM
+        segs = n - 1
+        base = min(self.ROTULO + 4, util / segs)
+        dias = [max(1, (self.grupos[i + 1]["dt"] - self.grupos[i]["dt"]).days) for i in range(segs)]
+        sobra = util - base * segs
+        xs = [self.MARGEM]
+        for d in dias:
+            xs.append(xs[-1] + base + sobra * d / sum(dias))
+        return xs
+
+    def draw(self):
+        c = self.canv
+        xs = self._posicoes()
+        y = self.height - self.TOPO - 8
+        c.saveState()
+        for i in range(len(self.grupos) - 1):
+            g, prox = self.grupos[i], self.grupos[i + 1]
+            x0, x1 = xs[i], xs[i + 1]
+            total = (prox["dt"] - g["dt"]).days or 1
+            p = max(0.0, min(1.0, (self.hoje - g["dt"]).days / total))
+            c.setLineWidth(3)
+            c.setLineCap(1)
+            if p < 1:
+                c.setStrokeColor(_FV_TRILHO)
+                c.line(x0, y, x1, y)
+            if p > 0:
+                c.setStrokeColor(_FV_AZUL)
+                c.line(x0, y, x0 + (x1 - x0) * p, y)
+            c.setFillColor(_FV_AZUL)
+            c.setFont(FONTE_PADRAO_NEGRITO, 7.5)
+            c.drawCentredString((x0 + x1) / 2, y + 6, _fv_duracao((prox["dt"] - g["dt"]).days))
+            if g["dt"] < self.hoje < prox["dt"]:
+                xh = x0 + (x1 - x0) * p
+                c.setStrokeColor(_FV_HOJE)
+                c.setLineWidth(1.2)
+                c.setDash(2.5, 2)
+                c.line(xh, y - 4, xh, y + 16)
+                c.setDash()
+                c.setFillColor(_FV_HOJE)
+                c.setFont(FONTE_PADRAO_NEGRITO, 6.5)
+                c.drawCentredString(xh, y + 36, "HOJE")
+                c.setFont(FONTE_PADRAO_NEGRITO, 6.5)
+                c.drawCentredString(xh, y + 28, f"faltam {_fv_duracao((prox['dt'] - self.hoje).days)}")
+                c.setFont(FONTE_PADRAO, 5.8)
+                c.drawCentredString(xh, y + 20.5, "p/ o próximo marco")
+        for g, x, linhas in zip(self.grupos, xs, self.linhas):
+            passado = g["dt"] <= self.hoje
+            cor = _FV_ALERTA if g["alerta"] else _FV_AZUL
+            c.setLineWidth(1.8)
+            c.setStrokeColor(cor)
+            c.setFillColor(cor if passado else colors.white)
+            c.circle(x, y, 4.2, stroke=1, fill=1)
+            c.setFillColor(_FV_TEXTO)
+            c.setFont(FONTE_PADRAO_NEGRITO, 8.5)
+            c.drawCentredString(x, y - 16, g["dt"].strftime("%d/%m/%Y"))
+            c.setFillColor(_FV_ALERTA if g["alerta"] else _FV_ROTULO)
+            c.setFont(FONTE_PADRAO_NEGRITO, 6)
+            for k, linha in enumerate(linhas):
+                c.drawCentredString(x, y - 24 - k * 7, linha)
+        c.restoreState()
+
+
 @functools.lru_cache(maxsize=4096)
 def qr_compacto(url):
     # QR Code do link em formato compacto pra Ficha Cadastral da tela e da
@@ -2404,17 +2635,55 @@ def gerar_pdf_ficha_acao(dados, caminho):
         conteudo.setStyle(TableStyle(estilo_cel))
         return conteudo
 
-    elementos = [
-        Paragraph(str(dados.get("objeto") or "Ficha Cadastral"),
-                  ficha_pdf_titulo_style),
-        Paragraph(
-            f"PAC - Ficha Cadastral da Ação — Item {dados.get('item', '')}", ficha_pdf_subtitulo_style),
-        Spacer(1, 10),
-    ]
+    # Título + subtítulo à esquerda e o velocímetro do AVANÇO FÍSICO à
+    # direita (pedido do usuário em 25/11/2026, como no card da tela).
+    gauge = GaugeAvancoFicha(dados.get("avanco"))
+    cabecalho = Table(
+        [[[Paragraph(str(dados.get("objeto") or "Ficha Cadastral"), ficha_pdf_titulo_style),
+           Paragraph(f"PAC - Ficha Cadastral da Ação — Item {dados.get('item', '')}",
+                     ficha_pdf_subtitulo_style)],
+          gauge]],
+        colWidths=[largura_util - gauge.width, gauge.width],
+    )
+    cabecalho.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (0, 0), "MIDDLE"), ("VALIGN", (1, 0), (1, 0), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    elementos = [cabecalho, Spacer(1, 10)]
     for secao in _definicao_secoes_ficha():
         # Cada seção (título + todos os campos dela) fica agrupada num
         # KeepTogether — se não couber no resto da página atual, a seção
         # INTEIRA passa pra próxima, em vez de quebrar no meio dela.
+        if secao["titulo"] == "PRAZOS":
+            # PRAZOS em linha do tempo (pedido do usuário em 25/11/2026),
+            # com o total ao lado do título, como na ficha da tela.
+            grupos, sem_data = _fv_grupos_marcos(dados, campos_alerta)
+            resumo = (_fv_resumo_tempo(dados)
+                      .replace("<b>", f'<font name="{FONTE_PADRAO_NEGRITO}" size="9" color="#0B1F3F">')
+                      .replace("</b>", "</font>"))
+            titulo = secao["titulo"] + (
+                f'<font name="{FONTE_PADRAO}" size="8" color="#5B6576">&nbsp;&nbsp;&nbsp;{resumo}</font>'
+                if resumo else "")
+            flu_secao = [Paragraph(titulo, ficha_pdf_secao_titulo_style), Spacer(1, 2)]
+            if grupos:
+                flu_secao.append(LinhaDoTempoFicha(grupos, largura_util))
+            else:
+                flu_secao.append(Paragraph("Nenhum prazo com data informada.", ficha_pdf_valor_vazio_style))
+            if sem_data:
+                from xml.sax.saxutils import escape
+                chips = " · ".join(
+                    (f'<font color="#D64545">{escape(r)}</font>' if a else escape(r))
+                    + (f" <i>({escape(t)})</i>" if t else "")
+                    for r, t, a in sem_data)
+                flu_secao += [Spacer(1, 4), Paragraph(
+                    f'<font name="{FONTE_PADRAO_NEGRITO}">SEM DATA:</font> {chips}',
+                    ficha_pdf_qr_legenda_style)]
+            flu_secao.append(Spacer(1, 8))
+            # logo abaixo do cabeçalho com o avanço físico, antes de
+            # IDENTIFICAÇÃO — como na ficha da tela (pedido de 25/11/2026)
+            elementos.insert(2, KeepTogether(flu_secao))
+            continue
         flu_secao = [
             Paragraph(secao["titulo"], ficha_pdf_secao_titulo_style), Spacer(1, 3)]
         num_colunas = secao.get("colunas") or (1 if secao.get("largo") else 3)
