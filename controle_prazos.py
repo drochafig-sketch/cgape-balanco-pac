@@ -6,19 +6,23 @@ prazos" (app.py / dados.py / mapa_html.py), com o layout e o design system
 do PAC e do MONITORAMENTO e a cor VERMELHA (identidade_visual.VERMELHO) nos
 destaques e contornos da seção.
 
-Dados: a planilha que a equipe edita à mão
+Dados: desde 25/11/2026 as ações são cadastradas no PRÓPRIO SISTEMA (ver
+"CADASTRO NO PRÓPRIO SISTEMA" abaixo): arquivo "Controle de Prazos -
+dados.json" na pasta de rede ...\\PAUTAS REUNIÕES, editado pela tela (só a
+Silvana; os demais visualizam). A planilha antiga
     ...\\PAUTAS REUNIÕES\\Controle de Prazos - Pauta Governador (Portos e Transporte).xlsx
-lida direto (aba "Controle de Prazos", colunas pelo nome do cabeçalho). A cada
-leitura bem-sucedida uma cópia de reserva vai para %LOCALAPPDATA%\\CGAPE, usada
-quando a original não está acessível (rede fora). O alerta (Vencido / Crítico
-/ Atenção / OK / Sem data / Concluído) é recalculado no navegador a partir de
-Data Prazo + Status, com a regra da aba "Resumo e Legenda" da planilha.
+só serve para a importação inicial. Cópia local de reserva em
+%LOCALAPPDATA%\\CGAPE, usada (só leitura) quando a rede não está acessível.
+O alerta (Vencido / Crítico / Atenção / OK / Sem data / Concluído) é
+recalculado no navegador a partir de Data Prazo + Status, com a regra da aba
+"Resumo e Legenda" da planilha antiga.
 
 Peças:
-  - api_dados() / api_assinatura(): dados da seção e "assinatura" (data de
-    modificação) da planilha, para o dash se atualizar sozinho quando ela é
-    salva — registradas em "CGAPE - BALANÇO PAC.py" (_api_prazos_*, classe da
-    API do pywebview) e em servidor_web.py;
+  - api_dados() / api_assinatura(): dados da seção e "assinatura" (revisão
+    do cadastro), para o dash se atualizar sozinho quando outra máquina grava;
+    api_salvar() / api_excluir() / planilha_exportacao_bytes(): cadastro e
+    Excel de consulta — registradas em "CGAPE - BALANÇO PAC.py" (_api_prazos_*,
+    classe da API do pywebview) e em servidor_web.py;
   - HTML_JANELA: dash (#prz-overlay) + grade de filtros (#grade-prz, montada
     dentro do painel de filtros #app) + CSS + JS, injetado no fim do painel
     logo depois do HTML de resumo_acoes.py.
@@ -112,7 +116,24 @@ def _mapear_colunas(cabecalho) -> dict:
     return indices
 
 
-def ler_registros(caminho_xlsx: str) -> list[dict]:
+def ler_registros(caminho_xlsx: str, padroes: bool = True) -> list[dict]:
+    """Ações da planilha. padroes=False: campos vazios ficam vazios (usado
+    na importação para o cadastro do sistema, que aplica os rótulos padrão
+    só na hora de mostrar)."""
+    regs = _ler_registros_planilha(caminho_xlsx)
+    return [_com_padroes(r) for r in regs] if padroes else regs
+
+
+def _com_padroes(r: dict) -> dict:
+    r = dict(r)
+    r["ministerio"] = r.get("ministerio") or "Sem órgão definido"
+    r["eixo"] = r.get("eixo") or "Sem eixo"
+    r["projeto"] = r.get("projeto") or "Sem projeto/frente"
+    r["status"] = r.get("status") or "A definir"
+    return r
+
+
+def _ler_registros_planilha(caminho_xlsx: str) -> list[dict]:
     wb = openpyxl.load_workbook(caminho_xlsx, data_only=True, read_only=True)
     try:
         ws = wb[ABA_DADOS] if ABA_DADOS in wb.sheetnames else wb.worksheets[0]
@@ -137,13 +158,13 @@ def ler_registros(caminho_xlsx: str) -> list[dict]:
         ids_usados.add(id_reg)
         registros.append({
             "id": id_reg,
-            "ministerio": _texto(reg.get("ministerio")) or "Sem órgão definido",
-            "eixo": _texto(reg.get("eixo")) or "Sem eixo",
-            "projeto": _texto(reg.get("projeto")) or "Sem projeto/frente",
+            "ministerio": _texto(reg.get("ministerio")),
+            "eixo": _texto(reg.get("eixo")),
+            "projeto": _texto(reg.get("projeto")),
             "descricao": _texto(reg.get("descricao")),
             "prazo_informado": _texto(reg.get("prazo_informado")),
             "data_prazo": _data_iso(reg.get("data_prazo")),
-            "status": _texto(reg.get("status")) or "A definir",
+            "status": _texto(reg.get("status")),
             "responsavel": _texto(reg.get("responsavel")),
             "observacoes": _texto(reg.get("observacoes")),
             "fonte": _texto(reg.get("fonte")),
@@ -159,54 +180,353 @@ def _mtime(caminho):
         return None
 
 
-def data_atualizacao_base():
-    """Data da última gravação da planilha original (ou da reserva)."""
-    m = _mtime(caminho_origem()) or _mtime(caminho_reserva())
-    return dt.datetime.fromtimestamp(m) if m else None
+# =====================================================================
+# CADASTRO NO PRÓPRIO SISTEMA (pedido do usuário em 25/11/2026): a planilha
+# deixa de ser a fonte — as ações são criadas/editadas/excluídas na tela
+# (só pelo .exe, na rede; só a Silvana edita, os demais visualizam — ver
+# acesso.EDITORES_PRAZOS). Os dados ficam num arquivo JSON na MESMA pasta de
+# rede da antiga planilha (todas as máquinas veem a mesma versão):
+#   ...\PAUTAS REUNIÕES\Controle de Prazos - dados.json      (dados)
+#   ...\PAUTAS REUNIÕES\Controle de Prazos - historico.jsonl (quem/quando/o quê)
+#   ...\PAUTAS REUNIÕES\Controle de Prazos - backups\        (cópia a cada gravação)
+# Na 1ª leitura sem o JSON, as ações vêm da planilha antiga (importação única).
+# Cada gravação: trava (arquivo .lock), confere a revisão que a tela tinha
+# (outra máquina pode ter gravado antes), grava num temporário e troca de uma
+# vez (os.replace) — nunca deixa o arquivo pela metade.
+# =====================================================================
+import json
+
+NOME_DADOS = "Controle de Prazos - dados.json"
+NOME_HISTORICO = "Controle de Prazos - historico.jsonl"
+NOME_BACKUPS = "Controle de Prazos - backups"
+MAX_BACKUPS = 60
+CAMPOS_EDITAVEIS = ("ministerio", "eixo", "projeto", "descricao", "prazo_informado",
+                    "data_prazo", "status", "responsavel", "observacoes", "fonte")
+LIMITE_TEXTO = 4000
+
+
+def caminho_dados() -> str:
+    """JSON do cadastro (variável CGAPE_PRAZOS_DADOS troca o caminho)."""
+    return (os.environ.get("CGAPE_PRAZOS_DADOS")
+            or os.path.join(os.path.dirname(caminho_origem()), NOME_DADOS))
+
+
+def _pasta_dados() -> str:
+    return os.path.dirname(caminho_dados())
+
+
+def caminho_reserva_dados() -> str:
+    return os.path.join(os.path.dirname(caminho_reserva()), "controle_prazos_reserva.json")
+
+
+def _planilhas_para_importar():
+    """Planilha antiga, na ordem: original na rede, reserva local, cópia na
+    pasta do programa."""
+    pasta_prog = os.path.dirname(os.path.abspath(__file__))
+    return [p for p in (caminho_origem(), caminho_reserva(), os.path.join(pasta_prog, NOME_PLANILHA))
+            if os.path.isfile(p)]
+
+
+def _ler_json(caminho):
+    for _ in range(TENTATIVAS_LEITURA):
+        try:
+            with open(caminho, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            time.sleep(0.4)
+    raise OSError(f"não foi possível ler {caminho}")
+
+
+def _gravar_json_atomico(caminho, dados):
+    tmp = caminho + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(dados, f, ensure_ascii=False, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, caminho)
+
+
+def _importar_planilha():
+    """Dados iniciais a partir da planilha antiga (ids "linha N" viram números)."""
+    for planilha in _planilhas_para_importar():
+        try:
+            regs = ler_registros(planilha, padroes=False)
+        except Exception:
+            continue
+        usados = {int(r["id"]) for r in regs if str(r["id"]).isdigit()}
+        prox = max(usados or {0}) + 1
+        for r in regs:
+            if not str(r["id"]).isdigit():
+                r["id"] = str(prox)
+                prox += 1
+        return {"revisao": 1, "importado_de": os.path.basename(planilha),
+                "importado_em": dt.datetime.now().strftime("%d/%m/%Y %H:%M"), "itens": regs}
+    return None
+
+
+def _espelhar_reserva(dados):
+    try:
+        os.makedirs(os.path.dirname(caminho_reserva_dados()), exist_ok=True)
+        _gravar_json_atomico(caminho_reserva_dados(), dados)
+    except OSError:
+        pass
 
 
 def _carregar():
-    """(registros, caminho lido, aviso)."""
-    origem = caminho_origem()
-    if os.path.isfile(origem):
-        for _ in range(TENTATIVAS_LEITURA):
-            try:
-                registros = ler_registros(origem)
-                try:
-                    os.makedirs(os.path.dirname(caminho_reserva()), exist_ok=True)
-                    shutil.copy2(origem, caminho_reserva())
-                except OSError:
-                    pass
-                return registros, origem, ""
-            except Exception:
-                time.sleep(1.2)  # o Excel pode estar no meio de um salvamento
-    reserva = caminho_reserva()
-    if os.path.isfile(reserva):
-        aviso = ("não foi possível ler a planilha original agora — exibindo a cópia de reserva"
-                 if os.path.isfile(origem) else
-                 "planilha original não encontrada — exibindo a cópia de reserva")
-        return ler_registros(reserva), reserva, aviso
-    raise FileNotFoundError(f"Planilha do Controle de Prazos não encontrada: {origem}")
+    """(dados, caminho lido, aviso, editavel). editavel = o JSON da rede está
+    acessível (só nele se grava; reserva/planilha são só para leitura)."""
+    principal = caminho_dados()
+    if os.path.isfile(principal):
+        dados = _ler_json(principal)
+        _espelhar_reserva(dados)
+        return dados, principal, "", True
+    if os.path.isdir(_pasta_dados()):
+        # 1ª vez: importa a planilha antiga e cria o cadastro na rede
+        dados = _importar_planilha() or {"revisao": 1, "itens": []}
+        with _Trava():
+            if not os.path.isfile(principal):
+                _gravar_json_atomico(principal, dados)
+                _registrar_historico("importar", "", None, None,
+                                     {"origem": dados.get("importado_de", ""), "acoes": len(dados["itens"])})
+        dados = _ler_json(principal)
+        _espelhar_reserva(dados)
+        return dados, principal, "", True
+    if os.path.isfile(caminho_reserva_dados()):
+        return (_ler_json(caminho_reserva_dados()), caminho_reserva_dados(),
+                "pasta da rede inacessível — exibindo a última cópia (somente leitura)", False)
+    dados = _importar_planilha()
+    if dados:
+        return dados, "", "pasta da rede inacessível — exibindo a planilha antiga (somente leitura)", False
+    raise FileNotFoundError(f"Cadastro do Controle de Prazos não encontrado: {principal}")
 
 
-def api_dados():
+def data_atualizacao_base():
+    """Data da última gravação do cadastro (ou da cópia local)."""
+    m = (_mtime(caminho_dados()) or _mtime(caminho_reserva_dados())
+         or _mtime(caminho_origem()) or _mtime(caminho_reserva()))
+    return dt.datetime.fromtimestamp(m) if m else None
+
+
+def api_dados(pode_editar=False):
     try:
-        registros, caminho, aviso = _carregar()
-        m = _mtime(caminho)
+        dados, caminho, aviso, editavel = _carregar()
+        m = _mtime(caminho) if caminho else None
         return {
             "ok": True,
-            "itens": registros,
+            "itens": [_com_padroes(r) for r in dados.get("itens", [])],
             "aviso": aviso,
             "atualizado_em": dt.datetime.fromtimestamp(m).strftime("%d/%m/%Y às %Hh%Mmin") if m else "",
-            "assinatura": _mtime(caminho_origem()) or m,
-            "arquivo": os.path.basename(caminho_origem()),
+            "assinatura": dados.get("revisao"),
+            "revisao": dados.get("revisao"),
+            "pode_editar": bool(pode_editar and editavel),
+            "editor_sem_rede": bool(pode_editar and not editavel),
+            "opcoes": _opcoes(dados.get("itens", [])),
         }
     except Exception as exc:
-        return {"ok": False, "mensagem": f"Erro ao ler a planilha do Controle de Prazos: {exc}"}
+        return {"ok": False, "mensagem": f"Erro ao ler o Controle de Prazos: {exc}"}
 
 
 def api_assinatura():
-    return {"ok": True, "assinatura": _mtime(caminho_origem()) or _mtime(caminho_reserva())}
+    for caminho in (caminho_dados(), caminho_reserva_dados()):
+        if os.path.isfile(caminho):
+            try:
+                return {"ok": True, "assinatura": _ler_json(caminho).get("revisao")}
+            except OSError:
+                break
+    return {"ok": True, "assinatura": None}
+
+
+def _opcoes(itens):
+    """Valores já usados, para as listas do formulário."""
+    def unicos(chave, base=()):
+        vals = {str(r.get(chave) or "").strip() for r in itens} | set(base)
+        return sorted((v for v in vals if v), key=lambda v: _normalizar(v))
+    return {"ministerio": unicos("ministerio"), "eixo": unicos("eixo"), "projeto": unicos("projeto"),
+            "responsavel": unicos("responsavel"),
+            "status": unicos("status", ("A definir", "Aguardando", "Em andamento", "Concluído"))}
+
+
+class _Trava:
+    """Trava entre máquinas: arquivo .lock criado em modo exclusivo; trava
+    esquecida (programa fechado no meio) expira em 30 s."""
+    def __init__(self, espera=10.0):
+        self.caminho = caminho_dados() + ".lock"
+        self.espera = espera
+        self.fd = None
+
+    def __enter__(self):
+        limite = time.time() + self.espera
+        while True:
+            try:
+                self.fd = os.open(self.caminho, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(self.fd, str(os.getpid()).encode())
+                return self
+            except FileExistsError:
+                idade = time.time() - (_mtime(self.caminho) or time.time())
+                if idade > 30:
+                    try:
+                        os.remove(self.caminho)
+                    except OSError:
+                        pass
+                    continue
+                if time.time() > limite:
+                    raise TimeoutError("outra pessoa está gravando o Controle de Prazos agora — tente de novo")
+                time.sleep(0.25)
+
+    def __exit__(self, *exc):
+        try:
+            os.close(self.fd)
+        finally:
+            try:
+                os.remove(self.caminho)
+            except OSError:
+                pass
+
+
+def _registrar_historico(acao, usuario, id_reg, antes, depois):
+    linha = {"quando": dt.datetime.now().isoformat(timespec="seconds"), "usuario": usuario,
+             "acao": acao, "id": id_reg, "antes": antes, "depois": depois}
+    try:
+        with open(os.path.join(_pasta_dados(), NOME_HISTORICO), "a", encoding="utf-8") as f:
+            f.write(json.dumps(linha, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def _backup():
+    origem = caminho_dados()
+    if not os.path.isfile(origem):
+        return
+    pasta = os.path.join(_pasta_dados(), NOME_BACKUPS)
+    try:
+        os.makedirs(pasta, exist_ok=True)
+        shutil.copy2(origem, os.path.join(pasta, f"dados_{dt.datetime.now():%Y%m%d_%H%M%S_%f}.json"))
+        antigos = sorted(f for f in os.listdir(pasta) if f.startswith("dados_"))
+        for f in antigos[:-MAX_BACKUPS]:
+            os.remove(os.path.join(pasta, f))
+    except OSError:
+        pass
+
+
+def _limpar_item(item: dict) -> dict:
+    limpo = {}
+    for c in CAMPOS_EDITAVEIS:
+        v = item.get(c)
+        v = "" if v is None else " ".join(str(v).split()) if c != "observacoes" else str(v).strip()
+        limpo[c] = v[:LIMITE_TEXTO]
+    d = limpo["data_prazo"]
+    if d:
+        try:
+            limpo["data_prazo"] = dt.date.fromisoformat(d[:10]).isoformat()
+        except ValueError:
+            raise ValueError("data do prazo inválida")
+    else:
+        limpo["data_prazo"] = None
+    if not limpo["descricao"]:
+        raise ValueError("preencha a descrição da ação")
+    if not limpo["projeto"]:
+        raise ValueError("preencha o projeto/frente")
+    return limpo
+
+
+def _alterar(revisao_tela, usuario, nome, funcao):
+    """Aplica `funcao(itens) -> (acao, id, antes, depois)` sob a trava,
+    conferindo a revisão; devolve a resposta da API."""
+    if not os.path.isfile(caminho_dados()):
+        return {"ok": False, "mensagem": "Cadastro do Controle de Prazos inacessível (pasta da rede fora do ar)."}
+    with _Trava():
+        dados = _ler_json(caminho_dados())
+        if revisao_tela is not None and dados.get("revisao") != revisao_tela:
+            return {"ok": False, "conflito": True,
+                    "mensagem": "Os dados foram alterados em outra máquina desde que a tela foi aberta. "
+                                "A tela foi recarregada — confira e grave de novo."}
+        acao, id_reg, antes, depois = funcao(dados["itens"])
+        _backup()
+        dados["revisao"] = int(dados.get("revisao") or 0) + 1
+        dados["alterado_em"] = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
+        dados["alterado_por"] = nome
+        _gravar_json_atomico(caminho_dados(), dados)
+        _espelhar_reserva(dados)
+        _registrar_historico(acao, usuario, id_reg, antes, depois)
+    return {"ok": True, "id": id_reg, "revisao": dados["revisao"]}
+
+
+def api_salvar(item, revisao, usuario, nome):
+    """Cria (sem "id") ou edita (com "id") uma ação."""
+    try:
+        item = item or {}
+        limpo = _limpar_item(item)
+        carimbo = f"{dt.datetime.now():%d/%m/%Y %H:%M} · {nome}"
+
+        def aplicar(itens):
+            id_reg = str(item.get("id") or "").strip()
+            if id_reg:
+                for i, r in enumerate(itens):
+                    if str(r.get("id")) == id_reg:
+                        novo = dict(r, **limpo, ultima_atualizacao=carimbo)
+                        itens[i] = novo
+                        return "editar", id_reg, r, novo
+                raise ValueError("ação não encontrada (pode ter sido excluída em outra máquina)")
+            ids = [int(r["id"]) for r in itens if str(r.get("id", "")).isdigit()]
+            novo = dict(limpo, id=str(max(ids or [0]) + 1), ultima_atualizacao=carimbo,
+                        criado_em=f"{dt.datetime.now():%d/%m/%Y %H:%M}", criado_por=nome)
+            itens.append(novo)
+            return "criar", novo["id"], None, novo
+
+        return _alterar(revisao, usuario, nome, aplicar)
+    except (ValueError, TimeoutError, OSError) as exc:
+        return {"ok": False, "mensagem": str(exc)}
+
+
+def api_excluir(id_reg, revisao, usuario, nome):
+    try:
+        def aplicar(itens):
+            for i, r in enumerate(itens):
+                if str(r.get("id")) == str(id_reg):
+                    itens.pop(i)
+                    return "excluir", str(id_reg), r, None
+            raise ValueError("ação não encontrada (pode ter sido excluída em outra máquina)")
+        return _alterar(revisao, usuario, nome, aplicar)
+    except (ValueError, TimeoutError, OSError) as exc:
+        return {"ok": False, "mensagem": str(exc)}
+
+
+def planilha_exportacao_bytes():
+    """Excel com as ações do cadastro (mesmas colunas da planilha antiga,
+    com Dias e Alerta calculados hoje) — só consulta, não volta para o sistema."""
+    import io
+    from openpyxl.styles import Alignment, Font, PatternFill
+    dados, _c, _a, _e = _carregar()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = ABA_DADOS
+    cab = ["ID", "Ministério/Órgão", "Eixo", "Projeto/Frente", "Descrição", "Prazo informado",
+           "Data prazo (ref.)", "Status", "Responsável", "Dias", "Alerta", "Observações",
+           "Fonte (slide)", "Última atualização"]
+    ws.append(cab)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="C62828")
+        c.alignment = Alignment(vertical="center", wrap_text=True)
+    hoje = dt.date.today()
+    for r in sorted(dados.get("itens", []), key=lambda x: int(x["id"]) if str(x["id"]).isdigit() else 10**9):
+        d = dt.date.fromisoformat(r["data_prazo"]) if r.get("data_prazo") else None
+        concl = _normalizar(r.get("status")).startswith("conclu")
+        dias = (d - hoje).days if d else None
+        alerta = ("Concluído" if concl else "Sem data" if d is None else "Vencido" if dias < 0
+                  else "Crítico" if dias <= 7 else "Atenção" if dias <= 30 else "OK")
+        ws.append([int(r["id"]) if str(r["id"]).isdigit() else r["id"], r.get("ministerio"), r.get("eixo"),
+                   r.get("projeto"), r.get("descricao"), r.get("prazo_informado"), d, r.get("status"),
+                   r.get("responsavel"), None if concl else dias, alerta, r.get("observacoes"),
+                   r.get("fonte"), r.get("ultima_atualizacao")])
+        ws.cell(ws.max_row, 7).number_format = "DD/MM/YYYY"
+    for col, larg in zip("ABCDEFGHIJKLMN", (6, 28, 16, 28, 50, 16, 13, 14, 20, 7, 11, 50, 14, 22)):
+        ws.column_dimensions[col].width = larg
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 # ---- HTML / CSS / JS (injetado no painel antes do </body>) ------------------
@@ -226,17 +546,20 @@ HTML_JANELA = r"""
         <div class="ra-busca-geral prz-busca-geral">
           <input type="search" id="przBuscaGeral" autocomplete="off"
             placeholder="Buscar em todas as colunas (órgão, projeto, ação, responsável…)"
-            title="Mostra só as ações que têm TODAS as palavras digitadas em qualquer coluna da planilha do Controle de Prazos">
+            title="Mostra só as ações que têm TODAS as palavras digitadas em qualquer campo das ações do Controle de Prazos">
           <button type="button" id="przBuscaGeralLimpar" title="Limpar a busca">×</button>
         </div>
         <button type="button" class="btn-inicio" id="przLimparBase" title="Limpar filtros (PRAZOS)">LIMPAR FILTROS (PRAZOS)</button>
+        <!-- cadastro no sistema (25/11/2026): NOVA AÇÃO só para quem edita -->
+        <button type="button" class="prz-btn-nova" id="przNova" hidden title="Cadastrar uma nova ação no Controle de Prazos">+ NOVA AÇÃO</button>
+        <button type="button" id="przExportar" title="Baixa um Excel com as ações cadastradas (só para consulta — a fonte é o sistema)">EXPORTAR EXCEL</button>
         <button type="button" class="botao-tema ra-botao-tema" id="przTema" title="Tema escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
         <span class="prz-relogio" title="Data e hora de agora (os alertas são recalculados ao vivo)"><span>HOJE</span><b id="przRelogio"></b></span>
       </div>
     </div>
     <div class="prz-area">
       <div class="prz-corpo" id="przCorpo">
-        <div class="prz-msg" id="przMsg">Carregando a planilha do Controle de Prazos…</div>
+        <div class="prz-msg" id="przMsg">Carregando o Controle de Prazos…</div>
         <div id="przConteudo" hidden>
           <div class="prz-destaques" id="przDestaques"></div>
           <div class="prz-radar">
@@ -270,6 +593,45 @@ HTML_JANELA = r"""
     </div>
   </div>
   <div class="prz-toast" id="przToast" role="status"></div>
+  <!-- Formulário de cadastro/edição (25/11/2026) -->
+  <div class="prz-form-fundo" id="przFormFundo" aria-hidden="true">
+    <form class="prz-form" id="przForm" role="dialog" aria-modal="true" aria-labelledby="przFormTitulo" novalidate>
+      <div class="prz-form-cab">
+        <h3 id="przFormTitulo">Nova ação</h3>
+        <button type="button" class="prz-form-x" id="przFormFechar" title="Fechar (Esc)" aria-label="Fechar">×</button>
+      </div>
+      <div class="prz-form-corpo">
+        <label class="largo"><span>Descrição da ação <em>*</em></span>
+          <textarea name="descricao" rows="2" required maxlength="4000" placeholder="O que precisa acontecer (ex.: assinatura do convênio…)"></textarea></label>
+        <label>Ministério / Órgão
+          <input name="ministerio" list="przListaMinisterio" autocomplete="off" maxlength="300"></label>
+        <label>Eixo
+          <input name="eixo" list="przListaEixo" autocomplete="off" maxlength="300"></label>
+        <label class="largo"><span>Projeto / Frente <em>*</em></span>
+          <input name="projeto" list="przListaProjeto" autocomplete="off" required maxlength="300"></label>
+        <label>Data do prazo
+          <input name="data_prazo" type="date"></label>
+        <label>Prazo informado (texto original)
+          <input name="prazo_informado" maxlength="300" placeholder="ex.: 2º semestre/2026, a definir…"></label>
+        <label>Status
+          <select name="status" id="przFormStatus"></select></label>
+        <label>Responsável
+          <input name="responsavel" list="przListaResponsavel" autocomplete="off" maxlength="300"></label>
+        <label class="largo">Observações
+          <textarea name="observacoes" rows="4" maxlength="4000"></textarea></label>
+        <label class="largo">Fonte
+          <input name="fonte" maxlength="300" placeholder="ex.: slide da pauta, ofício, reunião de 10/11…"></label>
+      </div>
+      <div class="prz-form-erro" id="przFormErro" role="alert"></div>
+      <div class="prz-form-rodape">
+        <span class="prz-form-dica">* obrigatório · o alerta é calculado pela data do prazo e pelo status</span>
+        <button type="button" class="prz-form-cancelar" id="przFormCancelar">Cancelar</button>
+        <button type="submit" class="prz-form-salvar" id="przFormSalvar">Salvar</button>
+      </div>
+      <datalist id="przListaMinisterio"></datalist><datalist id="przListaEixo"></datalist>
+      <datalist id="przListaProjeto"></datalist><datalist id="przListaResponsavel"></datalist>
+    </form>
+  </div>
 </div>
 <style>
   /* ===== CONTROLE DE PRAZOS (25/11/2026) — mesmo esqueleto do dash do
@@ -492,6 +854,52 @@ HTML_JANELA = r"""
   .prz-painel .campo span { font-size:13.5px; color:var(--cor-texto-primario); white-space:pre-wrap; }
   .prz-painel .contagem-grande { font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--c); }
 
+  /* ---- cadastro no sistema (25/11/2026) ---- */
+  #prz-overlay .ra-botoes > .prz-btn-nova { background:var(--cor-acento-prazos); color:#fff; font-weight:800; }
+  #prz-overlay .ra-botoes > .prz-btn-nova:hover:not(:disabled) { background:var(--cor-acento-prazos-hover); }
+  #prz-overlay .ra-botoes > .prz-btn-nova:disabled { opacity:.45; cursor:not-allowed; }
+  .prz-painel-aviso { margin-top:18px; padding:10px 12px; border-radius:8px; font-size:12.5px; line-height:1.4;
+    border:1px dashed var(--cor-acento-prazos); color:var(--cor-texto-secundario); }
+  .prz-painel-acoes { display:flex; gap:8px; margin-top:18px; padding-top:14px; border-top:1px solid var(--cor-card-elevado); }
+  .prz-painel-acoes button { flex:1; font:inherit; font-size:12.5px; font-weight:800; letter-spacing:.3px; cursor:pointer;
+    border-radius:8px; padding:9px 10px; border:1px solid var(--cor-acento-prazos); }
+  .prz-painel-acoes .editar { background:var(--cor-acento-prazos); color:#fff; }
+  .prz-painel-acoes .editar:hover { background:var(--cor-acento-prazos-hover); }
+  .prz-painel-acoes .excluir { background:transparent; color:var(--cor-acento-prazos-texto); }
+  .prz-painel-acoes .excluir:hover { background:color-mix(in srgb, var(--cor-acento-prazos) 12%, transparent); }
+  .prz-form-fundo { display:none; position:fixed; inset:0; z-index:95; background:rgba(5,10,20,.6);
+    align-items:center; justify-content:center; padding:20px; }
+  .prz-form-fundo.aberto { display:flex; }
+  .prz-form { background:var(--cor-card); color:var(--cor-texto-primario); border-radius:12px; width:min(760px, 100%);
+    max-height:100%; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.45);
+    border-top:4px solid var(--cor-acento-prazos); }
+  .prz-form-cab { display:flex; align-items:center; justify-content:space-between; padding:16px 20px 10px; }
+  .prz-form-cab h3 { margin:0; font-size:18px; font-weight:800; }
+  .prz-form-x { border:none; background:none; font-size:26px; line-height:1; color:var(--cor-texto-secundario); cursor:pointer; }
+  .prz-form-x:hover { color:var(--cor-acento-prazos-texto); }
+  .prz-form-corpo { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; padding:6px 20px 10px; overflow-y:auto; }
+  .prz-form-corpo label { display:flex; flex-direction:column; gap:4px; font-size:11.5px; font-weight:700; letter-spacing:.3px;
+    text-transform:uppercase; color:var(--cor-texto-secundario); }
+  .prz-form-corpo label.largo { grid-column:1 / -1; }
+  .prz-form-corpo label em { color:var(--cor-acento-prazos-texto); font-style:normal; }
+  .prz-form-corpo input, .prz-form-corpo select, .prz-form-corpo textarea { font:inherit; font-size:13.5px; font-weight:400;
+    text-transform:none; letter-spacing:0; color:var(--cor-texto-primario); background:var(--cor-fundo);
+    border:1px solid var(--cor-card-elevado); border-radius:7px; padding:8px 10px; outline:none; resize:vertical; }
+  .prz-form-corpo input:focus, .prz-form-corpo select:focus, .prz-form-corpo textarea:focus { border-color:var(--cor-acento-prazos); }
+  .prz-form-corpo .invalido { border-color:var(--prz-venc); }
+  html[data-tema="escuro"] .prz-form-corpo input[type="date"] { color-scheme:dark; }
+  .prz-form-erro { color:var(--prz-venc); font-size:12.5px; font-weight:700; padding:0 20px; min-height:4px; }
+  .prz-form-erro:empty { display:none; }
+  .prz-form-rodape { display:flex; align-items:center; gap:10px; padding:12px 20px 16px; border-top:1px solid var(--cor-card-elevado); }
+  .prz-form-dica { margin-right:auto; font-size:11.5px; color:var(--cor-texto-terciario); }
+  .prz-form-rodape button { font:inherit; font-size:13px; font-weight:800; border-radius:8px; padding:9px 18px; cursor:pointer; }
+  .prz-form-cancelar { background:transparent; color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado); }
+  .prz-form-cancelar:hover { border-color:var(--cor-acento-prazos); }
+  .prz-form-salvar { background:var(--cor-acento-prazos); color:#fff; border:1px solid var(--cor-acento-prazos); }
+  .prz-form-salvar:hover { background:var(--cor-acento-prazos-hover); }
+  .prz-form-salvar:disabled { opacity:.6; cursor:wait; }
+  @media (max-width:700px) { .prz-form-corpo { grid-template-columns:1fr; } }
+
   .prz-toast { position:fixed; left:50%; bottom:22px; transform:translate(-50%, 20px); opacity:0; pointer-events:none; z-index:90;
     background:var(--cor-acento-prazos); color:#fff; padding:9px 16px; border-radius:999px; font-size:12.5px; font-weight:700;
     box-shadow:var(--sombra-card); transition:opacity .25s, transform .25s; }
@@ -599,7 +1007,10 @@ HTML_JANELA = r"""
   ];
   var CHAVE_STORAGE = "przFiltrosV1";
   var PRZ = {itens: [], carregado: false, carregando: false, assinatura: null, sel: {}, busca: "",
-             visao: "tempo", atualizado: "", aviso: ""};
+             visao: "tempo", atualizado: "", aviso: "",
+             // cadastro no sistema (25/11/2026): revisão do arquivo de dados,
+             // se este usuário edita e as listas de valores do formulário
+             revisao: null, podeEditar: false, opcoes: {}};
   BLOCOS.forEach(function (b) { PRZ.sel[b.chave] = new Set(); });
   function valorCampo(d, chave) {
     if (chave === "alerta") return alertaDe(d);
@@ -657,11 +1068,11 @@ HTML_JANELA = r"""
   function carregar(silencioso) {
     if (PRZ.carregando) return Promise.resolve();
     PRZ.carregando = true;
-    if (!silencioso) document.getElementById("przMsg").textContent = "Carregando a planilha do Controle de Prazos…";
+    if (!silencioso) document.getElementById("przMsg").textContent = "Carregando o Controle de Prazos…";
     return api("prazos_dados").then(function (r) {
       PRZ.carregando = false;
       if (!r || !r.ok) {
-        document.getElementById("przMsg").textContent = (r && (r.mensagem || r.erro)) || "Não foi possível ler a planilha.";
+        document.getElementById("przMsg").textContent = (r && (r.mensagem || r.erro)) || "Não foi possível ler o Controle de Prazos.";
         var g = document.getElementById("grade-prz");
         if (g) g.innerHTML = '<div class="prz-grade-aviso">' + esc(document.getElementById("przMsg").textContent) + "</div>";
         return;
@@ -671,26 +1082,44 @@ HTML_JANELA = r"""
       PRZ.assinatura = r.assinatura;
       PRZ.atualizado = r.atualizado_em || "";
       PRZ.aviso = r.aviso || "";
+      PRZ.revisao = r.revisao;
+      PRZ.podeEditar = !!r.pode_editar;
+      PRZ.opcoes = r.opcoes || {};
+      PRZ.editorSemRede = !!r.editor_sem_rede;
+      if (PRZ.editorSemRede) PRZ.aviso = (PRZ.aviso ? PRZ.aviso + " · " : "") + "edição indisponível fora da rede";
+      // editor fora da rede: o botão aparece DESATIVADO, com o motivo (antes
+      // sumia, e parecia defeito — pedido do usuário em 25/11/2026)
+      var bNova = document.getElementById("przNova");
+      bNova.hidden = !(PRZ.podeEditar || PRZ.editorSemRede);
+      bNova.disabled = !PRZ.podeEditar;
+      bNova.title = PRZ.podeEditar ? "Cadastrar uma nova ação no Controle de Prazos"
+        : "Edição indisponível: esta máquina não acessa a pasta da rede (X:) onde fica o cadastro. Conecte-se à rede e abra de novo.";
       PRZ.carregado = true;
       document.getElementById("przMsg").textContent = "";
       document.getElementById("przConteudo").hidden = false;
-      document.getElementById("przAtualizado").textContent = PRZ.atualizado ? " · base atualizada em " + PRZ.atualizado : "";
+      document.getElementById("przAtualizado").textContent = PRZ.atualizado ? " · cadastro atualizado em " + PRZ.atualizado : "";
       document.getElementById("przAviso").textContent = PRZ.aviso;
       if (window.atualizarCabecalhoFiltros) window.atualizarCabecalhoFiltros();
       renderizarGrade();
       renderizarDash();
       if (window.agendarContadoresBase) window.agendarContadoresBase();
-      if (silencioso && antes !== null && antes !== PRZ.assinatura) {
-        avisar("Planilha atualizada às " + new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"}) +
+      if (silencioso && antes !== null && antes !== PRZ.assinatura && !PRZ.gravouAgora) {
+        avisar("Controle de Prazos atualizado às " + new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"}) +
           " — " + PRZ.itens.length + " ações");
+      }
+      PRZ.gravouAgora = false;
+      // painel aberto: mostra a versão nova da mesma ação (ou fecha, se saiu)
+      if (painel.classList.contains("aberto") && painel._id) {
+        var atual = PRZ.itens.find(function (x) { return String(x.id) === painel._id; });
+        if (atual) abrirPainel(atual); else fecharPainel();
       }
     }).catch(function (e) {
       PRZ.carregando = false;
-      document.getElementById("przMsg").textContent = "Erro ao ler a planilha do Controle de Prazos: " + e;
+      document.getElementById("przMsg").textContent = "Erro ao ler o Controle de Prazos: " + e;
     });
   }
-  // Vigia: a cada 8 s (só com a seção PRAZOS ativa) confere a data de
-  // gravação da planilha e, se mudou, relê sem perder aba, busca e filtros.
+  // Vigia: a cada 8 s (só com a seção PRAZOS ativa) confere a revisão do
+  // cadastro e, se outra máquina gravou, relê sem perder aba, busca e filtros.
   setInterval(function () {
     if (window.baseAtiva !== "PRZ" || !PRZ.carregado || PRZ.carregando) return;
     api("prazos_assinatura").then(function (r) {
@@ -714,7 +1143,7 @@ HTML_JANELA = r"""
     if (!app) return null;
     g = document.createElement("div");
     g.id = "grade-prz";
-    g.innerHTML = '<div class="prz-grade-aviso">Carregando a planilha do Controle de Prazos…</div>';
+    g.innerHTML = '<div class="prz-grade-aviso">Carregando o Controle de Prazos…</div>';
     app.appendChild(g);
     return g;
   }
@@ -823,7 +1252,7 @@ HTML_JANELA = r"""
     rec.title = "Ver o dash do Controle de Prazos com este recorte";
     rec.innerHTML = '<span class="prz-recorte-rotulo">AÇÕES NO RECORTE</span>' +
       '<span class="prz-recorte-num">' + itens.length.toLocaleString("pt-BR") + "</span>" +
-      '<span class="prz-recorte-de">de ' + PRZ.itens.length.toLocaleString("pt-BR") + " ações da planilha</span>" +
+      '<span class="prz-recorte-de">de ' + PRZ.itens.length.toLocaleString("pt-BR") + " ações cadastradas</span>" +
       '<span class="prz-recorte-alertas">' + ALERTAS.filter(function (a) { return cont[a]; }).map(function (a) {
         return '<span style="--c:' + ALERTA_COR[a] + '"><b>' + cont[a] + "</b> " + esc(a.toLowerCase()) + "</span>";
       }).join("") + "</span>" +
@@ -852,7 +1281,7 @@ HTML_JANELA = r"""
     var selA = PRZ.sel.alerta;
     var html = '<div class="prz-kpi prz-kpi-total" style="--c:var(--cor-acento-prazos)"><span>Ações no recorte</span><b>' +
       itens.length.toLocaleString("pt-BR") + "</b><small>de " + PRZ.itens.length.toLocaleString("pt-BR") +
-      " ações da planilha" + (nFiltros() ? " · " + nFiltros() + " filtro(s) ativo(s)" : "") + "</small></div>";
+      " ações cadastradas" + (nFiltros() ? " · " + nFiltros() + " filtro(s) ativo(s)" : "") + "</small></div>";
     html += ALERTAS.map(function (a) {
       var classe = "prz-kpi" + (selA.has(a) ? " ativo" : (selA.size ? " apagado" : ""));
       return '<button type="button" class="' + classe + '" data-alerta="' + esc(a) + '" style="--c:' + ALERTA_COR[a] +
@@ -1244,12 +1673,147 @@ HTML_JANELA = r"""
       campo("Data de referência", d.data_prazo ? dataLocal(d.data_prazo).toLocaleDateString("pt-BR") : "não definida") +
       campo("Responsável", esc(d.responsavel || "não atribuído")) +
       campo("Observações", esc(d.observacoes || "nenhuma")) +
-      (d.fonte || d.ultima_atualizacao ? campo("Fonte", esc(d.fonte) + (d.ultima_atualizacao ? " · atualizado em " + esc(d.ultima_atualizacao) : "")) : "") +
-      campo("ID na planilha", esc(d.id));
+      (d.fonte ? campo("Fonte", esc(d.fonte)) : "") +
+      (d.ultima_atualizacao ? campo("Última atualização", esc(d.ultima_atualizacao)) : "") +
+      campo("ID", esc(d.id)) +
+      (PRZ.podeEditar ? '<div class="prz-painel-acoes"><button type="button" class="editar">EDITAR</button>' +
+        '<button type="button" class="excluir">EXCLUIR</button></div>'
+        : PRZ.editorSemRede ? '<div class="prz-painel-aviso">Edição indisponível: esta máquina não acessa a pasta da rede ' +
+          '(X:) onde fica o cadastro. Conecte-se à rede e abra o Controle de Prazos de novo.</div>' : "");
+    painel._id = String(d.id);
+    var acoes = document.querySelector("#przPainelConteudo .prz-painel-acoes");
+    if (acoes) {
+      acoes.querySelector(".editar").onclick = function () { abrirForm(d); };
+      acoes.querySelector(".excluir").onclick = function () { excluir(d); };
+    }
     painel.classList.add("aberto");
     painel.setAttribute("aria-hidden", "false");
   }
-  function fecharPainel() { painel.classList.remove("aberto"); painel.setAttribute("aria-hidden", "true"); }
+  function fecharPainel() { painel.classList.remove("aberto"); painel.setAttribute("aria-hidden", "true"); painel._id = null; }
+
+  // ---------------- cadastro no sistema (25/11/2026) ----------------
+  // Só aparece para quem edita (PRZ.podeEditar, decidido no Python); o
+  // Python confere a permissão de novo a cada gravação.
+  var formFundo = document.getElementById("przFormFundo"), form = document.getElementById("przForm");
+  var formErro = document.getElementById("przFormErro"), formSalvar = document.getElementById("przFormSalvar");
+  var formEditando = null;
+  function preencherListas() {
+    [["przListaMinisterio", "ministerio"], ["przListaEixo", "eixo"], ["przListaProjeto", "projeto"],
+     ["przListaResponsavel", "responsavel"]].forEach(function (p) {
+      document.getElementById(p[0]).innerHTML = (PRZ.opcoes[p[1]] || []).map(function (v) {
+        return '<option value="' + esc(v) + '"></option>';
+      }).join("");
+    });
+  }
+  function abrirForm(d) {
+    if (!PRZ.podeEditar) return;
+    formEditando = d || null;
+    preencherListas();
+    var sel = document.getElementById("przFormStatus");
+    var status = (PRZ.opcoes.status || ["A definir", "Aguardando", "Em andamento", "Concluído"]).slice();
+    var atual = d ? (d.status || "A definir") : "A definir";
+    if (status.indexOf(atual) === -1) status.push(atual);
+    sel.innerHTML = status.map(function (s) { return '<option' + (s === atual ? " selected" : "") + ">" + esc(s) + "</option>"; }).join("");
+    var vazio = function (v, padrao) { return v === padrao ? "" : (v || ""); };
+    form.descricao.value = d ? d.descricao || "" : "";
+    form.ministerio.value = d ? vazio(d.ministerio, "Sem órgão definido") : "";
+    form.eixo.value = d ? vazio(d.eixo, "Sem eixo") : "";
+    form.projeto.value = d ? vazio(d.projeto, "Sem projeto/frente") : "";
+    form.data_prazo.value = d && d.data_prazo ? d.data_prazo : "";
+    form.prazo_informado.value = d ? d.prazo_informado || "" : "";
+    form.responsavel.value = d ? d.responsavel || "" : "";
+    form.observacoes.value = d ? d.observacoes || "" : "";
+    form.fonte.value = d ? d.fonte || "" : "";
+    form.querySelectorAll(".invalido").forEach(function (c) { c.classList.remove("invalido"); });
+    formErro.textContent = "";
+    document.getElementById("przFormTitulo").textContent = d ? "Editar ação · ID " + d.id : "Nova ação";
+    formSalvar.disabled = false;
+    formSalvar.textContent = d ? "Salvar alterações" : "Cadastrar ação";
+    formFundo.classList.add("aberto");
+    formFundo.setAttribute("aria-hidden", "false");
+    setTimeout(function () { form.descricao.focus(); }, 30);
+  }
+  function fecharForm() {
+    formFundo.classList.remove("aberto");
+    formFundo.setAttribute("aria-hidden", "true");
+    formEditando = null;
+  }
+  function depoisDeGravar(r, msgOk, idAbrir) {
+    if (r && r.ok) {
+      PRZ.gravouAgora = true;
+      avisar(msgOk);
+      if (idAbrir) painel._id = String(idAbrir);
+      return carregar(true).then(function () {
+        if (idAbrir) {
+          var d = PRZ.itens.find(function (x) { return String(x.id) === String(idAbrir); });
+          if (d) abrirPainel(d);
+        }
+      });
+    }
+    if (r && r.conflito) carregar(true);
+    throw new Error((r && (r.mensagem || r.erro)) || "Não foi possível gravar.");
+  }
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var faltando = ["descricao", "projeto"].filter(function (c) { return !form[c].value.trim(); });
+    form.querySelectorAll(".invalido").forEach(function (c) { c.classList.remove("invalido"); });
+    faltando.forEach(function (c) { form[c].classList.add("invalido"); });
+    if (faltando.length) { formErro.textContent = "Preencha a descrição da ação e o projeto/frente."; form[faltando[0]].focus(); return; }
+    var item = {};
+    ["descricao", "ministerio", "eixo", "projeto", "data_prazo", "prazo_informado", "status", "responsavel",
+     "observacoes", "fonte"].forEach(function (c) { item[c] = form[c].value; });
+    if (formEditando) item.id = formEditando.id;
+    formSalvar.disabled = true;
+    formErro.textContent = "";
+    var editando = !!formEditando;
+    api("prazos_salvar", item, PRZ.revisao).then(function (r) {
+      return depoisDeGravar(r, editando ? "Ação atualizada" : "Ação cadastrada", r && r.id).then(fecharForm);
+    }).catch(function (err) {
+      formSalvar.disabled = false;
+      formErro.textContent = String(err && err.message || err);
+    });
+  });
+  function excluir(d) {
+    if (!PRZ.podeEditar) return;
+    if (!window.confirm('Excluir a ação "' + (d.descricao || d.projeto) + '" (ID ' + d.id + ')?\n\n' +
+        "Ela sai do Controle de Prazos para todos. Fica registrada no histórico e na cópia de segurança.")) return;
+    api("prazos_excluir", d.id, PRZ.revisao).then(function (r) {
+      fecharPainel();
+      return depoisDeGravar(r, "Ação excluída", null);
+    }).catch(function (err) { window.alert(String(err && err.message || err)); });
+  }
+  document.getElementById("przNova").onclick = function () { abrirForm(null); };
+  document.getElementById("przFormFechar").onclick = fecharForm;
+  document.getElementById("przFormCancelar").onclick = fecharForm;
+  formFundo.addEventListener("mousedown", function (e) { if (e.target === formFundo) fecharForm(); });
+  // ao digitar num campo marcado como faltando, a marca e o aviso somem
+  form.addEventListener("input", function (e) {
+    if (e.target.classList.contains("invalido") && e.target.value.trim()) {
+      e.target.classList.remove("invalido");
+      if (!form.querySelector(".invalido")) formErro.textContent = "";
+    }
+  });
+  document.getElementById("przExportar").onclick = function () {
+    var b = this;
+    b.disabled = true;
+    var fim = function () { b.disabled = false; };
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.prazos_exportar_excel) {
+      api("prazos_exportar_excel").then(function (r) { fim(); avisar((r && r.mensagem) || "Planilha exportada"); })
+        .catch(function (e) { fim(); avisar("Erro ao exportar: " + e); });
+      return;
+    }
+    fetch("/api/prazos_exportar_excel", {method: "POST", headers: {"Content-Type": "application/json"}, body: "[]"})
+      .then(function (resp) {
+        var tipo = resp.headers.get("Content-Type") || "";
+        if (tipo.indexOf("json") !== -1) return resp.json().then(function (r) { throw new Error(r.mensagem || r.erro || "erro"); });
+        var nome = ((resp.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/) || [])[1] || "Controle de Prazos.xlsx";
+        return resp.blob().then(function (blob) {
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        });
+      }).then(fim).catch(function (e) { fim(); avisar("Erro ao exportar: " + (e.message || e)); });
+  };
   document.getElementById("przPainelFechar").onclick = fecharPainel;
   document.getElementById("przCorpo").addEventListener("click", function (e) {
     if (!painel.classList.contains("aberto") || arrastou) return;
@@ -1297,6 +1861,7 @@ HTML_JANELA = r"""
   }, 60000);
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape" || !overlay.classList.contains("aberto")) return;
+    if (formFundo.classList.contains("aberto")) { e.stopPropagation(); fecharForm(); return; }
     if (painel.classList.contains("aberto")) { e.stopPropagation(); fecharPainel(); }
   });
 
@@ -1328,8 +1893,8 @@ HTML_JANELA = r"""
   window.przDefinirBusca = function (t) { caixaBusca.value = String(t || ""); definirBusca(t); };
   window.przCabecalho = function () {
     return {titulo: "CONTROLE DE PRAZOS",
-      data: PRZ.atualizado ? "Planilha Controle de Prazos (Pauta do Governador) atualizada em " + PRZ.atualizado
-        : "Planilha Controle de Prazos" + (PRZ.carregando ? " — carregando…" : "")};
+      data: PRZ.atualizado ? "Controle de Prazos (Pauta do Governador) atualizado em " + PRZ.atualizado
+        : "Controle de Prazos" + (PRZ.carregando ? " — carregando…" : "")};
   };
 })();
 </script>

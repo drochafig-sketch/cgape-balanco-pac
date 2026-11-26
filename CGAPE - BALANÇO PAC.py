@@ -10759,9 +10759,10 @@ def montar_html_home():
         data_prazos = _modulo_controle_prazos().data_atualizacao_base()
     except Exception:
         data_prazos = None
+    # cadastro no próprio sistema desde 25/11/2026 (controle_prazos.py)
     atualizacao_prazos = (
-        f'Planilha atualizada em {data_prazos.strftime("%d/%m/%Y às %Hh%Mmin")}'
-        if data_prazos else "Planilha do Controle de Prazos não encontrada"
+        f'Cadastro atualizado em {data_prazos.strftime("%d/%m/%Y às %Hh%Mmin")}'
+        if data_prazos else "Cadastro do Controle de Prazos inacessível (rede)"
     )
     atualizacao_monitoramento = (
         f'Base atualizada em {data_monitoramento.strftime("%d/%m/%Y às %Hh%Mmin")}'
@@ -20332,13 +20333,57 @@ _SEM_ACESSO_PRAZOS = {"ok": False, "mensagem": "Acesso restrito: entre com usuá
 def _api_prazos_dados():
     if not _secao_liberada("PRZ"):
         return dict(_SEM_ACESSO_PRAZOS)
-    return _modulo_controle_prazos().api_dados()
+    return _modulo_controle_prazos().api_dados(acesso.pode_editar_prazos(_sessao_atual()))
 
 
 def _api_prazos_assinatura():
     if not _secao_liberada("PRZ"):
         return dict(_SEM_ACESSO_PRAZOS)
     return _modulo_controle_prazos().api_assinatura()
+
+
+# Cadastro do Controle de Prazos no próprio sistema (pedido do usuário em
+# 25/11/2026): a permissão é conferida AQUI, no Python — a tela só esconde os
+# botões; quem não é editor (acesso.EDITORES_PRAZOS) nunca grava.
+_SEM_EDICAO_PRAZOS = {"ok": False, "mensagem": "Somente a Silvana pode alterar o Controle de Prazos; os demais usuários visualizam."}
+
+
+def _api_prazos_salvar(item=None, revisao=None):
+    sessao = _sessao_atual()
+    if not _secao_liberada("PRZ") or not acesso.pode_editar_prazos(sessao):
+        return dict(_SEM_EDICAO_PRAZOS)
+    return _modulo_controle_prazos().api_salvar(item, revisao, sessao.get("usuario"), sessao.get("nome"))
+
+
+def _api_prazos_excluir(id_reg=None, revisao=None):
+    sessao = _sessao_atual()
+    if not _secao_liberada("PRZ") or not acesso.pode_editar_prazos(sessao):
+        return dict(_SEM_EDICAO_PRAZOS)
+    return _modulo_controle_prazos().api_excluir(id_reg, revisao, sessao.get("usuario"), sessao.get("nome"))
+
+
+def _api_prazos_exportar_excel():
+    # Excel só para consulta (o sistema é a fonte): desktop grava em
+    # Downloads e abre; web devolve os bytes para baixar.
+    if not _secao_liberada("PRZ"):
+        return dict(_SEM_ACESSO_PRAZOS)
+    try:
+        conteudo = _modulo_controle_prazos().planilha_exportacao_bytes()
+        nome = f"Controle de Prazos - {datetime.now():%d-%m-%Y %Hh%M}.xlsx"
+        if MODO_WEB:
+            return {"ok": True, "nome_arquivo": nome, "conteudo": conteudo}
+        pasta = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(pasta, exist_ok=True)
+        destino = os.path.join(pasta, nome)
+        with open(destino, "wb") as f:
+            f.write(conteudo)
+        try:
+            os.startfile(destino)
+        except Exception:
+            pass
+        return {"ok": True, "mensagem": "Planilha salva em Downloads: " + nome}
+    except Exception as erro:
+        return {"ok": False, "mensagem": f"Erro ao exportar: {erro}"}
 
 
 def _api_resumo_acoes(filtros=None):
@@ -21040,6 +21085,15 @@ def abrir_interface_filtros(df_base):
 
         def prazos_assinatura(self):
             return _api_prazos_assinatura()
+
+        def prazos_salvar(self, item=None, revisao=None):
+            return _api_prazos_salvar(item, revisao)
+
+        def prazos_excluir(self, id_reg=None, revisao=None):
+            return _api_prazos_excluir(id_reg, revisao)
+
+        def prazos_exportar_excel(self):
+            return _api_prazos_exportar_excel()
 
     # Envolve TODOS os métodos de APIFiltros em _api_pendente (ver
     # definição acima, perto de _carregar_tela) — pedido do usuário em

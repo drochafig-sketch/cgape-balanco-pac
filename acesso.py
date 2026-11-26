@@ -33,6 +33,16 @@ USUARIOS = {
 }
 
 
+# Quem pode criar/editar/excluir ações do CONTROLE DE PRAZOS (cadastro no
+# próprio sistema, controle_prazos.py) — pedido do usuário em 25/11/2026:
+# "apenas Silvana, os outros apenas a visualização".
+EDITORES_PRAZOS = ("silvana.silva",)
+
+
+def pode_editar_prazos(sessao) -> bool:
+    return str((sessao or {}).get("usuario") or "").lower() in EDITORES_PRAZOS
+
+
 def _hash(senha: str, sal_hex: str) -> str:
     return hashlib.pbkdf2_hmac("sha256", senha.encode("utf-8"), bytes.fromhex(sal_hex), ITERACOES).hex()
 

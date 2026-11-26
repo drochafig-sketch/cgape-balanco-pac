@@ -175,10 +175,19 @@ for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
     app.add_url_rule("/api/" + _nome_ra, endpoint="api_" + _nome_ra,
                      view_func=_rota_json(getattr(pac, "_api_" + _nome_ra)),
                      methods=["POST"])
-for _nome_prz in ("prazos_dados", "prazos_assinatura", "login", "acesso_livre", "sair"):
+for _nome_prz in ("prazos_dados", "prazos_assinatura", "login", "acesso_livre", "sair",
+                  # cadastro do Controle de Prazos no sistema (25/11/2026)
+                  "prazos_salvar", "prazos_excluir"):
     app.add_url_rule("/api/" + _nome_prz, endpoint="api_" + _nome_prz,
                      view_func=_rota_json(getattr(pac, "_api_" + _nome_prz)),
                      methods=["POST"])
+app.add_url_rule(
+    "/api/prazos_exportar_excel",
+    view_func=_rota_binario(pac._api_prazos_exportar_excel,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            disposicao="attachment"),
+    methods=["POST"],
+)
 app.add_url_rule(
     "/api/iniciar_geracao", view_func=_rota_json(pac._api_iniciar_geracao), methods=["POST"]
 )
