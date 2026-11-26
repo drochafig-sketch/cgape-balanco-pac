@@ -554,7 +554,9 @@ HTML_JANELA = r"""
         <button type="button" class="prz-btn-nova" id="przNova" hidden title="Cadastrar uma nova ação no Controle de Prazos">+ NOVA AÇÃO</button>
         <button type="button" id="przExportar" title="Baixa um Excel com as ações cadastradas (só para consulta — a fonte é o sistema)">EXPORTAR EXCEL</button>
         <button type="button" class="botao-tema ra-botao-tema" id="przTema" title="Tema escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
-        <span class="prz-relogio" title="Data e hora de agora (os alertas são recalculados ao vivo)"><span>HOJE</span><b id="przRelogio"></b></span>
+        <!-- data/hora (HOJE) removida e botões alinhados à direita — pedido
+             do usuário em 26/11/2026 (a margem automática do relógio dividia
+             o espaço com a da busca) -->
       </div>
     </div>
     <div class="prz-area">
@@ -661,6 +663,8 @@ HTML_JANELA = r"""
     background:none; border:none; color:var(--cor-texto-secundario); font-size:18px;
     line-height:1; cursor:pointer; padding:2px 6px; display:none; border-radius:0; }
   .prz-busca-geral.ativo #przBuscaGeralLimpar { display:block; }
+  /* botões à direita, com espaço depois da busca (26/11/2026) */
+  #prz-overlay .ra-botoes .prz-busca-geral { margin-right:auto; }
   #prz-overlay .ra-botoes > #przBuscaGeralLimpar:hover { background:none; }
   .prz-aviso-base:not(:empty) { margin-left:8px; padding:1px 8px; border-radius:999px;
     background:var(--cor-acento-prazos); color:#fff; font-weight:600; }
@@ -1848,13 +1852,6 @@ HTML_JANELA = r"""
   if (btnInicio && window.irParaHome) btnInicio.onclick = window.irParaHome;
   var seletor = overlay.querySelector(".seletor-secao.troca-base");
   if (seletor && window.configurarSeletorSecao) window.configurarSeletorSecao(seletor);
-  function relogio() {
-    var a = new Date();
-    document.getElementById("przRelogio").textContent = a.toLocaleDateString("pt-BR") + " " +
-      a.toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"});
-  }
-  relogio();
-  setInterval(relogio, 15000);
   // a cada minuto, com a seção à vista, refaz contagens/cores (o "hoje" anda)
   setInterval(function () {
     if (overlay.classList.contains("aberto") && PRZ.visao !== "mapa") renderizarDash();
