@@ -8921,7 +8921,7 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
             # 26/11/2026: status único (não mais a fase) ao lado do título
             status_pdf = df["STATUS_TEXTO"].dropna().astype(str).str.strip().unique() \
                 if "STATUS_TEXTO" in df.columns else []
-            titulo_previsao_pdf = "PREVISÃO DE CONCLUSÃO DA FASE" + (
+            titulo_previsao_pdf = "PREVISÃO DE CONCLUSÃO" + (
                 f" - {status_pdf[0].upper()}" if len(status_pdf) == 1 else "")
             tabela_painel_geral = Table(
                 [
@@ -14680,13 +14680,13 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False, a
       <div id="dash-busca-vazia" role="status"></div>
       <div id="preview-nota-secretaria"></div>
       <section class="preview-secao" id="secao-visao-geral">
-        <h3 class="preview-secao-titulo"><span class="secao-num">01</span><span class="secao-textos"><span class="secao-nome">Visão geral</span><span class="secao-desc">Quantidade de ações e investimento do recorte, previsão de conclusão da fase, resumo financeiro por fonte, panorama das fases e situação do Termo de Compromisso.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
+        <h3 class="preview-secao-titulo"><span class="secao-num">01</span><span class="secao-textos"><span class="secao-nome">Visão geral</span><span class="secao-desc">Quantidade de ações e investimento do recorte, previsão de conclusão, resumo financeiro por fonte, panorama das fases e situação do Termo de Compromisso.</span></span><span class="secao-seta" aria-hidden="true">▾</span></h3>
         <div class="preview-secao-corpo">
       <div id="preview-cards"></div>
       <div class="preview-grid">
         <div class="preview-grafico-card">
           <div class="preview-grafico-card-cabecalho">
-            <h4 id="titulo-previsao-fase">Previsão de Conclusão da Fase</h4>
+            <h4 id="titulo-previsao-fase">Previsão de Conclusão</h4>
             <label class="chave-financeiro" title="Alterna entre a visão por trimestre e a visão semestral: até dezembro do ano atual, 1º semestre do ano seguinte e depois disso (junto com as ações com data a definir).">
               <span class="chave-financeiro-texto">Semestral</span>
               <input type="checkbox" id="chave-prazo-semestre" role="switch">
@@ -16936,7 +16936,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False, a
     // usuário em 21/11/2026.
     var tituloPrevisao = document.getElementById("titulo-previsao-fase");
     if (tituloPrevisao) {
-      tituloPrevisao.textContent = "Previsão de Conclusão da Fase" + (dados.statusUnico ? " - " + dados.statusUnico : "");
+      tituloPrevisao.textContent = "Previsão de Conclusão" + (dados.statusUnico ? " - " + dados.statusUnico : "");
     }
     var nota = document.getElementById("preview-nota-secretaria");
     if (dados.secretaria_unica) {
