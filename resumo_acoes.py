@@ -2703,7 +2703,7 @@ footer{{text-align:center;font-size:11.5px;color:var(--cinza);padding:0 0 24px}}
     return '<svg width="76" height="76" viewBox="0 0 76 76" class="ra-oc-card-gauge">'
       +'<path d="'+ARCO+'" fill="none" stroke="#E9ECF2" stroke-width="9.88" stroke-linecap="round" pathLength="100"></path>'
       +(v>0.5?'<path d="'+ARCO+'" fill="none" stroke="#2E7D32" stroke-width="9.88" stroke-linecap="round" pathLength="100" stroke-dasharray="'+v.toFixed(1)+' 200"></path>':'')
-      +'<text x="38" y="43.8" text-anchor="middle" font-size="16" font-weight="900" fill="#0B1F3F">'+v.toFixed(1).replace(".", ",")+'%</text></svg>';
+      +'<text x="38" y="43.8" text-anchor="middle" font-size="16" font-weight="900" fill="#0B1F3F">'+(v.toFixed(1) === "100.0" ? "100" : v.toFixed(1).replace(".", ","))+'%</text></svg>';
   }}
   function card(a){{
     // data-fi: abre a Ficha Cadastral (RA_JS_FICHA) — pedido de 22/11/2026
@@ -4948,7 +4948,7 @@ HTML_JANELA = r"""
     return '<svg width="76" height="76" viewBox="0 0 76 76" class="ra-oc-gauge">' +
       '<path d="' + RA_ARCO + '" fill="none" class="ra-oc-gauge-trilho" stroke-width="9.88" stroke-linecap="round" pathLength="100"></path>' +
       (v > 0.5 ? '<path d="' + RA_ARCO + '" fill="none" stroke="#2E7D32" stroke-width="9.88" stroke-linecap="round" pathLength="100" stroke-dasharray="' + v.toFixed(1) + ' 200"></path>' : '') +
-      '<text x="38" y="43.8" text-anchor="middle" font-size="16" font-weight="900" fill="currentColor">' + v.toFixed(1).replace(".", ",") + '%</text></svg>';
+      '<text x="38" y="43.8" text-anchor="middle" font-size="16" font-weight="900" fill="currentColor">' + (v.toFixed(1) === "100.0" ? "100" : v.toFixed(1).replace(".", ",")) + '%</text></svg>';
   }
   function raCardAcao(a, C) {
     // data-fi: abre a Ficha Cadastral (window.abrirFichaMon, no painel) —

@@ -2008,7 +2008,7 @@ class GaugeAvancoFicha(Flowable):
             c.drawPath(p, stroke=1, fill=0)
         c.setFillColor(_FV_TEXTO)
         c.setFont(FONTE_PADRAO_NEGRITO, lado * 0.21)
-        c.drawCentredString(cx, cy - lado * 0.07, f"{self.valor:.1f}%".replace(".", ","))
+        c.drawCentredString(cx, cy - lado * 0.07, ("100%" if f"{self.valor:.1f}" == "100.0" else f"{self.valor:.1f}%".replace(".", ",")))
         c.setFillColor(_FV_ROTULO)
         c.setFont(FONTE_PADRAO_NEGRITO, 6.5)
         c.drawCentredString(cx, 1, "AVANÇO FÍSICO")
@@ -2256,7 +2256,7 @@ JS_FICHA_VISUAL = r"""
     return '<svg class="fv-gauge-svg" width="' + tamanho + '" height="' + tamanho + '" viewBox="0 0 76 76">'
       + '<path class="fv-gauge-trilho" d="' + ARCO + '" fill="none" stroke-width="9.88" stroke-linecap="round" pathLength="100"></path>'
       + (v > 0.5 ? '<path d="' + ARCO + '" fill="none" stroke="#2E7D32" stroke-width="9.88" stroke-linecap="round" pathLength="100" stroke-dasharray="' + v.toFixed(1) + ' 200"></path>' : '')
-      + '<text x="38" y="43.8" text-anchor="middle" font-size="16" font-weight="900" fill="currentColor">' + v.toFixed(1).replace(".", ",") + '%</text></svg>';
+      + '<text x="38" y="43.8" text-anchor="middle" font-size="16" font-weight="900" fill="currentColor">' + (v.toFixed(1) === "100.0" ? "100" : v.toFixed(1).replace(".", ",")) + '%</text></svg>';
   }
 
   // QR "<lado>:<base64>" (qr_compacto, no Python) -> SVG, sempre escuro sobre
@@ -16252,7 +16252,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False, a
       + '<path d="' + _GAUGE_ARCO + '" fill="none" stroke="var(--cor-card-elevado)" stroke-width="9.88" stroke-linecap="round" pathLength="100"></path>'
       + (v > 0.5 ? '<path d="' + _GAUGE_ARCO + '" fill="none" stroke="#2E7D32" stroke-width="9.88" stroke-linecap="round" pathLength="100" stroke-dasharray="' + v.toFixed(1) + ' 200"></path>' : '')
       + '<text x="38" y="43.8" text-anchor="middle" font-size="16" font-weight="900" fill="currentColor">'
-      + v.toFixed(1).replace(".", ",") + '%</text></svg>';
+      + (v.toFixed(1) === "100.0" ? "100" : v.toFixed(1).replace(".", ",")) + '%</text></svg>';
   }
   function _cardAcao(a, i) {
     var local = a.lk ? '<a href="' + _escCards(a.lk) + '" target="_blank" rel="noopener" class="cards-icone-local" title="Ver localização">' + _ICONE_LOCAL + '</a>' : '';

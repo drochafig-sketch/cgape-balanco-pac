@@ -2933,7 +2933,9 @@ def _registro_html():
 def _pct_1casa(valor):
     # Avanço físico com uma casa decimal ("65,0") em todos os velocímetros —
     # pedido do usuário em 26/11/2026
-    return f"{valor:.1f}".replace(".", ",")
+    # 100% fica sem casa decimal ("100%") — pedido do usuário em 26/11/2026
+    texto = f"{valor:.1f}"
+    return "100" if texto == "100.0" else texto.replace(".", ",")
 
 
 def _svg_gauge_compartilhado(percentual, tamanho, cor, trilho):
@@ -5696,7 +5698,7 @@ JS_CARDS_OBJETO = r"""
       + '<use href="#pac-gauge" stroke="#E9ECF2"></use>'
       + (v > 0.5 ? '<use href="#pac-gauge" stroke="#2E7D32" stroke-dasharray="' + v.toFixed(1) + ' 200"></use>' : '')
       + '<text x="38" y="43.8" text-anchor="middle" font-size="16" font-weight="900" fill="#0B1F3F">'
-      + v.toFixed(1).replace(".", ",") + '%</text></svg>';
+      + (v.toFixed(1) === "100.0" ? "100" : v.toFixed(1).replace(".", ",")) + '%</text></svg>';
   }
   function card(a) {
     var local = a[C.lk] ? '<a href="' + esc(a[C.lk]) + '" target="_blank" rel="noopener" class="entrega-icone-local" '

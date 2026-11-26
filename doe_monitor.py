@@ -503,26 +503,34 @@ HTML_JANELA = r"""
   .doe-controles { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; padding:12px 20px 4px; }
   .doe-ctl { display:flex; flex-direction:column; gap:4px; font-size:11px; font-weight:700; text-transform:uppercase;
     letter-spacing:.4px; color:var(--cor-texto-secundario); position:relative; }
-  .doe-ctl select, .doe-ctl input, #doeSecBtn { font:inherit; font-size:13px; font-weight:400; text-transform:none; letter-spacing:0;
+  .doe-ctl select, .doe-ctl input[type=search], #doeSecBtn { font:inherit; font-size:13px; font-weight:400; text-transform:none; letter-spacing:0;
     color:var(--cor-texto-primario); background:var(--cor-card); border:1px solid var(--cor-card-elevado); border-radius:8px;
     padding:7px 10px; min-width:220px; box-sizing:border-box; }
   .doe-ctl-busca { flex:1; min-width:260px; }
-  .doe-ctl-busca input { width:100%; }
+  .doe-ctl-busca input[type=search] { width:100%; }
   #doeSecBtn { cursor:pointer; text-align:left; min-width:320px; max-width:460px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #doeSecBtn.ativo, .doe-ctl select:focus, .doe-ctl input:focus { border-color:var(--cor-acento-teal); outline:none; }
+  #doeSecBtn.ativo, .doe-ctl select:focus, .doe-ctl input[type=search]:focus { border-color:var(--cor-acento-teal); outline:none; }
   .doe-sec-menu { position:absolute; top:100%; left:0; margin-top:4px; z-index:5; width:460px; max-width:90vw;
     background:var(--cor-card); border:1px solid var(--cor-card-elevado); border-radius:10px; box-shadow:0 12px 32px rgba(0,0,0,.25);
     padding:10px; text-transform:none; letter-spacing:0; font-weight:400; }
-  .doe-sec-menu input { width:100%; margin-bottom:8px; }
+  .doe-sec-menu input[type=search] { width:100%; min-width:0; margin-bottom:8px; }
   .doe-sec-acoes { display:flex; gap:8px; margin-bottom:6px; }
   .doe-sec-acoes button { font:inherit; font-size:12px; font-weight:700; cursor:pointer; background:none; border:none;
     color:var(--cor-acento-teal-texto); padding:2px 0; }
-  .doe-sec-lista { max-height:340px; overflow:auto; }
-  .doe-sec-lista label { display:flex; align-items:flex-start; gap:8px; padding:5px 4px; font-size:13px; color:var(--cor-texto-primario);
-    border-radius:6px; cursor:pointer; }
-  .doe-sec-lista label:hover { background:var(--cor-card-elevado); }
-  .doe-sec-lista input { accent-color:var(--cor-acento-teal); margin-top:2px; }
-  .doe-sec-lista small { margin-left:auto; color:var(--cor-texto-terciario); white-space:nowrap; }
+  /* lista de secretarias (26/11/2026): caixa | nome (à esquerda, quebra em
+     linhas) | quantidade, em grade — isolada dos estilos de label/input do painel */
+  .doe-sec-lista { max-height:340px; overflow:auto; border-top:1px solid var(--cor-card-elevado); padding-top:4px; }
+  #doe-overlay .doe-sec-lista label { display:grid; grid-template-columns:18px minmax(0, 1fr) auto; align-items:center;
+    column-gap:10px; width:100%; box-sizing:border-box; margin:0; padding:6px 8px; text-align:left;
+    font-size:13px; font-weight:400; text-transform:none; letter-spacing:0; line-height:1.3;
+    color:var(--cor-texto-primario); border-radius:6px; cursor:pointer; }
+  #doe-overlay .doe-sec-lista label:hover { background:var(--cor-card-elevado); }
+  #doe-overlay .doe-sec-lista input[type=checkbox] { width:16px; height:16px; min-width:0; margin:0; padding:0;
+    accent-color:var(--cor-acento-teal); cursor:pointer; }
+  #doe-overlay .doe-sec-lista span { text-align:left; }
+  #doe-overlay .doe-sec-lista small { justify-self:end; font-size:11.5px; font-weight:700; min-width:28px; text-align:right;
+    color:var(--cor-texto-terciario); white-space:nowrap; }
+  #doe-overlay .doe-sec-lista input:checked ~ span { font-weight:700; }
   .doe-kpis { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:10px; padding:10px 20px; }
   .doe-kpi { background:var(--cor-card); border-radius:10px; padding:10px 14px; border-left:4px solid var(--cor-acento-teal); }
   .doe-kpi b { display:block; font-size:22px; font-weight:900; }
