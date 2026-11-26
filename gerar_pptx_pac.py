@@ -922,6 +922,9 @@ def calcular_metricas(df):
     m["_df"] = df
     m["_acoes_base"] = pd.DataFrame({
         "o": objeto, "f": fase, "e": eixo, "x": executor, "se": secretaria_linha,
+        # status (filtro de Status do HTML, 26/11/2026)
+        "st": (df["STATUS_TEXTO"].fillna("NÃO INFORMADO").astype(str).str.strip()
+               if "STATUS_TEXTO" in df.columns else pd.Series("NÃO INFORMADO", index=df.index)),
         "c": contratado, "a": a_contratar_linha, "inv": investimento_linha,
         "na_exec": exec_obj_mask})
 
@@ -2927,18 +2930,24 @@ def _registro_html():
     return getattr(_CTX_HTML, "registro", None)
 
 
+def _pct_1casa(valor):
+    # Avanço físico com uma casa decimal ("65,0") em todos os velocímetros —
+    # pedido do usuário em 26/11/2026
+    return f"{valor:.1f}".replace(".", ",")
+
+
 def _svg_gauge_compartilhado(percentual, tamanho, cor, trilho):
     registro = _registro_html()
     registro["gauge"] = True
     valor = max(0.0, min(100.0, percentual))
     t = _TAM_GAUGE_BASE
-    fonte = t * 0.26
+    fonte = t * 0.21   # 1 casa decimal ("65,0%") cabe no arco (26/11/2026)
     arco = (f'<use href="#pac-gauge" stroke="#{cor}" stroke-dasharray="{valor:.1f} 200"></use>'
             if valor > 0.5 else "")
     return (f'<svg width="{tamanho}" height="{tamanho}" viewBox="0 0 {t} {t}" class="entrega-gauge-svg">'
             f'<use href="#pac-gauge" stroke="#{trilho}"></use>{arco}'
             f'<text x="{t / 2}" y="{t / 2 + fonte * 0.35:.2f}" text-anchor="middle" font-size="{fonte:.1f}" '
-            f'font-weight="900" fill="#0B1F3F">{valor:.0f}%</text></svg>')
+            f'font-weight="900" fill="#0B1F3F">{_pct_1casa(valor)}%</text></svg>')
 
 
 def _html_defs_compartilhadas(registro):
@@ -3004,9 +3013,9 @@ def _svg_gauge_avanco(percentual, tamanho=76, cor=VERDE, trilho="E9ECF2"):
                            espessura, trilho))
     if valor > 0.5:
         svg.append(_arco_gauge(cx, cy, raio, _ANGULO_INICIAL_GAUGE, angulo_valor, espessura, cor))
-    fonte = tamanho * 0.26
+    fonte = tamanho * 0.21
     svg.append(f'<text x="{cx}" y="{cy + fonte * 0.35}" text-anchor="middle" font-size="{fonte:.1f}" '
-               f'font-weight="900" fill="#0B1F3F">{valor:.0f}%</text>')
+               f'font-weight="900" fill="#0B1F3F">{_pct_1casa(valor)}%</text>')
     svg.append("</svg>")
     return "".join(svg)
 
@@ -3241,7 +3250,7 @@ def _html_entregas_execucao(m, fichas_cartoes):
 
 def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_gestao="",
                           chave_gestao="todas", metricas_saida=None, secretaria=None,
-                          partes_monitoramento=None, panorama_saida=None, fase=None):
+                          partes_monitoramento=None, panorama_saida=None, fase=None, status=None):
     """Slides de UMA gestão (ou de todas), já numerados. Slides que não
     dependem dos dados (institucionais, páginas do Canva) entram uma vez só
     em `comuns` e aqui viram só um marcador (.slide-ref). Devolve
@@ -3278,6 +3287,10 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
     # df já vem só com essa fase) — pedido do usuário em 21/11/2026.
     if fase:
         filtro_gestao = dict(filtro_gestao, f=fase)
+    # `status`: variante do filtro de Status, que substituiu o de Fase no
+    # HTML (pedido do usuário em 26/11/2026) — df já vem só com esse status
+    if status:
+        filtro_gestao = dict(filtro_gestao, st=status)
     # manter_ordem=True: o painel de seleção do HTML permite reordenar os
     # cartões (inclusive intercalando as páginas do Canva), então a ordem
     # final é a que vier em `secoes`, não a ordem fixa do catálogo do PPTX
@@ -3300,6 +3313,8 @@ def _montar_html_variante(df, filtros, secoes, fichas_cartoes, comuns, rotulo_ge
         recorte = (recorte + " · " if recorte else "") + f"Secretaria: {secretaria}"
     if fase:
         recorte = (recorte + " · " if recorte else "") + f"Fase: {fase}"
+    if status:
+        recorte = (recorte + " · " if recorte else "") + f"Status: {status}"
 
     # todo slide abaixo leva o mesmo recorte no rodapé; o número da página é
     # preenchido no fim, quando já se sabe quais slides entram
@@ -4484,7 +4499,7 @@ def _recortes_gestao(df):
 # pt/ps/tc = trimestre, semestre e situação do T.C. (SIM/NÃO) da previsão de
 # conclusão: clique nos gráficos da página Visão Geral (pedido do usuário em 18/11/2026)
 CAMPOS_CARD_ACAO = ["o", "f", "e", "x", "t", "g", "mu", "ex", "ds", "lk", "av", "dt", "fase", "inv", "fi", "v", "se",
-                    "pt", "ps", "tc"]
+                    "pt", "ps", "tc", "st"]
 
 
 def _mi_bi_dash(valor):
@@ -4722,7 +4737,8 @@ def _dados_cards_acoes(m, fichas_cartoes):
             data.strftime("%d/%m/%Y") if pd.notna(data) else "A definir",
             1 if na_exec else 0,
             abreviar_moeda(b["inv"]), _indice_ficha(fichas_cartoes, ficha), round(float(b["inv"]), 2), b["se"],
-            str(r.get("PRAZO_TRIMESTRE", "")), str(r.get("PRAZO_SEMESTRE", "")), str(r.get("SINALIZACAO_TC", ""))])
+            str(r.get("PRAZO_TRIMESTRE", "")), str(r.get("PRAZO_SEMESTRE", "")), str(r.get("SINALIZACAO_TC", "")),
+            b["st"]])
     return {"campos": CAMPOS_CARD_ACAO, "acoes": linhas}
 
 
@@ -4856,13 +4872,21 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
         # a fase que não existe no recorte escolhido, ver
         # atualizarVisibilidadeFases). Cada bloco leva data-fase,
         # data-secretaria ("" = todas) e data-gestao.
+        # 26/11/2026: o filtro de FASE do HTML virou filtro de STATUS (pedido do
+        # usuário: "remova o filtro da fase e acrescente o filtro do status").
+        # Mesmo mecanismo e mesmo DOM (#seletor-fase, .variante-fase,
+        # trocarFase) — só a coluna e os rótulos mudaram; os nomes "fase"
+        # abaixo agora guardam o STATUS. Ordem pelo número do status da base.
         blocos_fase, botoes_fase = [], []
-        if "FASE_TEXTO" in df.columns:
-            serie_fase_html = df["FASE_TEXTO"].fillna("NÃO INFORMADA").astype(str).str.strip()
-            serie_fase_html = serie_fase_html.where(serie_fase_html != "", "NÃO INFORMADA")
-            ordem_fases = [str(f).upper() for f in getattr(pac, "ORDEM_FASES", [])]
+        if "STATUS_TEXTO" in df.columns:
+            serie_fase_html = df["STATUS_TEXTO"].fillna("NÃO INFORMADO").astype(str).str.strip()
+            serie_fase_html = serie_fase_html.where(serie_fase_html != "", "NÃO INFORMADO")
+            ordem_status = {}
+            if "STATUS_ORDEM" in df.columns:
+                num = pd.to_numeric(df["STATUS_ORDEM"], errors="coerce")
+                ordem_status = num.groupby(serie_fase_html).min().to_dict()
             nomes_fase_html = sorted(serie_fase_html.unique(), key=lambda f: (
-                ordem_fases.index(f.upper()) if f.upper() in ordem_fases else len(ordem_fases),
+                ordem_status.get(f) if pd.notna(ordem_status.get(f, float("nan"))) else 999,
                 pac.remover_acentos(f)))
 
             def _slug(txt):
@@ -4879,7 +4903,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
                         slides_fase, css = _montar_html_variante(
                             sub_fg, filtros, secoes, fichas_cartoes, comuns,
                             rotulo_v if chave_v != "todas" else "", chave_gestao=chave_v,
-                            metricas_saida=None, fase=nome_fase, partes_monitoramento=partes_monitoramento)
+                            metricas_saida=None, status=nome_fase, partes_monitoramento=partes_monitoramento)
                         slides_fase = _sufixar_ids(slides_fase, f"fase-{_slug(nome_fase)}-{chave_v}")
                         blocos_fase.append(f'<div class="variante-fase" data-fase="{_html_esc(nome_fase)}" '
                                            f'data-secretaria="" data-gestao="{chave_v}">{slides_fase}</div>')
@@ -4891,7 +4915,7 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
                         slides_fase, css = _montar_html_variante(
                             sub_fs, filtros, secoes, fichas_cartoes, comuns,
                             "", chave_gestao="todas", metricas_saida=None, secretaria=nome_sec,
-                            fase=nome_fase, partes_monitoramento=partes_monitoramento)
+                            status=nome_fase, partes_monitoramento=partes_monitoramento)
                         slides_fase = _sufixar_ids(slides_fase, f"fase-{_slug(nome_fase)}-secr-{_slug(nome_sec)}")
                         blocos_fase.append(f'<div class="variante-fase" data-fase="{_html_esc(nome_fase)}" '
                                            f'data-secretaria="{_html_esc(nome_sec)}" data-gestao="{gestao_sec}">'
@@ -4916,10 +4940,10 @@ def montar_html_apresentacao(df, filtros=None, secoes=None, filtros_mon=None):
                 f'<summary class="sel-recorte-titulo">{titulo}<span class="sel-atual"></span></summary>'
                 f'{corpo}</details>')
     seletor_fase_html = (
-        _grupo_filtro("Fase",
-                      f'<div id="seletor-fase" role="group" aria-label="Fase">'
+        _grupo_filtro("Status",
+                      f'<div id="seletor-fase" role="group" aria-label="Status">'
                       f'<button type="button" data-fase="" class="ativo" onclick="trocarFase(\'\')">'
-                      f'Todas as fases</button>{"".join(botoes_fase)}</div>')
+                      f'Todos os status</button>{"".join(botoes_fase)}</div>')
         if botoes_fase else "")
     seletor_html = (
         _grupo_filtro("Gestão",
@@ -5351,7 +5375,7 @@ function gerarPdfCompleto() {{
     var fase = bFase && bFase.dataset.fase ? bFase.dataset.fase : '';
     preencher('.slide:not(.slide-monitoramento) .chip-gestao', gestao, 'Gestão');
     preencher('.slide:not(.slide-monitoramento) .chip-secretaria', sec, 'Secretaria');
-    preencher('.slide:not(.slide-monitoramento) .chip-fase', fase, 'Fase');
+    preencher('.slide:not(.slide-monitoramento) .chip-fase', fase, 'Status');
     var bEixoMon = document.querySelector('.sel-recorte .sel-eixo-btn.ativo');
     var bSecMon = document.querySelector('.sel-recorte .sel-sec-btn.ativo');
     var eixoMon = bEixoMon && +bEixoMon.dataset.e ? bEixoMon.textContent.trim() : '';
@@ -5671,8 +5695,8 @@ JS_CARDS_OBJETO = r"""
     return '<svg width="76" height="76" viewBox="0 0 76 76" class="entrega-gauge-svg">'
       + '<use href="#pac-gauge" stroke="#E9ECF2"></use>'
       + (v > 0.5 ? '<use href="#pac-gauge" stroke="#2E7D32" stroke-dasharray="' + v.toFixed(1) + ' 200"></use>' : '')
-      + '<text x="38" y="44.92" text-anchor="middle" font-size="19.8" font-weight="900" fill="#0B1F3F">'
-      + Math.round(v) + '%</text></svg>';
+      + '<text x="38" y="43.8" text-anchor="middle" font-size="16" font-weight="900" fill="#0B1F3F">'
+      + v.toFixed(1).replace(".", ",") + '%</text></svg>';
   }
   function card(a) {
     var local = a[C.lk] ? '<a href="' + esc(a[C.lk]) + '" target="_blank" rel="noopener" class="entrega-icone-local" '
