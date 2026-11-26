@@ -3,7 +3,8 @@
 Tela de usuário e senha antes da tela inicial, com um botão ACESSO LIVRE:
   - acesso livre: só PAC e AÇÕES EM MONITORAMENTO;
   - usuários cadastrados abaixo: todas as seções (PAC, MONITORAMENTO,
-    CONTROLE DE PRAZOS e o DIÁRIO OFICIAL — DOE, desde 26/11/2026).
+    CONTROLE DE PRAZOS e o DIÁRIO OFICIAL — DOE, desde 26/11/2026), salvo
+    quem tem lista própria em SECOES_POR_USUARIO.
 
 As senhas NÃO ficam gravadas: só um hash PBKDF2-SHA256 com sal próprio por
 usuário (o repositório do GitHub é público). Para cadastrar/trocar uma senha:
@@ -32,6 +33,14 @@ USUARIOS = {
                       "64532dd6ec57647f0106ed252cb6d25f9d8cbccf4052191f263ca6cf3047bab5"),
     "lucitania.jesus": ("Lucitania Jesus", "879bb52e91635f9e68685fcd5eac13a7",
                         "58d1a0c72c707ccc9c4c7db03ecfae23179b39c0077f62ed8ddce46c23272d09"),
+    "henrique.santana": ("Henrique Santana", "a6130c0983c471dd350007c61a596b06",
+                         "6f886c29a6d5879ae7b2f7550199a86aede833b4baec9db576f7f28fd20f629f"),
+}
+
+# Seções por usuário quando NÃO são todas (quem não está aqui vê
+# SECOES_TODAS). Henrique: só PAC, MONITORAMENTO e DOE — pedido de 26/11/2026.
+SECOES_POR_USUARIO = {
+    "henrique.santana": ("PAC", "MON", "DOE"),
 }
 
 
@@ -73,7 +82,8 @@ def sessao_usuario(chave):
     registro = USUARIOS.get(chave)
     if not registro:
         return None
-    return {"usuario": chave, "nome": registro[0], "secoes": list(SECOES_TODAS)}
+    return {"usuario": chave, "nome": registro[0],
+            "secoes": list(SECOES_POR_USUARIO.get(chave, SECOES_TODAS))}
 
 
 def sessao_livre():

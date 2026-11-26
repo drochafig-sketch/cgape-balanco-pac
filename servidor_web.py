@@ -198,6 +198,23 @@ app.add_url_rule(
                             disposicao="attachment"),
     methods=["POST"],
 )
+
+
+# GERAR RELATÓRIO do Controle de Prazos (26/11/2026): o tipo do arquivo
+# (HTML/PDF/PPTX) depende do formato pedido, então vem na própria resposta.
+def rota_prazos_relatorio():
+    try:
+        resultado = pac._api_prazos_relatorio(*_argumentos_da_requisicao())
+    except Exception as erro:
+        return jsonify({"ok": False, "erro": str(erro)}), 500
+    if not resultado.get("ok"):
+        return jsonify(resultado)
+    resposta = Response(resultado["conteudo"], mimetype=resultado.get("mimetype") or "application/octet-stream")
+    resposta.headers["Content-Disposition"] = f'attachment; filename="{resultado.get("nome_arquivo", "relatorio")}"'
+    return resposta
+
+
+app.add_url_rule("/api/prazos_relatorio", view_func=rota_prazos_relatorio, methods=["POST"])
 app.add_url_rule(
     "/api/iniciar_geracao", view_func=_rota_json(pac._api_iniciar_geracao), methods=["POST"]
 )

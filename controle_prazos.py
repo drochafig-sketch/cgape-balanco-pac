@@ -408,6 +408,28 @@ def _backup():
         pass
 
 
+def _valor_monetario(v):
+    if v is None or v == "":
+        return None
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        n = float(v)
+    else:
+        t = str(v).replace("R$", "").replace(" ", "").replace(" ", "").strip()
+        if not t:
+            return None
+        if "," in t:
+            t = t.replace(".", "").replace(",", ".")
+        elif t.count(".") > 1 or (t.count(".") == 1 and len(t.split(".")[1]) == 3):
+            t = t.replace(".", "")   # 1.250.000 / 250.000 = milhar
+        try:
+            n = float(t)
+        except ValueError:
+            raise ValueError("investimento inválido: use números, ex.: 1.250.000,00")
+    if n < 0:
+        raise ValueError("o investimento não pode ser negativo")
+    return round(n, 2)
+
+
 def _limpar_item(item: dict) -> dict:
     limpo = {}
     for c in CAMPOS_EDITAVEIS:
@@ -422,6 +444,9 @@ def _limpar_item(item: dict) -> dict:
             raise ValueError("data do prazo inválida")
     else:
         limpo["data_prazo"] = None
+    # investimento (valor monetário) — pedido do usuário em 26/11/2026:
+    # aceita "R$ 1.250.000,00", "1250000,5", número ou vazio; grava número
+    limpo["investimento"] = _valor_monetario(item.get("investimento"))
     if not limpo["descricao"]:
         raise ValueError("preencha a descrição da ação")
     if not limpo["projeto"]:
@@ -501,7 +526,7 @@ def planilha_exportacao_bytes():
     ws = wb.active
     ws.title = ABA_DADOS
     cab = ["ID", "Ministério/Órgão", "Eixo", "Projeto/Frente", "Descrição", "Prazo informado",
-           "Data prazo (ref.)", "Status", "Responsável", "Dias", "Alerta", "Observações",
+           "Data prazo (ref.)", "Status", "Responsável", "Investimento (R$)", "Dias", "Alerta", "Observações",
            "Fonte (slide)", "Última atualização"]
     ws.append(cab)
     for c in ws[1]:
@@ -517,16 +542,32 @@ def planilha_exportacao_bytes():
                   else "Crítico" if dias <= 7 else "Atenção" if dias <= 30 else "OK")
         ws.append([int(r["id"]) if str(r["id"]).isdigit() else r["id"], r.get("ministerio"), r.get("eixo"),
                    r.get("projeto"), r.get("descricao"), r.get("prazo_informado"), d, r.get("status"),
-                   r.get("responsavel"), None if concl else dias, alerta, r.get("observacoes"),
+                   r.get("responsavel"), r.get("investimento"), None if concl else dias, alerta, r.get("observacoes"),
                    r.get("fonte"), r.get("ultima_atualizacao")])
         ws.cell(ws.max_row, 7).number_format = "DD/MM/YYYY"
-    for col, larg in zip("ABCDEFGHIJKLMN", (6, 28, 16, 28, 50, 16, 13, 14, 20, 7, 11, 50, 14, 22)):
+        ws.cell(ws.max_row, 10).number_format = '"R$" #,##0.00'
+    for col, larg in zip("ABCDEFGHIJKLMNO", (6, 28, 16, 28, 50, 16, 13, 14, 20, 17, 7, 11, 50, 14, 22)):
         ws.column_dimensions[col].width = larg
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def relatorio_bytes(formato, ids=None, recorte=""):
+    """GERAR RELATÓRIO (26/11/2026): HTML, PDF ou PPTX das ações do recorte
+    atual do dash — `ids` vem da tela (filtros + busca); None = todas.
+    Devolve (bytes, extensão, mimetype). Ver relatorio_prazos.py."""
+    import relatorio_prazos
+    dados, caminho, _a, _e = _carregar()
+    itens = dados.get("itens", [])
+    if ids is not None:
+        quero = {str(i) for i in ids}
+        itens = [r for r in itens if str(r.get("id")) in quero]
+    m = _mtime(caminho) if caminho else None
+    atualizado = dt.datetime.fromtimestamp(m).strftime("%d/%m/%Y às %Hh%M") if m else ""
+    return relatorio_prazos.montar(itens, formato, recorte, atualizado)
 
 
 # ---- HTML / CSS / JS (injetado no painel antes do </body>) ------------------
@@ -552,6 +593,7 @@ HTML_JANELA = r"""
         <button type="button" class="btn-inicio" id="przLimparBase" title="Limpar filtros (PRAZOS)">LIMPAR FILTROS (PRAZOS)</button>
         <!-- cadastro no sistema (25/11/2026): NOVA AÇÃO só para quem edita -->
         <button type="button" class="prz-btn-nova" id="przNova" hidden title="Cadastrar uma nova ação no Controle de Prazos">+ NOVA AÇÃO</button>
+        <button type="button" id="przRelatorio" title="Gerar relatório (HTML, PDF ou PowerPoint) com as ações do recorte atual — filtros e busca">GERAR RELATÓRIO</button>
         <button type="button" id="przExportar" title="Baixa um Excel com as ações cadastradas (só para consulta — a fonte é o sistema)">EXPORTAR EXCEL</button>
         <button type="button" class="botao-tema ra-botao-tema" id="przTema" title="Tema escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
         <!-- data/hora (HOJE) removida e botões alinhados à direita — pedido
@@ -619,6 +661,8 @@ HTML_JANELA = r"""
           <select name="status" id="przFormStatus"></select></label>
         <label>Responsável
           <input name="responsavel" list="przListaResponsavel" autocomplete="off" maxlength="300"></label>
+        <label>Investimento (R$)
+          <input name="investimento" inputmode="decimal" autocomplete="off" maxlength="30" placeholder="ex.: 1.250.000,00"></label>
         <label class="largo">Observações
           <textarea name="observacoes" rows="4" maxlength="4000"></textarea></label>
         <label class="largo">Fonte
@@ -633,6 +677,24 @@ HTML_JANELA = r"""
       <datalist id="przListaMinisterio"></datalist><datalist id="przListaEixo"></datalist>
       <datalist id="przListaProjeto"></datalist><datalist id="przListaResponsavel"></datalist>
     </form>
+  </div>
+  <!-- GERAR RELATÓRIO (26/11/2026): HTML / PDF / PPTX do recorte atual -->
+  <div class="prz-form-fundo" id="przRelFundo" aria-hidden="true">
+    <div class="prz-form prz-rel" role="dialog" aria-modal="true" aria-labelledby="przRelTitulo">
+      <div class="prz-form-cab">
+        <h3 id="przRelTitulo">Gerar relatório</h3>
+        <button type="button" class="prz-form-x" id="przRelFechar" title="Fechar (Esc)" aria-label="Fechar">×</button>
+      </div>
+      <div class="prz-rel-corpo">
+        <p class="prz-rel-recorte" id="przRelRecorte"></p>
+        <div class="prz-rel-opcoes">
+          <button type="button" data-formato="html"><b>HTML</b><span>página interativa, com busca — abre no navegador</span></button>
+          <button type="button" data-formato="pdf"><b>PDF</b><span>documento A4 paisagem, pronto para imprimir</span></button>
+          <button type="button" data-formato="pptx"><b>PPTX</b><span>apresentação PowerPoint 16:9</span></button>
+        </div>
+        <p class="prz-rel-dica">O relatório traz os indicadores por alerta, o investimento, o resumo por órgão e as ações agrupadas por alerta de prazo.</p>
+      </div>
+    </div>
   </div>
 </div>
 <style>
@@ -885,6 +947,8 @@ HTML_JANELA = r"""
   .prz-form-corpo label { display:flex; flex-direction:column; gap:4px; font-size:11.5px; font-weight:700; letter-spacing:.3px;
     text-transform:uppercase; color:var(--cor-texto-secundario); }
   .prz-form-corpo label.largo { grid-column:1 / -1; }
+  .prz-invest { color:var(--cor-texto-primario); font-weight:900; }
+  .prz-qd-invest { margin-top:4px; font-size:12px; font-weight:800; color:var(--cor-acento-prazos-texto); }
   .prz-form-corpo label em { color:var(--cor-acento-prazos-texto); font-style:normal; }
   .prz-form-corpo input, .prz-form-corpo select, .prz-form-corpo textarea { font:inherit; font-size:13.5px; font-weight:400;
     text-transform:none; letter-spacing:0; color:var(--cor-texto-primario); background:var(--cor-fundo);
@@ -903,6 +967,20 @@ HTML_JANELA = r"""
   .prz-form-salvar:hover { background:var(--cor-acento-prazos-hover); }
   .prz-form-salvar:disabled { opacity:.6; cursor:wait; }
   @media (max-width:700px) { .prz-form-corpo { grid-template-columns:1fr; } }
+  .prz-rel { width:min(560px, 100%); }
+  .prz-rel-corpo { padding:4px 20px 18px; }
+  .prz-rel-recorte { margin:0 0 12px; font-size:13px; color:var(--cor-texto-secundario); line-height:1.45; }
+  .prz-rel-recorte b { color:var(--cor-texto-primario); }
+  .prz-rel-opcoes { display:flex; flex-direction:column; gap:8px; }
+  .prz-rel-opcoes button { display:flex; align-items:baseline; gap:14px; text-align:left; font:inherit; cursor:pointer;
+    background:var(--cor-fundo); color:var(--cor-texto-primario); border:1px solid var(--cor-card-elevado);
+    border-left:5px solid var(--cor-acento-prazos); border-radius:8px; padding:12px 14px; transition:border-color .15s, transform .12s; }
+  .prz-rel-opcoes button:hover:not(:disabled), .prz-rel-opcoes button:focus-visible { border-color:var(--cor-acento-prazos);
+    transform:translateY(-1px); outline:none; }
+  .prz-rel-opcoes button:disabled { opacity:.55; cursor:wait; }
+  .prz-rel-opcoes b { flex:0 0 58px; font-size:15px; font-weight:900; color:var(--cor-acento-prazos-texto); }
+  .prz-rel-opcoes span { font-size:12.5px; color:var(--cor-texto-secundario); }
+  .prz-rel-dica { margin:12px 0 0; font-size:11.5px; color:var(--cor-texto-terciario); }
 
   .prz-toast { position:fixed; left:50%; bottom:22px; transform:translate(-50%, 20px); opacity:0; pointer-events:none; z-index:90;
     background:var(--cor-acento-prazos); color:#fff; padding:9px 16px; border-radius:999px; font-size:12.5px; font-weight:700;
@@ -1038,11 +1116,23 @@ HTML_JANELA = r"""
     } catch (e) {}
   })();
 
+  // investimento (26/11/2026): "R$ 1.250.000,00" e "R$ 1,3 MI"
+  function moedaCheia(v) {
+    var n = Number(v);
+    return isNaN(n) ? "" : "R$ " + n.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+  function moedaCurta(v) {
+    var n = Number(v), f = function (x) { return x.toFixed(1).replace(".", ","); };
+    if (isNaN(n)) return "";
+    return n >= 1e9 ? "R$ " + f(n / 1e9) + " BI" : n >= 1e6 ? "R$ " + f(n / 1e6) + " MI" :
+      n >= 1e3 ? "R$ " + f(n / 1e3) + " MIL" : moedaCheia(n);
+  }
   function passaBusca(d) {
     var termos = norm(PRZ.busca).split(/\s+/).filter(Boolean);
     if (!termos.length) return true;
     var alvo = norm([d.id, d.ministerio, d.eixo, d.projeto, d.descricao, d.prazo_informado, d.status,
-      d.responsavel, d.observacoes, d.fonte, alertaDe(d)].join(" "));
+      d.responsavel, d.observacoes, d.fonte, alertaDe(d),
+      d.investimento ? moedaCheia(d.investimento) + " " + moedaCurta(d.investimento) : ""].join(" "));
     return termos.every(function (t) { return alvo.indexOf(t) !== -1; });
   }
   function passa(d, chaveExcluida) {
@@ -1487,7 +1577,8 @@ HTML_JANELA = r"""
         return '<div class="prz-qd-card" data-id="' + esc(d.id) + '" tabindex="0" role="button">' +
           '<div class="prz-qd-num"><b>' + num + "</b><span>" + rot + "</span></div>" +
           '<div class="prz-qd-desc">' + esc(d.descricao || d.projeto) + "</div>" +
-          '<div class="prz-qd-meta">' + esc(d.projeto) + " · " + esc(d.ministerio) + data + "</div>" + medidor + "</div>";
+          '<div class="prz-qd-meta">' + esc(d.projeto) + " · " + esc(d.ministerio) + data + "</div>" +
+          (d.investimento ? '<div class="prz-qd-invest">' + esc(moedaCurta(d.investimento)) + "</div>" : "") + medidor + "</div>";
       }).join("") || '<div class="prz-qd-vazio">nenhuma ação</div>';
       return '<div class="prz-qd-col" style="--c:' + ALERTA_COR[a] + '"><div class="prz-qd-cab"><div class="t">' + esc(a) +
         '<span class="n">' + lista.length + '</span></div><div class="d">' + esc(ALERTA_DESC[a]) + "</div></div>" +
@@ -1676,6 +1767,7 @@ HTML_JANELA = r"""
       campo("Prazo informado (original)", esc(d.prazo_informado || "a definir")) +
       campo("Data de referência", d.data_prazo ? dataLocal(d.data_prazo).toLocaleDateString("pt-BR") : "não definida") +
       campo("Responsável", esc(d.responsavel || "não atribuído")) +
+      campo("Investimento", d.investimento != null && d.investimento !== "" ? '<b class="prz-invest">' + esc(moedaCheia(d.investimento)) + "</b>" : "não informado") +
       campo("Observações", esc(d.observacoes || "nenhuma")) +
       (d.fonte ? campo("Fonte", esc(d.fonte)) : "") +
       (d.ultima_atualizacao ? campo("Última atualização", esc(d.ultima_atualizacao)) : "") +
@@ -1726,6 +1818,7 @@ HTML_JANELA = r"""
     form.data_prazo.value = d && d.data_prazo ? d.data_prazo : "";
     form.prazo_informado.value = d ? d.prazo_informado || "" : "";
     form.responsavel.value = d ? d.responsavel || "" : "";
+    form.investimento.value = d && d.investimento != null && d.investimento !== "" ? moedaCheia(d.investimento).replace("R$ ", "") : "";
     form.observacoes.value = d ? d.observacoes || "" : "";
     form.fonte.value = d ? d.fonte || "" : "";
     form.querySelectorAll(".invalido").forEach(function (c) { c.classList.remove("invalido"); });
@@ -1765,7 +1858,7 @@ HTML_JANELA = r"""
     if (faltando.length) { formErro.textContent = "Preencha a descrição da ação e o projeto/frente."; form[faltando[0]].focus(); return; }
     var item = {};
     ["descricao", "ministerio", "eixo", "projeto", "data_prazo", "prazo_informado", "status", "responsavel",
-     "observacoes", "fonte"].forEach(function (c) { item[c] = form[c].value; });
+     "investimento", "observacoes", "fonte"].forEach(function (c) { item[c] = form[c].value; });
     if (formEditando) item.id = formEditando.id;
     formSalvar.disabled = true;
     formErro.textContent = "";
@@ -1818,6 +1911,70 @@ HTML_JANELA = r"""
         });
       }).then(fim).catch(function (e) { fim(); avisar("Erro ao exportar: " + (e.message || e)); });
   };
+  // ---------------- GERAR RELATÓRIO (26/11/2026) ----------------
+  var relFundo = document.getElementById("przRelFundo");
+  function textoRecorte() {
+    var partes = [];
+    BLOCOS.forEach(function (b) {
+      var s = Array.from(PRZ.sel[b.chave]);
+      if (s.length) partes.push(b.titulo.toLowerCase() + ": " + s.join(", "));
+    });
+    if (PRZ.busca.trim()) partes.push('busca: "' + PRZ.busca.trim() + '"');
+    return partes.join(" · ");
+  }
+  function abrirRelatorio() {
+    var n = itensFiltrados().length, rec = textoRecorte();
+    document.getElementById("przRelRecorte").innerHTML = "<b>" + n + (n === 1 ? " ação" : " ações") + "</b> no recorte atual" +
+      (rec ? " — " + esc(rec) : " (sem filtros: todas as ações cadastradas)") + ".";
+    relFundo.querySelectorAll("[data-formato]").forEach(function (b) { b.disabled = !n; });
+    relFundo.classList.add("aberto");
+    relFundo.setAttribute("aria-hidden", "false");
+    var primeiro = relFundo.querySelector("[data-formato]:not(:disabled)");
+    if (primeiro) primeiro.focus();
+  }
+  function fecharRelatorio() {
+    relFundo.classList.remove("aberto");
+    relFundo.setAttribute("aria-hidden", "true");
+  }
+  function gerarRelatorio(formato, botao) {
+    var ids = itensFiltrados().map(function (d) { return String(d.id); });
+    var rec = textoRecorte();
+    var todos = relFundo.querySelectorAll("[data-formato]");
+    var rotulo = botao.querySelector("span").textContent;
+    todos.forEach(function (b) { b.disabled = true; });
+    botao.querySelector("span").textContent = "gerando…";
+    var fim = function (msg) {
+      todos.forEach(function (b) { b.disabled = false; });
+      botao.querySelector("span").textContent = rotulo;
+      if (msg) avisar(msg);
+    };
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.prazos_relatorio) {
+      api("prazos_relatorio", formato, ids, rec).then(function (r) {
+        fim((r && (r.mensagem || r.erro)) || "Relatório gerado");
+        if (r && r.ok) fecharRelatorio();
+      }).catch(function (e) { fim("Erro ao gerar o relatório: " + e); });
+      return;
+    }
+    fetch("/api/prazos_relatorio", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify([formato, ids, rec])})
+      .then(function (resp) {
+        var tipo = resp.headers.get("Content-Type") || "";
+        if (tipo.indexOf("json") !== -1) return resp.json().then(function (r) { throw new Error(r.mensagem || r.erro || "erro"); });
+        var nome = ((resp.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/) || [])[1] || ("Relatório Controle de Prazos." + formato);
+        return resp.blob().then(function (blob) {
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        });
+      }).then(function () { fim("Relatório baixado"); fecharRelatorio(); })
+      .catch(function (e) { fim("Erro ao gerar o relatório: " + (e.message || e)); });
+  }
+  document.getElementById("przRelatorio").onclick = abrirRelatorio;
+  document.getElementById("przRelFechar").onclick = fecharRelatorio;
+  relFundo.addEventListener("mousedown", function (e) { if (e.target === relFundo) fecharRelatorio(); });
+  relFundo.querySelectorAll("[data-formato]").forEach(function (b) {
+    b.onclick = function () { gerarRelatorio(b.dataset.formato, b); };
+  });
   document.getElementById("przPainelFechar").onclick = fecharPainel;
   document.getElementById("przCorpo").addEventListener("click", function (e) {
     if (!painel.classList.contains("aberto") || arrastou) return;
@@ -1859,6 +2016,7 @@ HTML_JANELA = r"""
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape" || !overlay.classList.contains("aberto")) return;
     if (formFundo.classList.contains("aberto")) { e.stopPropagation(); fecharForm(); return; }
+    if (relFundo.classList.contains("aberto")) { e.stopPropagation(); fecharRelatorio(); return; }
     if (painel.classList.contains("aberto")) { e.stopPropagation(); fecharPainel(); }
   });
 

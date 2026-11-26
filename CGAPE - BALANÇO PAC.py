@@ -20384,7 +20384,7 @@ def _modulo_controle_prazos():
     return controle_prazos
 
 
-_SEM_ACESSO_PRAZOS = {"ok": False, "mensagem": "Acesso restrito: entre com usuário e senha para ver o Controle de Prazos."}
+_SEM_ACESSO_PRAZOS = {"ok": False, "mensagem": "Acesso restrito: o Controle de Prazos não está liberado para este acesso."}
 
 
 def _api_prazos_dados():
@@ -20464,6 +20464,32 @@ def _api_prazos_exportar_excel():
         return {"ok": True, "mensagem": "Planilha salva em Downloads: " + nome}
     except Exception as erro:
         return {"ok": False, "mensagem": f"Erro ao exportar: {erro}"}
+
+
+def _api_prazos_relatorio(formato=None, ids=None, recorte=None):
+    # GERAR RELATÓRIO do Controle de Prazos (26/11/2026): HTML/PDF/PPTX do
+    # recorte atual; desktop grava em Downloads e abre, web devolve os bytes.
+    if not _secao_liberada("PRZ"):
+        return dict(_SEM_ACESSO_PRAZOS)
+    try:
+        mod = _modulo_controle_prazos()
+        conteudo, ext, mime = mod.relatorio_bytes(formato, ids, recorte or "")
+        import relatorio_prazos
+        nome = relatorio_prazos.nome_arquivo(ext)
+        if MODO_WEB:
+            return {"ok": True, "nome_arquivo": nome, "conteudo": conteudo, "mimetype": mime}
+        pasta = os.path.join(os.path.expanduser("~"), "Downloads")
+        os.makedirs(pasta, exist_ok=True)
+        destino = os.path.join(pasta, nome)
+        with open(destino, "wb") as f:
+            f.write(conteudo)
+        try:
+            os.startfile(destino)
+        except Exception:
+            pass
+        return {"ok": True, "mensagem": "Relatório salvo em Downloads: " + nome}
+    except Exception as erro:
+        return {"ok": False, "mensagem": f"Erro ao gerar o relatório: {erro}"}
 
 
 def _api_resumo_acoes(filtros=None):
@@ -21188,6 +21214,9 @@ def abrir_interface_filtros(df_base):
 
         def prazos_exportar_excel(self):
             return _api_prazos_exportar_excel()
+
+        def prazos_relatorio(self, formato=None, ids=None, recorte=None):
+            return _api_prazos_relatorio(formato, ids, recorte)
 
     # Envolve TODOS os métodos de APIFiltros em _api_pendente (ver
     # definição acima, perto de _carregar_tela) — pedido do usuário em
