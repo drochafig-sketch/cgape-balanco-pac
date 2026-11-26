@@ -4595,7 +4595,7 @@ def _html_visao_geral_dash(df, filtro_base=None):
       </div>
       <div class="vgd-grade">
         <div class="vgd-card vgd-alterna">
-          <div class="vgd-cab"><h4>Previsão de Conclusão da Fase{(" - " + _html_esc(d["faseUnica"])) if d.get("faseUnica") else ""}</h4>
+          <div class="vgd-cab"><h4>Previsão de Conclusão da Fase{(" - " + _html_esc(d["statusUnico"])) if d.get("statusUnico") else ""}</h4>
             {chave("Semestral", "Alterna entre a visão por trimestre e a semestral (até dezembro do ano atual, "
                                 "1º semestre do ano seguinte e depois disso, junto com as ações com data a definir)")}</div>
           <div class="vgd-vista-a">{barras(d["prazo"])}</div>

@@ -7770,12 +7770,17 @@ def _dados_pre_visualizacao(df, so_visao_geral=False):
     # 21/11/2026.
     fases_recorte = df["FASE_TEXTO"].dropna().astype(str).str.strip().unique() if "FASE_TEXTO" in df.columns else []
     fase_unica = str(fases_recorte[0]) if len(fases_recorte) == 1 else None
+    # 26/11/2026: ao lado do título vai o STATUS único do recorte, não mais a
+    # fase (pedido do usuário, junto com o filtro de Status do HTML do PAC)
+    status_recorte = (df["STATUS_TEXTO"].dropna().astype(str).str.strip().unique()
+                      if "STATUS_TEXTO" in df.columns else [])
+    status_unico = str(status_recorte[0]) if len(status_recorte) == 1 else None
 
     if so_visao_geral:
         return {"qtd": int(len(df)), "investimento": float(df["_INVESTIMENTO_AJUSTADO"].sum()),
                 "prazo": prazo, "prazoSemestre": prazo_semestre, "financeiro": financeiro,
                 "financeiroContratado": financeiro_contratado, "panorama": panorama, "termo": termo,
-                "faseUnica": fase_unica}
+                "faseUnica": fase_unica, "statusUnico": status_unico}
 
     # --- Secretaria/Executor único no filtro atual ---
     # Quando o filtro deixa só uma combinação de SECRETARIA/EXECUTOR, esse
@@ -7883,6 +7888,7 @@ def _dados_pre_visualizacao(df, so_visao_geral=False):
         "clausulas": _dados_clausulas_dash(df),
         "secretaria_unica": secretaria_unica,
         "faseUnica": fase_unica,
+        "statusUnico": status_unico,
         "panoramaCarteira": _panorama_carteira_dash(df),
     }
 
@@ -8912,10 +8918,11 @@ def _gerar_pdf(df, arquivo_pdf, colunas_detalhamento=None, secoes=None, financei
 
             # Uma fase só no recorte: nome dela ao lado do título, igual ao
             # dash e ao HTML — pedido do usuário em 21/11/2026.
-            fases_pdf = df["FASE_TEXTO"].dropna().astype(str).str.strip().unique() \
-                if "FASE_TEXTO" in df.columns else []
+            # 26/11/2026: status único (não mais a fase) ao lado do título
+            status_pdf = df["STATUS_TEXTO"].dropna().astype(str).str.strip().unique() \
+                if "STATUS_TEXTO" in df.columns else []
             titulo_previsao_pdf = "PREVISÃO DE CONCLUSÃO DA FASE" + (
-                f" - {fases_pdf[0].upper()}" if len(fases_pdf) == 1 else "")
+                f" - {status_pdf[0].upper()}" if len(status_pdf) == 1 else "")
             tabela_painel_geral = Table(
                 [
                     [
@@ -16929,7 +16936,7 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False, a
     // usuário em 21/11/2026.
     var tituloPrevisao = document.getElementById("titulo-previsao-fase");
     if (tituloPrevisao) {
-      tituloPrevisao.textContent = "Previsão de Conclusão da Fase" + (dados.faseUnica ? " - " + dados.faseUnica : "");
+      tituloPrevisao.textContent = "Previsão de Conclusão da Fase" + (dados.statusUnico ? " - " + dados.statusUnico : "");
     }
     var nota = document.getElementById("preview-nota-secretaria");
     if (dados.secretaria_unica) {
