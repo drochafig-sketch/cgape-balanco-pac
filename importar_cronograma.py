@@ -74,6 +74,9 @@ MARCOS = [
     ("Aviso de Licitação", "PRV_AVISO_LICITACAO"),
     ("Licitação / Contratação", "PRV_CONTRATACAO"),
     ("Ordem de Serviço", "PRV_EMISSAO_OS"),
+    # previsão de entrega INICIAL (antes das repactuações) — pedido do
+    # usuário em 26/11/2026, para a linha do tempo da Ficha Cadastral
+    ("Previsão Entrega Inicial", "PRV_ENTREGA_INICIAL"),
     ("Entrega Obra", "PRV_CONCLUSAO_OBRA"),
     ("Instalação Equipamentos", "DATA_EQUIPARACAO"),
     ("Funcionalidade", "PRV_FUNCIONAMENTO"),

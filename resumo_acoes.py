@@ -72,6 +72,8 @@ RA_DATAS = [("atualizacao", "Última Atualização", "Última atualização"),
             ("licitacao", "Licitação / Contratação",
              "Licitação / contratação"),
             ("os", "Ordem de Serviço", "Ordem de serviço"),
+            # 26/11/2026 (PRV_ENTREGA_INICIAL da CONDER, ver importar_cronograma)
+            ("entrega_inicial", "Previsão Entrega Inicial", "Previsão de entrega inicial"),
             ("entrega", "Entrega Obra", "Entrega da obra"),
             ("equipamentos", "Instalação Equipamentos",
              "Instalação de equipamentos"),
@@ -1452,7 +1454,8 @@ RA_FICHA_ESQUEMA = {
                   ["Investimento", "valor_card", "fv-destaque-investimento"]],
     "marcos": [["estudos", "Conclusão dos Estudos"], ["projeto", "Conclusão do Projeto"],
                ["aviso", "Aviso de Licitação"], ["licitacao", "Licitação / Contratação"],
-               ["os", "Ordem de Serviço"], ["entrega", "Entrega da Obra"],
+               ["os", "Ordem de Serviço"], ["entrega_inicial", "Previsão de Entrega Inicial"],
+               ["entrega", "Entrega da Obra"],
                ["equipamentos", "Instalação de Equipamentos"], ["funcionalidade", "Funcionalidade"]],
     "secoes": [
         {"titulo": "Execução", "campos": [
