@@ -10744,6 +10744,15 @@ def montar_html_home():
     if not sessao.get("secoes"):
         return montar_html_login()
     prazos_liberado = "PRZ" in sessao["secoes"]
+    # Diário Oficial (DOE, doe_monitor.py) — 26/11/2026, só com login
+    doe_liberado = "DOE" in sessao["secoes"]
+    atualizacao_doe = "Publicações de todas as secretarias"
+    if doe_liberado:
+        try:
+            _mtime_doe = os.path.getmtime(_modulo_doe().caminho_dados())
+            atualizacao_doe = f'Dados gerados em {datetime.fromtimestamp(_mtime_doe).strftime("%d/%m/%Y às %Hh%Mmin")}'
+        except Exception:
+            atualizacao_doe = "Pasta do DOE inacessível (rede) ou ainda sem dados"
     from html import escape as _escapar_html
     nome_sessao = _escapar_html(sessao.get("nome") or "")
     rotulo_sair = "Sair" if sessao.get("usuario") else "Entrar com usuário"
@@ -10778,9 +10787,17 @@ def montar_html_home():
 body {{ margin:0; background:{iv.hex_css(iv.CINZA_CLARO)}; font-family:{iv.FONTE_CSS};
   color:{iv.hex_css(iv.NAVY)}; }}
 .ivp-governo-logo {{ position:absolute; top:14px; right:40px; height:46px; width:auto; }}
-.home-corpo {{ min-height:calc(100vh - 96px); display:flex; align-items:center; justify-content:center;
-  padding:40px 20px; }}
-.home-cartoes {{ display:flex; gap:32px; flex-wrap:wrap; justify-content:center; max-width:1100px; }}
+/* Sem barra de rolagem (pedido do usuário em 26/11/2026): a página ocupa
+   exatamente a altura da janela — cabeçalho + barra da sessão + corpo
+   flexível com os cartões centralizados (antes o corpo tinha a altura da
+   janela menos só o cabeçalho, e a barra da sessão sobrava). Rolagem só se
+   a janela for menor que os cartões. */
+html, body {{ height:100%; }}
+body {{ display:flex; flex-direction:column; }}
+.ivp-cabecalho, .home-sessao {{ flex:none; }}
+.home-corpo {{ flex:1 0 auto; display:flex; align-items:center; justify-content:center;
+  padding:24px 20px; }}
+.home-cartoes {{ display:flex; gap:28px; flex-wrap:wrap; justify-content:center; max-width:1440px; }}
 .home-cartao {{
   background:#fff; border:1px solid {iv.hex_css(iv.CINZA_BORDA)}; border-radius:14px;
   width:320px; padding:40px 28px; display:flex; flex-direction:column; align-items:center;
@@ -10803,6 +10820,8 @@ html[data-tema="escuro"] .home-sessao {{ color:#AEBBCD; }}
 html[data-tema="escuro"] .home-sessao button {{ color:#EAF0F7; border-color:#1C304D; }}
 html[data-tema="escuro"] .home-sessao button:hover {{ border-color:#7DBBF3; color:#7DBBF3; }}
 .home-cartao-prazos:hover, .home-cartao-prazos:focus-visible {{ border-color:{iv.hex_css(iv.VERMELHO)}; }}
+.home-cartao-doe .home-cartao-icone {{ color:{iv.hex_css(iv.NAVY)}; }}
+html[data-tema="escuro"] .home-cartao-doe .home-cartao-icone {{ color:#C9D6EA; }}
 .home-cartao-rotulo {{ font-size:16px; font-weight:800; letter-spacing:.4px; color:{iv.hex_css(iv.NAVY)};
   text-transform:uppercase; }}
 .home-cartao-sub {{ font-size:12.5px; color:{iv.hex_css(iv.CINZA_TEXTO)}; }}
@@ -10867,6 +10886,19 @@ html[data-tema="escuro"] .home-cartao-prazos:hover, html[data-tema="escuro"] .ho
       <div class="home-cartao-sub">Pauta do Governador · Portos e Transporte</div>
       <div class="home-cartao-data">{atualizacao_prazos}</div>
     </div>
+    <!-- Quarto cartão: DIÁRIO OFICIAL (doe_monitor.py) — 26/11/2026, só com login -->
+    <div class="home-cartao home-cartao-doe" id="home-doe" role="button" tabindex="0"
+         aria-label="Abrir Diário Oficial do Estado"{'' if doe_liberado else ' hidden'}>
+      <svg class="home-cartao-icone" viewBox="0 0 24 24" width="64" height="64" fill="none"
+           stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 5h13v14a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2z"></path>
+        <path d="M17 9h3v10a2 2 0 0 1-2 2"></path>
+        <path d="M7 9h7M7 12.5h7M7 16h4"></path>
+      </svg>
+      <div class="home-cartao-rotulo">Diário Oficial (DOE)</div>
+      <div class="home-cartao-sub">Publicações de todas as secretarias</div>
+      <div class="home-cartao-data">{atualizacao_doe}</div>
+    </div>
   </div>
 </div>
 <script>
@@ -10878,6 +10910,8 @@ html[data-tema="escuro"] .home-cartao-prazos:hover, html[data-tema="escuro"] .ho
   document.getElementById("home-pac").addEventListener("click", function () {{ irPara("pac"); }});
   document.getElementById("home-monitoramento").addEventListener("click", function () {{ irPara("monitoramento"); }});
   document.getElementById("home-prazos").addEventListener("click", function () {{ irPara("prazos"); }});
+  document.getElementById("home-doe").addEventListener("click", function () {{ irPara("doe"); }});
+  document.getElementById("home-doe").addEventListener("keydown", function (ev) {{ teclaAtivarHome(ev); }});
   document.getElementById("home-sair").addEventListener("click", async function () {{
     if (pacApiDesktopDisponivel()) {{ await window.pywebview.api.sair(); await window.pywebview.api.ir_para_home(); return; }}
     await fetch("/api/sair", {{method:"POST", headers:{{"Content-Type":"application/json"}}, body:"[]"}});
@@ -10908,7 +10942,7 @@ html[data-tema="escuro"] .home-cartao-prazos:hover, html[data-tema="escuro"] .ho
 </html>"""
 
 
-def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False):
+def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False, abrir_doe=False):
     # Monta a string HTML/CSS/JS completa do painel de filtros — só isso,
     # sem abrir janela nenhuma. Usada tanto pelo modo desktop
     # (abrir_interface_filtros, logo abaixo, que pega esse HTML e abre numa
@@ -19946,6 +19980,22 @@ def montar_html_painel(df_base, abrir_monitoramento=False, abrir_prazos=False):
                 'else { window.addEventListener("pywebviewready", function () { window.trocarBase("MON", {tela:"dash"}); }, { once: true }); }'
                 '</script>'
             )
+        # Diário Oficial (DOE, doe_monitor.py) — 26/11/2026: janela
+        # #doe-overlay e botão DOE no cabeçalho dos dashes, só para quem tem
+        # login; aberta direto quando se chega pelo cartão da HOME.
+        if _secao_liberada("DOE"):
+            try:
+                injetar += "\n" + _modulo_doe().HTML_JANELA
+                if abrir_doe:
+                    injetar += (
+                        '\n<script>'
+                        'if (window.PAC_MODO_WEB || window.pywebview) { window.doeAbrir({deHome:true}); }'
+                        'else { window.addEventListener("pywebviewready", function () { window.doeAbrir({deHome:true}); }, { once: true }); }'
+                        '</script>'
+                    )
+            except Exception:
+                import traceback
+                traceback.print_exc()
         html_paginal = html_paginal.replace("</body>", injetar + "\n</body>", 1)
     except Exception:
         import traceback
@@ -20340,6 +20390,29 @@ def _api_prazos_assinatura():
     if not _secao_liberada("PRZ"):
         return dict(_SEM_ACESSO_PRAZOS)
     return _modulo_controle_prazos().api_assinatura()
+
+
+# Diário Oficial do Estado (DOE) — pedido do usuário em 26/11/2026: o
+# recurso DOE do RELATÓRIO SSP, para todas as secretarias, só para os
+# usuários com login (seção "DOE" de acesso.py). Ver doe_monitor.py.
+def _modulo_doe():
+    import doe_monitor
+    return doe_monitor
+
+
+_SEM_ACESSO_DOE = {"ok": False, "mensagem": "Acesso restrito: o Diário Oficial (DOE) é só para usuários com login."}
+
+
+def _api_doe_dados():
+    if not _secao_liberada("DOE"):
+        return dict(_SEM_ACESSO_DOE)
+    return _modulo_doe().api_dados()
+
+
+def _api_doe_atualizar(dias=None):
+    if not _secao_liberada("DOE"):
+        return dict(_SEM_ACESSO_DOE)
+    return _modulo_doe().api_atualizar(dias)
 
 
 # Cadastro do Controle de Prazos no próprio sistema (pedido do usuário em
@@ -21069,6 +21142,20 @@ def abrir_interface_filtros(df_base):
                 return {"ok": True}
             _carregar_tela("prazos", montar_html_painel(df_base, abrir_prazos=True))
             return {"ok": True}
+
+        # Diário Oficial (DOE) — cartão da HOME (26/11/2026)
+        def ir_para_doe(self):
+            if not _secao_liberada("DOE"):
+                _carregar_tela(*_tela_inicial())
+                return {"ok": True}
+            _carregar_tela("doe", montar_html_painel(df_base, abrir_doe=True))
+            return {"ok": True}
+
+        def doe_dados(self):
+            return _api_doe_dados()
+
+        def doe_atualizar(self, dias=None):
+            return _api_doe_atualizar(dias)
 
         # Login (25/11/2026) — ver acesso.py e montar_html_login
         def login(self, usuario=None, senha=None):

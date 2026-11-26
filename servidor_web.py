@@ -88,6 +88,14 @@ def prazos():
     return pac.montar_html_painel(pac.df_original, abrir_prazos=True)
 
 
+@app.route("/doe")
+def doe():
+    # Diário Oficial do Estado (doe_monitor.py) — 26/11/2026; só com login.
+    if not pac._secao_liberada("DOE"):
+        return pac.montar_html_home()
+    return pac.montar_html_painel(pac.df_original, abrir_doe=True)
+
+
 def _argumentos_da_requisicao():
     # O JS do painel sempre manda a lista de argumentos como um array JSON
     # no corpo do POST (ver chamarAPI/baixarPDF no HTML) — corresponde 1:1
@@ -177,7 +185,9 @@ for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
                      methods=["POST"])
 for _nome_prz in ("prazos_dados", "prazos_assinatura", "login", "acesso_livre", "sair",
                   # cadastro do Controle de Prazos no sistema (25/11/2026)
-                  "prazos_salvar", "prazos_excluir"):
+                  "prazos_salvar", "prazos_excluir",
+                  # Diário Oficial (DOE, doe_monitor.py) — 26/11/2026
+                  "doe_dados", "doe_atualizar"):
     app.add_url_rule("/api/" + _nome_prz, endpoint="api_" + _nome_prz,
                      view_func=_rota_json(getattr(pac, "_api_" + _nome_prz)),
                      methods=["POST"])

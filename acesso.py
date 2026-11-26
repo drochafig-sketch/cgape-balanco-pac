@@ -2,8 +2,8 @@
 
 Tela de usuário e senha antes da tela inicial, com um botão ACESSO LIVRE:
   - acesso livre: só PAC e AÇÕES EM MONITORAMENTO;
-  - usuários cadastrados abaixo: todas as seções (PAC, MONITORAMENTO e
-    CONTROLE DE PRAZOS).
+  - usuários cadastrados abaixo: todas as seções (PAC, MONITORAMENTO,
+    CONTROLE DE PRAZOS e o DIÁRIO OFICIAL — DOE, desde 26/11/2026).
 
 As senhas NÃO ficam gravadas: só um hash PBKDF2-SHA256 com sal próprio por
 usuário (o repositório do GitHub é público). Para cadastrar/trocar uma senha:
@@ -19,7 +19,9 @@ import hmac
 import os
 
 ITERACOES = 310_000
-SECOES_TODAS = ("PAC", "MON", "PRZ")
+# "DOE": Diário Oficial do Estado (doe_monitor.py) — só para os usuários
+# cadastrados, pedido de 26/11/2026
+SECOES_TODAS = ("PAC", "MON", "PRZ", "DOE")
 SECOES_LIVRE = ("PAC", "MON")
 
 # usuario: (nome de exibição, sal hex, hash hex)
