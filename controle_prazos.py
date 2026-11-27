@@ -904,8 +904,14 @@ HTML_JANELA = r"""
     background:var(--cor-card); color:var(--cor-texto-primario); font-size:16px; cursor:pointer; box-shadow:var(--sombra-card); }
   .prz-zoom button:hover { border-color:var(--cor-acento-prazos); color:var(--cor-acento-prazos-texto); }
 
-  .prz-selo { display:inline-block; padding:2px 8px; border-radius:999px; color:#fff; background:var(--c);
-    font-size:10.5px; font-weight:800; letter-spacing:.2px; }
+  .prz-selo, .prz-painel .campo span.prz-selo { display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 8px;
+    border-radius:999px; font-size:11px; font-weight:800; letter-spacing:.3px; line-height:1.4; white-space:nowrap;
+    color:color-mix(in srgb, var(--c) 72%, #000); background:color-mix(in srgb, var(--c) 13%, #fff);
+    border:1px solid color-mix(in srgb, var(--c) 45%, transparent); }
+  .prz-selo::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--c); flex:none; }
+  html[data-tema="escuro"] .prz-selo, html[data-tema="escuro"] .prz-painel .campo span.prz-selo {
+    color:var(--c); background:color-mix(in srgb, var(--c) 18%, transparent);
+    border-color:color-mix(in srgb, var(--c) 50%, transparent); }
   .prz-contagem { font-variant-numeric:tabular-nums; font-weight:800; font-size:11.5px; margin-top:3px; color:var(--c); }
 
   /* ---- painel de detalhes ---- */
