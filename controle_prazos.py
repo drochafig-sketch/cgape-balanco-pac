@@ -307,7 +307,7 @@ def data_atualizacao_base():
     return dt.datetime.fromtimestamp(m) if m else None
 
 
-def api_dados(pode_editar=False):
+def api_dados(pode_editar=False, pode_prisional=False):
     try:
         dados, caminho, aviso, editavel = _carregar()
         m = _mtime(caminho) if caminho else None
@@ -320,6 +320,8 @@ def api_dados(pode_editar=False):
             "revisao": dados.get("revisao"),
             "pode_editar": bool(pode_editar and editavel),
             "editor_sem_rede": bool(pode_editar and not editavel),
+            # botão SISTEMA PRISIONAL (27/11/2026): só Silvana e Diego
+            "pode_prisional": bool(pode_prisional),
             "opcoes": _opcoes(dados.get("itens", [])),
         }
     except Exception as exc:
@@ -593,6 +595,8 @@ HTML_JANELA = r"""
         <button type="button" class="btn-inicio" id="przLimparBase" title="Limpar filtros (PRAZOS)">LIMPAR FILTROS (PRAZOS)</button>
         <!-- cadastro no sistema (25/11/2026): NOVA AÇÃO só para quem edita -->
         <button type="button" class="prz-btn-nova" id="przNova" hidden title="Cadastrar uma nova ação no Controle de Prazos">+ NOVA AÇÃO</button>
+        <!-- gerador de gráficos do Sistema Prisional (27/11/2026): só Silvana e Diego -->
+        <button type="button" id="przPrisional" hidden title="Abre o gerador de gráficos semanais do Sistema Prisional (janela própria)">SISTEMA PRISIONAL</button>
         <button type="button" id="przRelatorio" title="Gerar relatório (HTML, PDF ou PowerPoint) com as ações do recorte atual — filtros e busca">GERAR RELATÓRIO</button>
         <button type="button" id="przExportar" title="Baixa um Excel com as ações cadastradas (só para consulta — a fonte é o sistema)">EXPORTAR EXCEL</button>
         <button type="button" class="botao-tema ra-botao-tema" id="przTema" title="Tema escuro" aria-label="Ativar tema escuro" aria-pressed="false"><span class="icone-lua" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span><span class="icone-sol" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></span></button>
@@ -662,7 +666,7 @@ HTML_JANELA = r"""
         <label>Responsável
           <input name="responsavel" list="przListaResponsavel" autocomplete="off" maxlength="300"></label>
         <label>Investimento (R$)
-          <input name="investimento" inputmode="decimal" autocomplete="off" maxlength="30" placeholder="ex.: 1.250.000,00"></label>
+          <span class="prz-moeda"><span aria-hidden="true">R$</span><input name="investimento" inputmode="numeric" autocomplete="off" maxlength="22" placeholder="0,00" title="Digite só os números: a vírgula e os pontos entram sozinhos (ex.: 125000000 → 1.250.000,00)"></span></label>
         <label class="largo">Observações
           <textarea name="observacoes" rows="4" maxlength="4000"></textarea></label>
         <label class="largo">Fonte
@@ -948,6 +952,11 @@ HTML_JANELA = r"""
     text-transform:uppercase; color:var(--cor-texto-secundario); }
   .prz-form-corpo label.largo { grid-column:1 / -1; }
   .prz-invest { color:var(--cor-texto-primario); font-weight:900; }
+  /* investimento com máscara de banco (27/11/2026): "R$" fixo à esquerda */
+  .prz-moeda { position:relative; display:flex; }
+  .prz-moeda > span { position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:13.5px; font-weight:700;
+    letter-spacing:0; text-transform:none; color:var(--cor-texto-secundario); pointer-events:none; }
+  .prz-form-corpo .prz-moeda input { flex:1; min-width:0; padding-left:36px; font-variant-numeric:tabular-nums; font-weight:600; }
   .prz-qd-invest { margin-top:4px; font-size:12px; font-weight:800; color:var(--cor-acento-prazos-texto); }
   .prz-form-corpo label em { color:var(--cor-acento-prazos-texto); font-style:normal; }
   .prz-form-corpo input, .prz-form-corpo select, .prz-form-corpo textarea { font:inherit; font-size:13.5px; font-weight:400;
@@ -1188,6 +1197,7 @@ HTML_JANELA = r"""
       bNova.disabled = !PRZ.podeEditar;
       bNova.title = PRZ.podeEditar ? "Cadastrar uma nova ação no Controle de Prazos"
         : "Edição indisponível: esta máquina não acessa a pasta da rede (X:) onde fica o cadastro. Conecte-se à rede e abra de novo.";
+      document.getElementById("przPrisional").hidden = !r.pode_prisional;
       PRZ.carregado = true;
       document.getElementById("przMsg").textContent = "";
       document.getElementById("przConteudo").hidden = false;
@@ -1883,6 +1893,24 @@ HTML_JANELA = r"""
   document.getElementById("przFormFechar").onclick = fecharForm;
   document.getElementById("przFormCancelar").onclick = fecharForm;
   formFundo.addEventListener("mousedown", function (e) { if (e.target === formFundo) fecharForm(); });
+  // Investimento com máscara de aplicativo de banco (27/11/2026): só
+  // dígitos, que entram pela direita — 1 → 0,01 → 0,12 → 1,23 … →
+  // 1.250.000,00. Colar "R$ 1.250.000,00" também funciona (pega os dígitos).
+  var campoInvest = form.investimento;
+  function mascaraMoeda() {
+    var dig = campoInvest.value.replace(/[^0-9]/g, "").replace(/^0+/, "").slice(0, 15);
+    campoInvest.value = dig ? (parseInt(dig, 10) / 100).toLocaleString("pt-BR",
+      {minimumFractionDigits: 2, maximumFractionDigits: 2}) : "";
+    var fim = campoInvest.value.length;
+    try { campoInvest.setSelectionRange(fim, fim); } catch (e) {}
+  }
+  campoInvest.addEventListener("input", mascaraMoeda);
+  // o cursor fica sempre no fim (como nos apps de banco)
+  ["focus", "click"].forEach(function (ev) {
+    campoInvest.addEventListener(ev, function () {
+      setTimeout(function () { var f = campoInvest.value.length; try { campoInvest.setSelectionRange(f, f); } catch (e) {} }, 0);
+    });
+  });
   // ao digitar num campo marcado como faltando, a marca e o aviso somem
   form.addEventListener("input", function (e) {
     if (e.target.classList.contains("invalido") && e.target.value.trim()) {
@@ -1970,6 +1998,14 @@ HTML_JANELA = r"""
       .catch(function (e) { fim("Erro ao gerar o relatório: " + (e.message || e)); });
   }
   document.getElementById("przRelatorio").onclick = abrirRelatorio;
+  document.getElementById("przPrisional").onclick = function () {
+    var b = this;
+    b.disabled = true;
+    api("prisional_abrir").then(function (r) {
+      b.disabled = false;
+      if (r && !r.ok) avisar(r.mensagem || "Não foi possível abrir o Sistema Prisional.");
+    }).catch(function (e) { b.disabled = false; avisar("Erro: " + e); });
+  };
   document.getElementById("przRelFechar").onclick = fecharRelatorio;
   relFundo.addEventListener("mousedown", function (e) { if (e.target === relFundo) fecharRelatorio(); });
   relFundo.querySelectorAll("[data-formato]").forEach(function (b) {

@@ -20550,7 +20550,32 @@ _SEM_ACESSO_PRAZOS = {"ok": False, "mensagem": "Acesso restrito: o Controle de P
 def _api_prazos_dados():
     if not _secao_liberada("PRZ"):
         return dict(_SEM_ACESSO_PRAZOS)
-    return _modulo_controle_prazos().api_dados(acesso.pode_editar_prazos(_sessao_atual()))
+    sessao = _sessao_atual()
+    return _modulo_controle_prazos().api_dados(acesso.pode_editar_prazos(sessao),
+                                               pode_prisional=acesso.pode_sistema_prisional(sessao) and not MODO_WEB)
+
+
+# Gerador de gráficos do SISTEMA PRISIONAL (sistema_prisional.py) — 27/11/2026:
+# botão no Controle de Prazos, janela própria, só Silvana e Diego. A
+# permissão é conferida aqui e em cada chamada da janela (a sessão pode
+# mudar com a janela aberta). Só no .exe (janela do pywebview).
+def _api_prisional_abrir():
+    if MODO_WEB:
+        return {"ok": False, "mensagem": "O Sistema Prisional abre só no aplicativo (.exe)."}
+
+    def permitido():
+        return acesso.pode_sistema_prisional(_sessao_atual())
+    if not permitido():
+        return {"ok": False, "mensagem": "Acesso restrito: o Sistema Prisional é só para Silvana e Diego."}
+    try:
+        import sistema_prisional
+
+        def usuario():
+            s = _sessao_atual()
+            return f"{s.get('usuario') or ''} ({s.get('nome') or ''})"
+        return sistema_prisional.abrir_janela(permitido, usuario)
+    except Exception as erro:
+        return {"ok": False, "mensagem": f"Erro ao abrir o Sistema Prisional: {erro}"}
 
 
 def _api_prazos_assinatura():
@@ -21380,6 +21405,9 @@ def abrir_interface_filtros(df_base):
 
         def prazos_relatorio(self, formato=None, ids=None, recorte=None):
             return _api_prazos_relatorio(formato, ids, recorte)
+
+        def prisional_abrir(self):
+            return _api_prisional_abrir()
 
     # Envolve TODOS os métodos de APIFiltros em _api_pendente (ver
     # definição acima, perto de _carregar_tela) — pedido do usuário em

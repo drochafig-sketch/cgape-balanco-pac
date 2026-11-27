@@ -60,6 +60,17 @@ def pode_editar_prazos(sessao) -> bool:
     return str((sessao or {}).get("usuario") or "").lower() in EDITORES_PRAZOS
 
 
+# Gerador de gráficos do SISTEMA PRISIONAL (sistema_prisional.py), dentro da
+# seção PRAZOS — pedido do usuário em 27/11/2026: só Silvana e Diego veem e
+# editam.
+ACESSO_SISTEMA_PRISIONAL = ("silvana.silva", "diego.figueiredo")
+
+
+def pode_sistema_prisional(sessao) -> bool:
+    s = sessao or {}
+    return "PRZ" in (s.get("secoes") or []) and str(s.get("usuario") or "").lower() in ACESSO_SISTEMA_PRISIONAL
+
+
 def eh_admin(sessao) -> bool:
     return (sessao or {}).get("perfil") == "admin" and bool((sessao or {}).get("secoes"))
 
