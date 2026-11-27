@@ -9,7 +9,7 @@ destaques e contornos da seção.
 Dados: desde 25/11/2026 as ações são cadastradas no PRÓPRIO SISTEMA (ver
 "CADASTRO NO PRÓPRIO SISTEMA" abaixo): arquivo "Controle de Prazos -
 dados.json" na pasta de rede ...\\PAUTAS REUNIÕES, editado pela tela (só a
-Silvana; os demais visualizam). A planilha antiga
+Silvana e o Diego; os demais visualizam). A planilha antiga
     ...\\PAUTAS REUNIÕES\\Controle de Prazos - Pauta Governador (Portos e Transporte).xlsx
 só serve para a importação inicial. Cópia local de reserva em
 %LOCALAPPDATA%\\CGAPE, usada (só leitura) quando a rede não está acessível.
@@ -183,7 +183,7 @@ def _mtime(caminho):
 # =====================================================================
 # CADASTRO NO PRÓPRIO SISTEMA (pedido do usuário em 25/11/2026): a planilha
 # deixa de ser a fonte — as ações são criadas/editadas/excluídas na tela
-# (só pelo .exe, na rede; só a Silvana edita, os demais visualizam — ver
+# (só pelo .exe, na rede; só Silvana e Diego editam, os demais visualizam — ver
 # acesso.EDITORES_PRAZOS). Os dados ficam num arquivo JSON na MESMA pasta de
 # rede da antiga planilha (todas as máquinas veem a mesma versão):
 #   ...\PAUTAS REUNIÕES\Controle de Prazos - dados.json      (dados)

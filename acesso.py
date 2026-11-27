@@ -51,8 +51,9 @@ MINUTOS_BLOQUEIO = 15
 TAMANHO_MINIMO = 8
 
 # Quem pode criar/editar/excluir ações do CONTROLE DE PRAZOS (25/11/2026):
-# "apenas Silvana, os outros apenas a visualização".
-EDITORES_PRAZOS = ("silvana.silva",)
+# "apenas Silvana, os outros apenas a visualização"; Diego também edita
+# desde 27/11/2026 (pedido do usuário).
+EDITORES_PRAZOS = ("silvana.silva", "diego.figueiredo")
 
 
 def pode_editar_prazos(sessao) -> bool:

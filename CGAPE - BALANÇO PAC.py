@@ -20585,7 +20585,7 @@ def _api_doe_atualizar(dias=None):
 # Cadastro do Controle de Prazos no próprio sistema (pedido do usuário em
 # 25/11/2026): a permissão é conferida AQUI, no Python — a tela só esconde os
 # botões; quem não é editor (acesso.EDITORES_PRAZOS) nunca grava.
-_SEM_EDICAO_PRAZOS = {"ok": False, "mensagem": "Somente a Silvana pode alterar o Controle de Prazos; os demais usuários visualizam."}
+_SEM_EDICAO_PRAZOS = {"ok": False, "mensagem": "Somente a Silvana e o Diego podem alterar o Controle de Prazos; os demais usuários visualizam."}
 
 
 def _api_prazos_salvar(item=None, revisao=None):
