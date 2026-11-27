@@ -184,6 +184,7 @@ for _nome_ra in ("resumo_acoes", "resumo_acoes_base", "resumo_acoes_pptx",
                      view_func=_rota_json(getattr(pac, "_api_" + _nome_ra)),
                      methods=["POST"])
 for _nome_prz in ("prazos_dados", "prazos_assinatura", "login", "acesso_livre", "sair",
+                  "trocar_senha",   # gestão de senhas (27/11/2026)
                   # cadastro do Controle de Prazos no sistema (25/11/2026)
                   "prazos_salvar", "prazos_excluir",
                   # Diário Oficial (DOE, doe_monitor.py) — 26/11/2026

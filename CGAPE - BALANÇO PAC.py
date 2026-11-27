@@ -10533,11 +10533,34 @@ def _secao_liberada(secao):
 
 
 def _api_login(usuario=None, senha=None):
-    dados = acesso.autenticar(usuario, senha)
-    if not dados:
-        return {"ok": False, "mensagem": "Usuário ou senha incorretos."}
-    _gravar_sessao(dados)
-    return {"ok": True, "nome": dados["nome"]}
+    # Gestão de senhas (27/11/2026): cadastro em SISTEMA CGAPE\usuarios.json
+    # (acesso.py). Senha provisória certa -> NÃO cria sessão; a tela pede a
+    # senha nova (trocar_senha) e só então entra.
+    try:
+        r = acesso.entrar(usuario, senha)
+    except Exception as erro:
+        return {"ok": False, "mensagem": f"Erro ao validar o acesso: {erro}"}
+    if r.get("trocar_senha"):
+        _gravar_sessao(None)
+        return {"ok": False, "trocar_senha": True, "nome": r.get("nome"),
+                "mensagem": "Defina uma senha nova para continuar."}
+    if not r.get("ok"):
+        return {"ok": False, "mensagem": r.get("mensagem") or "Usuário ou senha incorretos."}
+    _gravar_sessao(r["sessao"])
+    return {"ok": True, "nome": r["sessao"]["nome"]}
+
+
+def _api_trocar_senha(usuario=None, atual=None, nova=None, confirmacao=None):
+    # Troca obrigatória (senha provisória) ou voluntária ("Trocar minha
+    # senha" na tela de acesso); a senha atual é conferida de novo aqui.
+    try:
+        r = acesso.trocar_senha(usuario, atual, nova, confirmacao)
+    except Exception as erro:
+        return {"ok": False, "mensagem": f"Erro ao trocar a senha: {erro}"}
+    if r.get("ok"):
+        _gravar_sessao(r["sessao"])
+        return {"ok": True, "nome": r["sessao"]["nome"], "mensagem": r.get("mensagem")}
+    return {"ok": False, "mensagem": r.get("mensagem")}
 
 
 def _api_acesso_livre():
@@ -10651,6 +10674,21 @@ html[data-tema="escuro"] .login-livre {{ color:#EAF0F7; border-color:#1C304D; }}
 html[data-tema="escuro"] .login-livre:hover, html[data-tema="escuro"] .login-livre:focus-visible {{ border-color:#7DBBF3; color:#7DBBF3; }}
 html[data-tema="escuro"] .login-erro {{ color:#FF8A80; }}
 html[data-tema="escuro"] .login-olho {{ color:#AEBBCD; }}
+/* gestão de senhas (27/11/2026): troca obrigatória / voluntária */
+.login-link {{ display:block; margin:12px auto 0; background:none; border:none; font:inherit; font-size:12.5px;
+  color:{iv.hex_css(iv.AZUL)}; cursor:pointer; text-decoration:underline; }}
+.troca-aviso {{ margin:-10px 0 16px; padding:10px 12px; border-radius:8px; font-size:12.5px; line-height:1.45;
+  background:rgba(11,92,173,.08); border:1px solid rgba(11,92,173,.25); }}
+.troca-regras {{ list-style:none; margin:-4px 0 12px; padding:0; font-size:12.5px; color:{iv.hex_css(iv.CINZA_TEXTO)}; }}
+.troca-regras li {{ padding:2px 0 2px 22px; position:relative; }}
+.troca-regras li::before {{ content:"○"; position:absolute; left:4px; }}
+.troca-regras li.ok {{ color:{iv.hex_css(iv.VERDE)}; }}
+.troca-regras li.ok::before {{ content:"✓"; font-weight:800; }}
+.login-campo[hidden], .login-cartao[hidden], .troca-aviso[hidden] {{ display:none; }}
+html[data-tema="escuro"] .login-link {{ color:#7DBBF3; }}
+html[data-tema="escuro"] .troca-aviso {{ background:rgba(125,187,243,.08); border-color:rgba(125,187,243,.3); }}
+html[data-tema="escuro"] .troca-regras {{ color:#AEBBCD; }}
+html[data-tema="escuro"] .troca-regras li.ok {{ color:#66BB6A; }}
 </style>
 <script>(function(){{var t="escuro";try{{t=localStorage.getItem("cgapeTemaV2")||"escuro";}}catch(e){{}}if(t==="escuro")document.documentElement.setAttribute("data-tema","escuro");}})();</script>
 </head>
@@ -10676,6 +10714,35 @@ html[data-tema="escuro"] .login-olho {{ color:#AEBBCD; }}
     <div class="login-ou">ou</div>
     <button type="button" class="login-livre" id="login-livre">ACESSO LIVRE
       <small>Balanço PAC e Ações em Monitoramento</small></button>
+    <button type="button" class="login-link" id="login-ir-troca">Trocar minha senha</button>
+  </form>
+  <!-- Gestão de senhas (27/11/2026): troca obrigatória (senha provisória)
+       ou voluntária. As regras são conferidas de novo no Python (acesso.py). -->
+  <form class="login-cartao" id="troca-form" autocomplete="off" novalidate hidden>
+    <h1 id="troca-titulo">Defina sua nova senha</h1>
+    <p class="sub" id="troca-sub">Primeiro acesso: troque a senha provisória por uma de seu conhecimento.</p>
+    <div class="troca-aviso" id="troca-aviso" hidden></div>
+    <label class="login-campo" id="troca-campo-usuario"><span class="rot">Usuário</span>
+      <span class="caixa"><input type="text" id="troca-usuario" placeholder="nome.sobrenome" autocapitalize="off" spellcheck="false"></span></label>
+    <label class="login-campo" id="troca-campo-atual"><span class="rot">Senha atual</span>
+      <span class="caixa"><input type="password" id="troca-atual" class="senha" autocomplete="current-password"></span></label>
+    <label class="login-campo"><span class="rot">Senha nova</span>
+      <span class="caixa"><input type="password" id="troca-nova" class="senha" autocomplete="new-password">
+      <button type="button" class="login-olho" id="troca-olho" title="Mostrar as senhas" aria-label="Mostrar as senhas" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+      </button></span></label>
+    <ul class="troca-regras" id="troca-regras" aria-live="polite">
+      <li data-regra="tam">pelo menos 8 caracteres</li>
+      <li data-regra="letra">uma letra</li>
+      <li data-regra="num">um número</li>
+      <li data-regra="esp">um caractere especial (ex.: @ # $ % &amp; * ! ?)</li>
+      <li data-regra="user">sem o seu nome de usuário</li>
+    </ul>
+    <label class="login-campo"><span class="rot">Confirme a senha nova</span>
+      <span class="caixa"><input type="password" id="troca-conf" class="senha" autocomplete="new-password"></span></label>
+    <div class="login-erro" id="troca-erro" role="alert"></div>
+    <button type="submit" class="ivp-botao login-entrar" id="troca-salvar">SALVAR NOVA SENHA E ENTRAR</button>
+    <button type="button" class="login-link" id="troca-voltar">Voltar</button>
   </form>
 </div>
 <script>
@@ -10715,6 +10782,12 @@ html[data-tema="escuro"] .login-olho {{ color:#AEBBCD; }}
         await irParaHome();
         return;
       }}
+      if (r && r.trocar_senha) {{
+        try {{ localStorage.setItem("cgapeUltimoUsuario", campoUsuario.value.trim().toLowerCase()); }} catch (e) {{}}
+        mostrarTroca(true, campoUsuario.value.trim(), campoSenha.value, r.nome);
+        entrar.disabled = false; entrar.textContent = "ENTRAR";
+        return;
+      }}
       erro.textContent = (r && r.mensagem) || "Não foi possível entrar.";
       campoSenha.select();
     }} catch (e) {{
@@ -10726,6 +10799,93 @@ html[data-tema="escuro"] .login-olho {{ color:#AEBBCD; }}
     var r = await chamar("acesso_livre");
     if (r && r.ok) await irParaHome();
   }};
+
+  // ---- troca de senha (27/11/2026) ----
+  var formLogin = document.getElementById("login-form");
+  var formTroca = document.getElementById("troca-form");
+  var tUsuario = document.getElementById("troca-usuario");
+  var tAtual = document.getElementById("troca-atual");
+  var tNova = document.getElementById("troca-nova");
+  var tConf = document.getElementById("troca-conf");
+  var tErro = document.getElementById("troca-erro");
+  var tSalvar = document.getElementById("troca-salvar");
+  var trocaObrigatoria = false;
+  function mostrarTroca(obrigatoria, usuario, senhaAtual, nome) {{
+    trocaObrigatoria = !!obrigatoria;
+    formLogin.hidden = true;
+    formTroca.hidden = false;
+    tErro.textContent = "";
+    tNova.value = ""; tConf.value = "";
+    tUsuario.value = usuario || campoUsuario.value.trim();
+    tAtual.value = obrigatoria ? (senhaAtual || "") : "";
+    document.getElementById("troca-campo-usuario").hidden = obrigatoria;
+    document.getElementById("troca-campo-atual").hidden = obrigatoria;
+    document.getElementById("troca-titulo").textContent = obrigatoria ? "Defina sua nova senha" : "Trocar minha senha";
+    document.getElementById("troca-sub").textContent = obrigatoria
+      ? "Primeiro acesso: troque a senha provisória por uma de seu conhecimento. Este passo é obrigatório."
+      : "Informe a senha atual e escolha a nova.";
+    var aviso = document.getElementById("troca-aviso");
+    aviso.hidden = !obrigatoria;
+    aviso.textContent = obrigatoria ? ("Olá, " + (nome || tUsuario.value) + ". Sua senha atual é provisória e precisa ser trocada antes de entrar.") : "";
+    tSalvar.textContent = obrigatoria ? "SALVAR NOVA SENHA E ENTRAR" : "SALVAR NOVA SENHA";
+    conferirRegras();
+    (obrigatoria ? tNova : (tUsuario.value ? tAtual : tUsuario)).focus();
+  }}
+  function voltarLogin() {{
+    formTroca.hidden = true;
+    formLogin.hidden = false;
+    tAtual.value = ""; tNova.value = ""; tConf.value = "";
+    campoSenha.value = "";
+    campoSenha.focus();
+  }}
+  function conferirRegras() {{
+    var s = tNova.value, u = (tUsuario.value || "").toLowerCase();
+    var partes = u.split(/[._-]/).filter(function (p) {{ return p.length >= 4; }});
+    var temUser = !!u && (s.toLowerCase().indexOf(u) !== -1 || partes.some(function (p) {{ return s.toLowerCase().indexOf(p) !== -1; }}));
+    var regras = {{
+      tam: s.length >= 8,
+      letra: /[A-Za-zÀ-ÿ]/.test(s),
+      num: /[0-9]/.test(s),
+      esp: /[^A-Za-z0-9À-ÿ ]/.test(s),
+      user: !!s && !temUser
+    }};
+    document.querySelectorAll("#troca-regras li").forEach(function (li) {{
+      li.classList.toggle("ok", !!regras[li.dataset.regra]);
+    }});
+    return Object.keys(regras).every(function (k) {{ return regras[k]; }});
+  }}
+  tNova.addEventListener("input", conferirRegras);
+  tUsuario.addEventListener("input", conferirRegras);
+  document.getElementById("troca-olho").onclick = function () {{
+    var mostrar = tNova.type === "password";
+    [tNova, tConf, tAtual].forEach(function (c) {{ c.type = mostrar ? "text" : "password"; }});
+    this.setAttribute("aria-pressed", mostrar ? "true" : "false");
+  }};
+  document.getElementById("login-ir-troca").onclick = function () {{ mostrarTroca(false, campoUsuario.value.trim()); }};
+  document.getElementById("troca-voltar").onclick = voltarLogin;
+  formTroca.addEventListener("submit", async function (ev) {{
+    ev.preventDefault();
+    tErro.textContent = "";
+    if (!tUsuario.value.trim() || !tAtual.value) {{ tErro.textContent = "Informe o usuário e a senha atual."; return; }}
+    if (!conferirRegras()) {{ tErro.textContent = "A senha nova ainda não atende a todas as regras."; tNova.focus(); return; }}
+    if (tNova.value !== tConf.value) {{ tErro.textContent = "A confirmação não é igual à senha nova."; tConf.focus(); return; }}
+    tSalvar.disabled = true;
+    var rotulo = tSalvar.textContent;
+    tSalvar.textContent = "SALVANDO…";
+    try {{
+      var r = await chamar("trocar_senha", tUsuario.value.trim(), tAtual.value, tNova.value, tConf.value);
+      if (r && r.ok) {{
+        try {{ localStorage.setItem("cgapeUltimoUsuario", tUsuario.value.trim().toLowerCase()); }} catch (e) {{}}
+        tSalvar.textContent = "SENHA ALTERADA — ENTRANDO…";
+        await irParaHome();
+        return;
+      }}
+      tErro.textContent = (r && r.mensagem) || "Não foi possível trocar a senha.";
+    }} catch (e) {{
+      tErro.textContent = "Erro ao trocar a senha: " + e;
+    }}
+    tSalvar.disabled = false; tSalvar.textContent = rotulo;
+  }});
   // fecha o programa depois de 20 min sem uso, igual à HOME e ao painel
   var temporizador = null;
   function reiniciarInatividade() {{
@@ -21193,6 +21353,9 @@ def abrir_interface_filtros(df_base):
         # Login (25/11/2026) — ver acesso.py e montar_html_login
         def login(self, usuario=None, senha=None):
             return _api_login(usuario, senha)
+
+        def trocar_senha(self, usuario=None, atual=None, nova=None, confirmacao=None):
+            return _api_trocar_senha(usuario, atual, nova, confirmacao)
 
         def acesso_livre(self):
             return _api_acesso_livre()
